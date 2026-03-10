@@ -1,0 +1,55 @@
+# Build outputs (Vivado generated)
+build/
+*.dcp
+*.log
+*.jou
+*.wdb
+*.pb
+
+# Vivado temp files
+.Xil/
+*.str
+*.bit
+*.ltx
+vivado*.backup.*
+clockInfo.txt
+dfx_runtime.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Test images (downloaded at runtime)
+python/test_images/
+
+# Simulation artifacts
+*.vcd
+*.wlf
+xsim.dir/
+
+# Generated images (sim/debug output)
+*.png
+*.jpg
+!assets/*.png
+!assets/*.jpg
+
+# Generated test vectors (produced by python/generate_test_vectors.py)
+sim/test_vectors/*.hex
+sim/test_vectors/*.jpg
+
+# Claude settings
+.claude/
+
+# Board examples pending HW validation (local only)
+example_proj/arty_s7_50/
+
+# FuseSoC local config (machine-specific paths)
+fusesoc.conf
+
+# Local scratch directories
+no_commit/
+
+# OS
+Thumbs.db
+.DS_Store

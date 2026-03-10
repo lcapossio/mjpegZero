@@ -1,0 +1,189 @@
+CAPI=2:
+name: bard0-design:mjpegzero:mjpegzero_enc:0.1.0
+description: "Synthesizable MJPEG encoder — behavioral Verilog 2001, AXI4-Stream + AXI4-Lite, 150 MHz, up to 1080p30"
+
+filesets:
+  rtl:
+    files:
+      - rtl/input_buffer.v
+      - rtl/dct_1d.v
+      - rtl/dct_2d.v
+      - rtl/quantizer.v
+      - rtl/zigzag_reorder.v
+      - rtl/huffman_encoder.v
+      - rtl/bitstream_packer.v
+      - rtl/jfif_writer.v
+      - rtl/axi4_lite_regs.v
+      - rtl/mjpegzero_enc_top.v
+    file_type: verilogSource
+
+  bram_amd:
+    files:
+      - rtl/vendor/amd/bram_sdp.v
+    file_type: verilogSource
+
+  bram_altera:
+    files:
+      - rtl/vendor/altera/bram_sdp.v
+    file_type: verilogSource
+
+  bram_lattice:
+    files:
+      - rtl/vendor/lattice/bram_sdp.v
+    file_type: verilogSource
+
+  bram_microchip:
+    files:
+      - rtl/vendor/microchip/bram_sdp.v
+    file_type: verilogSource
+
+  bram_efinix:
+    files:
+      - rtl/vendor/efinix/bram_sdp.v
+    file_type: verilogSource
+
+  bram_gowin:
+    files:
+      - rtl/vendor/gowin/bram_sdp.v
+    file_type: verilogSource
+
+  bram_sim:
+    files:
+      - rtl/vendor/sim/bram_sdp.v
+    file_type: verilogSource
+
+  # XDC that downgrades NSTD-1/UCIO-1 to Warning so write_bitstream succeeds
+  # without board pin constraints (standalone IP core synthesis target).
+  drc_waiver:
+    files:
+      - scripts/fusesoc_drc_waiver.xdc
+    file_type: xdc
+
+  tb:
+    files:
+      - sim/tb_iverilog.sv
+    file_type: systemVerilogSource
+
+parameters:
+  LITE_MODE:
+    datatype: int
+    default: 1
+    description: "0 = full mode (1080p30, runtime quality via AXI4-Lite), 1 = lite mode (720p60, synthesis-time quality)"
+    paramtype: vlogparam
+
+  LITE_QUALITY:
+    datatype: int
+    default: 95
+    description: "Synthesis-time quality factor 1-100; only used when LITE_MODE=1"
+    paramtype: vlogparam
+
+  IMG_WIDTH:
+    datatype: int
+    default: 1280
+    description: "Image width in pixels (must be a multiple of 16)"
+    paramtype: vlogparam
+
+  IMG_HEIGHT:
+    datatype: int
+    default: 720
+    description: "Image height in pixels (must be a multiple of 8)"
+    paramtype: vlogparam
+
+targets:
+  default:
+    filesets:
+      - rtl
+      - bram_amd
+    parameters:
+      - LITE_MODE
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    toplevel: mjpegzero_enc_top
+
+  # Note: simulation requires test vectors in sim/test_vectors/ relative to the
+  # working directory. Run from the repo root or use the Python flow instead:
+  #   python python/verify_rtl_sim.py [--lite]
+  sim:
+    filesets:
+      - rtl
+      - bram_sim
+      - tb
+    parameters:
+      - LITE_MODE
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    default_tool: icarus
+    tools:
+      icarus:
+        timescale: 1ns/1ps
+    toplevel: tb_mjpegzero_enc
+
+  sim_lite:
+    filesets:
+      - rtl
+      - bram_sim
+      - tb
+    parameters:
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    default_tool: icarus
+    tools:
+      icarus:
+        timescale: 1ns/1ps
+        iverilog_options:
+          - "-DLITE_MODE"
+    toplevel: tb_mjpegzero_enc
+
+  lint:
+    filesets:
+      - rtl
+      - bram_sim
+    parameters:
+      - LITE_MODE
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options:
+          - "-Wall"
+          - "-Wno-TIMESCALEMOD"
+    toplevel: mjpegzero_enc_top
+
+  synth_amd:
+    filesets:
+      - rtl
+      - bram_amd
+      - drc_waiver
+    parameters:
+      - LITE_MODE
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    default_tool: vivado
+    tools:
+      vivado:
+        part: xc7a100tcsg324-1
+    toplevel: mjpegzero_enc_top
+
+  synth_amd_lite:
+    filesets:
+      - rtl
+      - bram_amd
+      - drc_waiver
+    parameters:
+      - LITE_QUALITY
+      - IMG_WIDTH
+      - IMG_HEIGHT
+    default_tool: vivado
+    tools:
+      vivado:
+        part: xc7a100tcsg324-1
+        vivado_options:
+          - "-generic LITE_MODE=1"
+    toplevel: mjpegzero_enc_top

@@ -1,0 +1,199 @@
+# SPDX-License-Identifier: MIT
+# Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
+# Copyright (c) 2026 Leonardo Capossio — bard0 design
+#
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Python verification tests (no Vivado needed)
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Python verification (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install numpy scipy Pillow
+
+      - name: Verify Huffman ROM tables
+        run: python python/verify_huffman_rom.py
+
+      - name: Verify LITE_QUALITY tables
+        run: python python/verify_lite_quality.py
+
+      - name: Python reference encoder test (PSNR check)
+        run: python python/test_encoder.py
+
+      - name: Visual quality comparison (mandrill encode/decode, Q=50/75/95)
+        continue-on-error: true
+        run: |
+          python python/mandrill_compare.py --quality 50 --out mandrill_compare_Q50.png
+          python python/mandrill_compare.py --quality 75 --out mandrill_compare_Q75.png
+          python python/mandrill_compare.py --quality 95 --out mandrill_compare_Q95.png
+
+      - name: Upload quality comparison images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandrill-comparison-py${{ matrix.python-version }}
+          path: mandrill_compare_Q*.png
+
+  # ---------------------------------------------------------------------------
+  # RTL lint — Verilator (no Vivado needed, available on ubuntu-latest)
+  # ---------------------------------------------------------------------------
+  rtl-lint:
+    name: RTL lint (Verilator)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Verilator
+        run: sudo apt-get install -y --no-install-recommends verilator
+
+      - name: Lint core RTL modules
+        run: |
+          set -e
+          for f in \
+            rtl/dct_1d.v \
+            rtl/zigzag_reorder.v \
+            rtl/bitstream_packer.v \
+            rtl/axi4_lite_regs.v \
+            rtl/rgb_to_ycbcr.v; do
+            echo "--- lint: $f"
+            verilator --lint-only -Wall --bbox-unsup "$f"
+          done
+          echo "--- lint: rtl/dct_2d.v (with dct_1d)"
+          verilator --lint-only -Wall --bbox-unsup rtl/dct_1d.v rtl/dct_2d.v
+          echo "--- lint: rtl/input_buffer.v (with bram_sdp)"
+          verilator --lint-only -Wall --bbox-unsup rtl/vendor/sim/bram_sdp.v rtl/input_buffer.v
+
+      - name: Lint quantizer (LITE_MODE=0)
+        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 rtl/quantizer.v
+
+      - name: Lint quantizer (LITE_MODE=1)
+        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 rtl/quantizer.v
+
+      - name: Lint huffman_encoder
+        run: verilator --lint-only -Wall --bbox-unsup rtl/huffman_encoder.v
+
+      - name: Lint jfif_writer
+        run: verilator --lint-only -Wall --bbox-unsup rtl/jfif_writer.v
+
+      - name: Lint top-level (LITE_MODE=0)
+        run: |
+          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 \
+            rtl/vendor/sim/bram_sdp.v \
+            rtl/dct_1d.v \
+            rtl/dct_2d.v \
+            rtl/input_buffer.v \
+            rtl/quantizer.v \
+            rtl/zigzag_reorder.v \
+            rtl/huffman_encoder.v \
+            rtl/bitstream_packer.v \
+            rtl/jfif_writer.v \
+            rtl/axi4_lite_regs.v \
+            rtl/mjpegzero_enc_top.v
+
+      - name: Lint top-level (LITE_MODE=1)
+        run: |
+          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 \
+            rtl/vendor/sim/bram_sdp.v \
+            rtl/dct_1d.v \
+            rtl/dct_2d.v \
+            rtl/input_buffer.v \
+            rtl/quantizer.v \
+            rtl/zigzag_reorder.v \
+            rtl/huffman_encoder.v \
+            rtl/bitstream_packer.v \
+            rtl/jfif_writer.v \
+            rtl/axi4_lite_regs.v \
+            rtl/mjpegzero_enc_top.v
+
+  # ---------------------------------------------------------------------------
+  # RTL simulation — iverilog + golden coefficient comparison
+  # ---------------------------------------------------------------------------
+  rtl-sim:
+    name: RTL simulation (iverilog)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
+          pip install numpy Pillow
+
+      - name: Generate test image (download mandrill or synthetic fallback)
+        run: python python/test_encoder.py
+
+      - name: RTL simulation + golden verification (full mode, Q=50/75/95)
+        run: python python/verify_rtl_sim.py
+
+      - name: RTL simulation + golden verification (lite mode, Q=50/75/95)
+        run: python python/verify_rtl_sim.py --lite
+
+      - name: Upload simulation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl-sim-output
+          path: build/sim_iverilog/sim_output_*.jpg
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # FuseSoC — core descriptor validation + lint via FuseSoC/Verilator
+  # ---------------------------------------------------------------------------
+  fusesoc:
+    name: FuseSoC (core validation + lint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install FuseSoC and Verilator
+        run: |
+          pip install fusesoc
+          sudo apt-get install -y --no-install-recommends verilator make
+
+      - name: Register core library
+        run: fusesoc library add mjpegzero .
+
+      - name: Validate core descriptor (core-info)
+        run: fusesoc core-info bard0-design:mjpegzero:mjpegzero_enc
+
+      - name: Lint via FuseSoC (Verilator, LITE_MODE=1 default)
+        run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc
+
+      - name: Lint via FuseSoC (Verilator, LITE_MODE=0)
+        run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
