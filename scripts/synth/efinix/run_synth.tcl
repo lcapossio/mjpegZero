@@ -3,36 +3,40 @@
 # Copyright (c) 2026 Leonardo Capossio — bard0 design
 #
 # ============================================================================
-# Efinix Efinity Synthesis Script for mjpegZero
-# Target: Efinix Trion / Titanium
+# Efinix Efinity Synthesis — TCL launcher
+# Target: Efinix Trion T20 / Titanium Ti60
 # ============================================================================
 #
-# Note: Efinity uses Python scripts (.py) rather than Tcl for project control.
-# This file documents the flow; the actual runner is efx_run.py.
+# Efinity uses Python (efx_run.py) as its primary scripting interface.
+# This TCL script is a thin wrapper; the real implementation is in
+# scripts/synth/efinix/run_synth.py.
 #
-# Prerequisites:
-#   Efinix Efinity 2023.2+ installed; run via:
-#     efx_run.py --project scripts/synth/efinix/mjpeg_encoder.xml --flow compile
+# Usage (from Efinity TCL console):
+#   source scripts/synth/efinix/run_synth.tcl
 #
-# Typical device settings:
-#   Trion:    T20F256I4          (20k LEs, 256-ball FBGA)
-#   Titanium: Ti60F225I          (60k LEs, 225-ball FBGA)
+# Or from shell:
+#   python scripts/synth/efinix/run_synth.py [lite [quality]]
 #
-# Key differences from AMD/Xilinx:
-#   - Use rtl/vendor/efinix/bram_sdp.v (inferred EFX_RAM_AR or FIFO36K)
-#   - Project defined in XML (create via Efinity GUI, then script-automate)
-#   - Timing constraints: .sdc format
-#   - Synthesis tool: Efinity Mapper + Placer
-#
+# Typical device strings:
+#   Trion T8  : T8F81I4          (8k LEs, BGA81)
+#   Trion T20 : T20F256I4        (20k LEs, BGA256)   ← default
+#   Titanium Ti60: Ti60F225I     (60k LEs, BGA225)
 # ============================================================================
 
-error "Efinix Efinity synthesis not yet implemented.\
- Create an Efinity project XML and invoke efx_run.py."
+# Delegate to the Python runner
+set script_dir [file normalize [file dirname [info script]]]
+set py_script  [file join $script_dir run_synth.py]
 
-# TODO:
-#   1. Create Efinity project via GUI: add all rtl/vendor/efinix/ + rtl/*.v files
-#      (except rtl/bram_sdp.v — use rtl/vendor/efinix/bram_sdp.v instead)
-#   2. Export project XML to scripts/synth/efinix/mjpeg_encoder.xml
-#   3. Automate: efx_run.py --project scripts/synth/efinix/mjpeg_encoder.xml \
-#                            --flow compile
-#   4. Replace this error with the Efinity Tcl API calls if using Tcl mode.
+if {[info exists argv]} {
+    set py_args $argv
+} else {
+    set py_args {}
+}
+
+set cmd "python $py_script $py_args"
+puts "Launching: $cmd"
+set rc [catch {exec {*}[split $cmd " "]} output]
+puts $output
+if {$rc != 0} {
+    error "Efinix synthesis failed (rc=$rc)"
+}

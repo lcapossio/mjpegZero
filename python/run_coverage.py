@@ -49,9 +49,10 @@ def find_tool(name):
     return shutil.which(name)
 
 
-def verilate(build_dir, lite_mode, lite_quality=95):
+def verilate(build_dir, lite_mode, lite_quality=95, extra_defines=None, obj_suffix=''):
     """Compile RTL with Verilator --coverage. Returns True on success."""
-    obj_dir = os.path.join(build_dir, 'obj_dir')
+    obj_dir  = os.path.join(build_dir, f'obj_dir{obj_suffix}')
+    sim_bin  = os.path.join(build_dir, f'sim_coverage{obj_suffix}')
 
     rtl_files = [os.path.join(RTL_DIR, f) for f in _CORE_RTL]
     tb_cpp    = os.path.join(SIM_DIR, 'tb_verilator.cpp')
@@ -63,6 +64,9 @@ def verilate(build_dir, lite_mode, lite_quality=95):
 
     # Fixed small image for coverage
     defines += ['-GIMG_WIDTH=64', '-GIMG_HEIGHT=8']
+
+    if extra_defines:
+        defines += extra_defines
 
     cmd = [
         'verilator',
@@ -77,10 +81,11 @@ def verilate(build_dir, lite_mode, lite_quality=95):
         '--bbox-unsup',
         '--top-module', 'mjpegzero_enc_top',
         '--Mdir', obj_dir,
-        '-o', os.path.join(build_dir, 'sim_coverage'),
+        '-o', sim_bin,
     ] + defines + rtl_files + [tb_cpp]
 
-    print(f'  Verilating (lite={lite_mode}, q={lite_quality})...')
+    suffix_str = f', suffix={obj_suffix}' if obj_suffix else ''
+    print(f'  Verilating (lite={lite_mode}, q={lite_quality}{suffix_str})...')
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stdout:
         print(result.stdout)
@@ -92,30 +97,29 @@ def verilate(build_dir, lite_mode, lite_quality=95):
     return True
 
 
-def run_sim(build_dir, quality, tag):
+def run_sim(build_dir, quality, tag, tv_name='yuyv_input.hex', obj_suffix=''):
     """Run the Verilator sim binary. Returns True on success."""
-    sim_bin = os.path.join(build_dir, 'sim_coverage')
-    tv_src  = os.path.join(TV_DIR, 'yuyv_input.hex')
+    sim_bin = os.path.join(build_dir, f'sim_coverage{obj_suffix}')
+    tv_src  = os.path.join(TV_DIR, tv_name)
     out_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
     cov_dat = os.path.join(build_dir, f'coverage_{tag}.dat')
 
-    # Ensure test vectors are accessible
+    # Ensure test vectors are accessible from the run directory
     tv_dst = os.path.join(build_dir, 'test_vectors')
-    if not os.path.isdir(tv_dst):
-        os.makedirs(tv_dst, exist_ok=True)
-    tv_link = os.path.join(tv_dst, 'yuyv_input.hex')
+    os.makedirs(tv_dst, exist_ok=True)
+    tv_link = os.path.join(tv_dst, tv_name)
     if not os.path.exists(tv_link):
         shutil.copy2(tv_src, tv_link)
 
     cmd = [
         sim_bin,
-        f'+tv={os.path.join("test_vectors", "yuyv_input.hex")}',
+        f'+tv={os.path.join("test_vectors", tv_name)}',
         f'+out={os.path.basename(out_jpg)}',
         f'+cov={os.path.basename(cov_dat)}',
         f'+q={quality}',
     ]
 
-    print(f'  Running sim (Q={quality})...')
+    print(f'  Running sim (Q={quality}, tv={tv_name})...')
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=build_dir)
     print(result.stdout.strip())
     if result.returncode != 0:
@@ -221,10 +225,11 @@ def main():
 
     os.makedirs(BUILD_DIR, exist_ok=True)
 
-    # Auto-generate test vectors if missing
-    tv_file = os.path.join(TV_DIR, 'yuyv_input.hex')
-    if not os.path.isfile(tv_file):
-        print('  Test vectors missing — generating...')
+    # Auto-generate test vectors if missing (check all required files)
+    required_tvs = ['yuyv_input.hex', 'yuyv_flat.hex', 'yuyv_checker.hex']
+    missing = [f for f in required_tvs if not os.path.isfile(os.path.join(TV_DIR, f))]
+    if missing:
+        print(f'  Test vectors missing ({", ".join(missing)}) — generating...')
         gen = os.path.join(SCRIPT_DIR, 'generate_test_vectors.py')
         r = subprocess.run([sys.executable, gen], capture_output=True, text=True)
         if r.returncode != 0:
@@ -254,6 +259,54 @@ def main():
 
         if not run_sim(BUILD_DIR, q, tag):
             all_ok = False
+
+    # ----------------------------------------------------------------
+    # Flat-gray coverage run — exercises DC-only / EOB path
+    # ----------------------------------------------------------------
+    mode_pfx = 'lite' if args.lite else 'full'
+    flat_tag = f'{mode_pfx}_flat'
+    tags.append(flat_tag)
+    print(f'\n{"-" * 65}')
+    print(f'  {flat_tag}  (flat-gray image — DC/EOB coverage)')
+    print(f'{"-" * 65}')
+    # Reuse the binary already compiled for the last quality in the loop above
+    if not run_sim(BUILD_DIR, qualities[-1], flat_tag, tv_name='yuyv_flat.hex'):
+        all_ok = False
+
+    # ----------------------------------------------------------------
+    # Checkerboard coverage run — exercises ZRL (0xF0) path
+    # ----------------------------------------------------------------
+    checker_tag = f'{mode_pfx}_checker'
+    tags.append(checker_tag)
+    print(f'\n{"-" * 65}')
+    print(f'  {checker_tag}  (checkerboard image — ZRL coverage)')
+    print(f'{"-" * 65}')
+    if not run_sim(BUILD_DIR, qualities[-1], checker_tag, tv_name='yuyv_checker.hex'):
+        all_ok = False
+
+    # ----------------------------------------------------------------
+    # EXIF_ENABLE=1 coverage run — exercises EXIF APP1 states in
+    # jfif_writer.v that are never reached when EXIF_ENABLE=0
+    # ----------------------------------------------------------------
+    exif_tag = f'{mode_pfx}_exif'
+    tags.append(exif_tag)
+    print(f'\n{"-" * 65}')
+    print(f'  {exif_tag}  (EXIF_ENABLE=1 — jfif_writer EXIF states)')
+    print(f'{"-" * 65}')
+    exif_lite = args.lite
+    exif_q    = qualities[-1]
+    exif_ok = verilate(
+        BUILD_DIR,
+        lite_mode=exif_lite,
+        lite_quality=exif_q,
+        extra_defines=['-GEXIF_ENABLE=1'],
+        obj_suffix='_exif',
+    )
+    if exif_ok:
+        if not run_sim(BUILD_DIR, exif_q, exif_tag, obj_suffix='_exif'):
+            all_ok = False
+    else:
+        all_ok = False
 
     # Merge and report
     print(f'\n{"=" * 65}')

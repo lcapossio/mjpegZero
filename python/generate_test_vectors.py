@@ -221,6 +221,33 @@ def main():
     write_yuyv_hex(full_words, os.path.join(out_dir, 'yuyv_720p.hex'))
     print(f"Exported 720p YUYV ({len(full_words)} words = {fw}x{fh})")
 
+    # ========================================================================
+    # Synthetic test vectors for coverage improvement
+    # ========================================================================
+
+    # Flat gray 64x8 — all pixels Y=128, Cb=128, Cr=128.
+    # After level-shift and DCT: only DC coefficient is non-zero, all 63 AC
+    # coefficients are 0 → Huffman emits EOB immediately, exercising the
+    # DC-only / EOB-only path in huffman_encoder.
+    flat_rgb = np.full((8, 64, 3), 128, dtype=np.uint8)
+    flat_words, _, _ = rgb_array_to_yuyv_words(flat_rgb)
+    write_yuyv_hex(flat_words, os.path.join(out_dir, 'yuyv_flat.hex'))
+    print(f"Exported flat-gray YUYV ({len(flat_words)} words) for DC/EOB coverage")
+
+    # Checkerboard 64x8 — Y alternates 0/255 per pixel, Cb=128, Cr=128.
+    # After DCT + quantization the energy lands at zigzag position 63
+    # (highest-frequency coefficient), leaving 62 leading zero ACs.
+    # Huffman emits 3× ZRL (0xF0) codes followed by 1 non-zero, exercising
+    # the ZRL emission path in huffman_encoder.
+    checker_rgb = np.zeros((8, 64, 3), dtype=np.uint8)
+    for row in range(8):
+        for col in range(64):
+            luma = 255 if (row + col) % 2 == 0 else 0
+            checker_rgb[row, col] = [luma, 128, 128]
+    checker_words, _, _ = rgb_array_to_yuyv_words(checker_rgb)
+    write_yuyv_hex(checker_words, os.path.join(out_dir, 'yuyv_checker.hex'))
+    print(f"Exported checkerboard YUYV ({len(checker_words)} words) for ZRL coverage")
+
     print(f"\nAll test vectors written to: {out_dir}")
     print(f"Total MCUs: {mcu_count}")
 

@@ -13,13 +13,15 @@ module synth_timing_wrapper #(
     parameter LITE_MODE    = 1,
     parameter LITE_QUALITY = 95,
     parameter IMG_WIDTH    = LITE_MODE ? 1280 : 1920,
-    parameter IMG_HEIGHT   = LITE_MODE ? 720  : 1080
+    parameter IMG_HEIGHT   = LITE_MODE ? 720  : 1080,
+    parameter RGB_INPUT    = 0,                          // 1 = 24-bit RGB input; 0 = 16-bit YUYV
+    parameter VID_DATA_W   = RGB_INPUT ? 24 : 16         // derived, do not override
 ) (
     input  wire        clk,
     input  wire        rst_n,
 
     // Video input (registered)
-    input  wire [15:0] vid_tdata,
+    input  wire [VID_DATA_W-1:0] vid_tdata,
     input  wire        vid_tvalid,
     output wire        vid_tready,
     input  wire        vid_tlast,
@@ -53,7 +55,7 @@ module synth_timing_wrapper #(
     // ========================================================================
     // Input registers
     // ========================================================================
-    reg [15:0] vid_tdata_r;
+    reg [VID_DATA_W-1:0] vid_tdata_r;
     reg        vid_tvalid_r;
     reg        vid_tlast_r;
     reg        vid_tuser_r;
@@ -152,7 +154,9 @@ module synth_timing_wrapper #(
         .IMG_WIDTH    (IMG_WIDTH),
         .IMG_HEIGHT   (IMG_HEIGHT),
         .LITE_MODE    (LITE_MODE),
-        .LITE_QUALITY (LITE_QUALITY)
+        .LITE_QUALITY (LITE_QUALITY),
+        .RGB_INPUT    (RGB_INPUT),
+        .VID_DATA_W   (VID_DATA_W)
     ) u_dut (
         .clk               (clk),
         .rst_n             (rst_n),

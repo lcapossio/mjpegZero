@@ -25,16 +25,22 @@
 // ============================================================================
 
 module mjpegzero_enc_top #(
-    parameter LITE_MODE    = 1,                           // 0 = full (1080p30, 150 MHz), 1 = lite (720p60)
-    parameter LITE_QUALITY = 95,                          // Quality 1-100, used when LITE_MODE=1
-    parameter IMG_WIDTH    = LITE_MODE ? 1280 : 1920,     // 720p lite, 1080p full
-    parameter IMG_HEIGHT   = LITE_MODE ? 720  : 1080
+    parameter LITE_MODE     = 1,                           // 0 = full (1080p30, 150 MHz), 1 = lite (720p60)
+    parameter LITE_QUALITY  = 95,                          // Quality 1-100, used when LITE_MODE=1
+    parameter IMG_WIDTH     = LITE_MODE ? 1280 : 1920,     // 720p lite, 1080p full
+    parameter IMG_HEIGHT    = LITE_MODE ? 720  : 1080,
+    parameter EXIF_ENABLE   = 0,                           // 1 = embed APP1/EXIF segment after APP0
+    parameter EXIF_X_RES    = 72,                          // X resolution numerator (DPI if EXIF_RES_UNIT=2)
+    parameter EXIF_Y_RES    = 72,                          // Y resolution numerator
+    parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
+    parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
+    parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
     input  wire        rst_n,
 
-    // AXI4-Stream Slave - Video Input (16-bit YUYV)
-    input  wire [15:0] s_axis_vid_tdata,
+    // AXI4-Stream Slave - Video Input (16-bit YUYV when RGB_INPUT=0, 24-bit RGB when RGB_INPUT=1)
+    input  wire [VID_DATA_W-1:0] s_axis_vid_tdata,
     input  wire        s_axis_vid_tvalid,
     output wire        s_axis_vid_tready,
     input  wire        s_axis_vid_tlast,
@@ -308,6 +314,42 @@ module mjpegzero_enc_top #(
     assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < 3'd2);
 
     // ========================================================================
+    // Video input path (YUYV pass-through or RGB→YUYV via rgb_to_ycbcr)
+    // ========================================================================
+    wire [15:0] vid_yuyv_tdata;
+    wire        vid_yuyv_tvalid;
+    wire        vid_yuyv_tready;  // driven by input_buffer
+    wire        vid_yuyv_tlast;
+    wire        vid_yuyv_tuser;
+
+    generate
+        if (RGB_INPUT) begin : g_rgb_input
+            // 24-bit {R,G,B} AXI4-Stream → 16-bit YUYV (3-cycle pipeline)
+            rgb_to_ycbcr u_rgb2yuv (
+                .clk          (clk),
+                .rst_n        (rst_int_n),
+                .s_axis_tdata (s_axis_vid_tdata),
+                .s_axis_tvalid(s_axis_vid_tvalid & ctrl_enable),
+                .s_axis_tready(s_axis_vid_tready),
+                .s_axis_tlast (s_axis_vid_tlast),
+                .s_axis_tuser (s_axis_vid_tuser),
+                .m_axis_tdata (vid_yuyv_tdata),
+                .m_axis_tvalid(vid_yuyv_tvalid),
+                .m_axis_tready(vid_yuyv_tready),
+                .m_axis_tlast (vid_yuyv_tlast),
+                .m_axis_tuser (vid_yuyv_tuser)
+            );
+        end else begin : g_yuyv_input
+            // YUYV input: pass through with enable gating
+            assign s_axis_vid_tready = vid_yuyv_tready;
+            assign vid_yuyv_tdata    = s_axis_vid_tdata[15:0];
+            assign vid_yuyv_tvalid   = s_axis_vid_tvalid & ctrl_enable;
+            assign vid_yuyv_tlast    = s_axis_vid_tlast;
+            assign vid_yuyv_tuser    = s_axis_vid_tuser;
+        end
+    endgenerate
+
+    // ========================================================================
     // Module instantiations
     // ========================================================================
 
@@ -350,11 +392,11 @@ module mjpegzero_enc_top #(
     ) u_input_buffer (
         .clk           (clk),
         .rst_n         (rst_int_n),
-        .s_axis_tdata  (s_axis_vid_tdata),
-        .s_axis_tvalid (s_axis_vid_tvalid & ctrl_enable),
-        .s_axis_tready (s_axis_vid_tready),
-        .s_axis_tlast  (s_axis_vid_tlast),
-        .s_axis_tuser  (s_axis_vid_tuser),
+        .s_axis_tdata  (vid_yuyv_tdata),
+        .s_axis_tvalid (vid_yuyv_tvalid),
+        .s_axis_tready (vid_yuyv_tready),
+        .s_axis_tlast  (vid_yuyv_tlast),
+        .s_axis_tuser  (vid_yuyv_tuser),
         .blk_valid     (ibuf_blk_valid),
         .blk_data      (ibuf_blk_data),
         .blk_sof       (ibuf_blk_sof),
@@ -455,7 +497,11 @@ module mjpegzero_enc_top #(
         .IMG_WIDTH    (IMG_WIDTH),
         .IMG_HEIGHT   (IMG_HEIGHT),
         .LITE_MODE    (LITE_MODE),
-        .LITE_QUALITY (LITE_QUALITY)
+        .LITE_QUALITY (LITE_QUALITY),
+        .EXIF_ENABLE   (EXIF_ENABLE),
+        .EXIF_X_RES    (EXIF_X_RES),
+        .EXIF_Y_RES    (EXIF_Y_RES),
+        .EXIF_RES_UNIT (EXIF_RES_UNIT)
     ) u_jfif (
         .clk              (clk),
         .rst_n            (rst_int_n),

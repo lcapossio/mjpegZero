@@ -73,12 +73,17 @@ output and the sink.
 
 ## Parameters
 
-| Parameter      | Default | Description                                                     |
-|----------------|---------|-----------------------------------------------------------------|
-| `LITE_MODE`    | 1       | 0 = full (1080p30, runtime quality), 1 = lite (720p60)         |
-| `LITE_QUALITY` | 95      | Synthesis-time quality 1–100, used when LITE_MODE=1            |
-| `IMG_WIDTH`    | 1280    | Input image width in pixels (multiple of 16)                   |
-| `IMG_HEIGHT`   | 720     | Input image height in pixels (multiple of 8)                   |
+| Parameter       | Default | Description                                                      |
+|-----------------|---------|------------------------------------------------------------------|
+| `LITE_MODE`     | 1       | 0 = full (1080p30, runtime quality), 1 = lite (720p60)          |
+| `LITE_QUALITY`  | 95      | Synthesis-time quality 1–100, used when LITE_MODE=1             |
+| `IMG_WIDTH`     | 1280    | Input image width in pixels (multiple of 16)                    |
+| `IMG_HEIGHT`    | 720     | Input image height in pixels (multiple of 8)                    |
+| `EXIF_ENABLE`   | 0       | 1 = embed APP1/EXIF segment immediately after APP0              |
+| `EXIF_X_RES`    | 72      | EXIF XResolution numerator (DPI when `EXIF_RES_UNIT=2`)         |
+| `EXIF_Y_RES`    | 72      | EXIF YResolution numerator                                      |
+| `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
+| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default) |
 
 ## Capabilities
 
@@ -88,7 +93,9 @@ output and the sink.
 - **Quality**: Runtime via AXI4-Lite register (1–100) in full mode; synthesis-time via `LITE_QUALITY` (1–100, default 95) in lite mode
 - **Resolution**: Parameterizable; validated at 1920×1080, 1280×720, and 640×480
 - **Frame rate**: 1080p30 (full mode), 720p60 (lite mode), both at 150 MHz
-- **Output**: Complete JFIF files with SOI, APP0, DQT, SOF0, DHT, SOS, DRI/RST, EOI
+- **Output**: Complete JFIF files with SOI, APP0, [APP1/EXIF], DQT, SOF0, DHT, SOS, DRI/RST, EOI
+- **EXIF**: Optional APP1/EXIF segment (`EXIF_ENABLE=1`) with XResolution, YResolution, ResolutionUnit IFD0 tags
+- **RGB input**: Optional built-in BT.601 color converter (`RGB_INPUT=1`) accepts 24-bit `{R,G,B}` and produces YUYV internally
 
 ## Performance
 
@@ -152,6 +159,7 @@ Lite mode BRAM breakdown: Y=5, Cb=3, Cr=3 = 11 tiles (720p line buffer). Core pi
 
 | Module              | File                         | Description                                               |
 |---------------------|------------------------------|-----------------------------------------------------------|
+| RGB→YUYV Converter  | `rtl/rgb_to_ycbcr.v`         | Optional BT.601 3-stage pipeline; enabled by `RGB_INPUT=1` |
 | Input Buffer        | `rtl/input_buffer.v`         | YUYV de-interleave, 8-line BRAM buffer, MCU-order output  |
 | 1D DCT              | `rtl/dct_1d.v`               | 8-point forward DCT, matrix multiply with 13-bit cosine ROM |
 | 2D DCT              | `rtl/dct_2d.v`               | Row-column decomposition with transpose buffer            |
@@ -159,7 +167,7 @@ Lite mode BRAM breakdown: Y=5, Cb=3, Cr=3 = 11 tiles (720p line buffer). Core pi
 | Zigzag Reorder      | `rtl/zigzag_reorder.v`       | ROM-based address remap, double-buffered                  |
 | Huffman Encoder     | `rtl/huffman_encoder.v`      | Multi-cycle FSM, full DC/AC standard tables               |
 | Bitstream Packer    | `rtl/bitstream_packer.v`     | 64-bit accumulator, byte stuffing                         |
-| JFIF Writer         | `rtl/jfif_writer.v`          | 623-byte header ROM, SOI/markers/EOI state machine        |
+| JFIF Writer         | `rtl/jfif_writer.v`          | Header ROM, SOI/APP0/[APP1-EXIF]/DQT…EOI state machine   |
 | AXI4-Lite Regs      | `rtl/axi4_lite_regs.v`       | Control/status register file                              |
 | SDP BRAM            | `rtl/bram_sdp.v`             | Behavioural wrapper; vendor-specific primitives in `rtl/vendor/` |
 | Top-Level           | `rtl/mjpegzero_enc_top.v`    | Pipeline integration and frame control                    |
@@ -218,10 +226,43 @@ python python/verify_rtl_sim.py --dump-vcd
 
 # Optionally simulate with the real Xilinx RAMB36E1 primitive (requires Vivado)
 python python/verify_rtl_sim.py --unisims auto
+
+# EXIF APP1 segment validation (full mode, 72 DPI default)
+python python/verify_exif.py
+python python/verify_exif.py --lite --x-res 96 --y-res 96 --res-unit 2
+
+# AXI4-Lite register coverage (2-frame encode, reads back QUALITY/FRAME_CNT/FRAME_SIZE/STATUS)
+python python/verify_axi_regs.py
+python python/verify_axi_regs.py --lite
 ```
 
 Requires: `iverilog` / `vvp` on PATH, Python ≥ 3.8 with NumPy.
 Without `--unisims`, a portable behavioural BRAM model is used (default, CI path).
+
+#### Verilator code coverage (optional, requires Verilator ≥ 4.2)
+
+Compiles the RTL with `--coverage`, runs six scenarios designed to hit all major
+code paths (Q=50/75/95, flat-gray image for DC/EOB paths, checkerboard image for
+ZRL paths, and an `EXIF_ENABLE=1` build for EXIF state coverage), merges the
+coverage data, and generates an LCOV report.
+
+```bash
+# Full mode — Q=50/75/95 + flat + checkerboard + EXIF run
+python python/run_coverage.py
+
+# Lite mode
+python python/run_coverage.py --lite
+
+# With HTML report (requires lcov/genhtml)
+python python/run_coverage.py --html
+
+# Custom quality set
+python python/run_coverage.py --qualities 75,95
+```
+
+Coverage data is written to `build/coverage/`. LCOV info at
+`build/coverage/coverage.info`; HTML report (if `--html`) at
+`build/coverage/html/index.html`.
 
 #### Tier 3 — Full 720p Vivado simulation  (local only, requires Vivado)
 
@@ -287,9 +328,9 @@ vivado -mode batch -source scripts/synth/amd/run_synth.tcl -tclargs lite 80
 
 Reports are written to `build/synth/` or `build/synth_lite/`.
 
-**Only AMD/Vivado is fully implemented.** Synthesis scripts for other vendors
-(Altera, Lattice, Microchip, Efinix, GoWin) are scaffolded in
-`scripts/synth/<vendor>/` — implement the tool-specific Tcl flow and
+AMD/Vivado and Altera/Quartus scripts are fully implemented.
+Synthesis scripts for Lattice Radiant, Microchip Libero, Efinix Efinity, and GoWin EDA
+are scaffolded in `scripts/synth/<vendor>/` — implement the tool-specific Tcl flow and
 replace `rtl/bram_sdp.v` with the matching `rtl/vendor/<vendor>/bram_sdp.v`.
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -307,6 +348,10 @@ Reports are written to `build/impl/`.
 |--------|---------|
 | `python/mandrill_compare.py` | Encode/decode the mandrill image and produce a side-by-side PNG: Original \| JPEG decoded \| Difference×8. |
 | `python/compare_jpeg_scan.py` | Block-by-block DCT coefficient comparison between two JPEG files. |
+| `python/verify_exif.py` | RTL simulation test for the APP1/EXIF segment; validates all IFD0 fields byte-by-byte. |
+| `python/verify_axi_regs.py` | AXI4-Lite register coverage test: QUALITY, FRAME_CNT, FRAME_SIZE, STATUS W1C, RESTART (2-frame encode). |
+| `python/run_coverage.py` | Verilator `--coverage` driver: compiles RTL, runs Q=50/75/95 + flat/checker/EXIF scenarios, merges `.dat` files, produces LCOV report. |
+| `python/generate_test_vectors.py` | Generates all simulation test vectors including `yuyv_input.hex`, `yuyv_flat.hex` (DC/EOB coverage), and `yuyv_checker.hex` (ZRL coverage). |
 | `python/gen_huffman_rom.py` | Regenerate the Huffman ROM `initial` block in `rtl/huffman_encoder.v` from the standard BITS/VALS arrays. |
 | `python/gen_lite_tables.py` | Regenerate the LITE_QUALITY quantisation table `initial` blocks in `rtl/quantizer.v`. |
 | `python/yuyv_convert.py` | Shared RGB-to-YUYV conversion for RTL simulation and hardware tests. |
@@ -320,7 +365,14 @@ mjpegzero_enc_top #(
     .IMG_WIDTH    (1920),
     .IMG_HEIGHT   (1080),
     .LITE_MODE    (0),         // 1 = fixed quality, 720p, ~47% fewer LUTs
-    .LITE_QUALITY (95)         // Synthesis-time quality (1-100), lite mode only
+    .LITE_QUALITY (95),        // Synthesis-time quality (1-100), lite mode only
+    // Optional: EXIF APP1 segment
+    .EXIF_ENABLE  (1),         // 0 = no EXIF (default)
+    .EXIF_X_RES   (72),        // XResolution numerator (DPI)
+    .EXIF_Y_RES   (72),        // YResolution numerator
+    .EXIF_RES_UNIT(2),         // 2 = inch
+    // Optional: RGB input path (set to 0 for standard YUYV input)
+    .RGB_INPUT    (0)          // 1 = 24-bit {R,G,B} AXI4-Stream input
 ) u_mjpeg (
     .clk               (pixel_clk),        // 150 MHz
     .rst_n             (sys_rst_n),

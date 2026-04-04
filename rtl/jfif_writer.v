@@ -22,7 +22,11 @@ module jfif_writer #(
     parameter IMG_WIDTH    = 1280,
     parameter IMG_HEIGHT   = 720,
     parameter LITE_MODE    = 0,
-    parameter LITE_QUALITY = 95    // Quality 1-100, used when LITE_MODE=1
+    parameter LITE_QUALITY  = 95,   // Quality 1-100, used when LITE_MODE=1
+    parameter EXIF_ENABLE   = 0,    // 1 = insert APP1/EXIF segment after APP0
+    parameter EXIF_X_RES    = 72,   // X resolution numerator (denominator=1, e.g. 72 DPI)
+    parameter EXIF_Y_RES    = 72,   // Y resolution numerator
+    parameter EXIF_RES_UNIT = 2     // 1=no unit, 2=inch, 3=cm
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -355,6 +359,52 @@ if (LITE_MODE == 0) begin : g_full_header
         soi_app0_rom[16] = 8'h00; soi_app0_rom[17] = 8'h01;
         soi_app0_rom[18] = 8'h00; soi_app0_rom[19] = 8'h00;
     end
+
+    // APP1 / EXIF segment ROM (76 bytes) — used only when EXIF_ENABLE=1
+    // Structure: APP1 marker (2) + length (2) + "Exif\0\0" (6) +
+    //            TIFF-LE header (8) + IFD0 (2+3*12+4) + rational values (2*8)
+    localparam APP1_SIZE = 76;
+    reg [7:0] app1_rom [0:APP1_SIZE-1];
+    initial begin : app1_init_full
+        // APP1 marker + length (length=74 includes itself, excludes marker)
+        app1_rom[ 0]=8'hFF; app1_rom[ 1]=8'hE1;
+        app1_rom[ 2]=8'h00; app1_rom[ 3]=8'h4A;
+        // "Exif\0\0"
+        app1_rom[ 4]=8'h45; app1_rom[ 5]=8'h78; app1_rom[ 6]=8'h69;
+        app1_rom[ 7]=8'h66; app1_rom[ 8]=8'h00; app1_rom[ 9]=8'h00;
+        // TIFF header (little-endian): "II" + 0x002A + IFD0 at offset 8
+        app1_rom[10]=8'h49; app1_rom[11]=8'h49;
+        app1_rom[12]=8'h2A; app1_rom[13]=8'h00;
+        app1_rom[14]=8'h08; app1_rom[15]=8'h00; app1_rom[16]=8'h00; app1_rom[17]=8'h00;
+        // IFD0 entry count = 3
+        app1_rom[18]=8'h03; app1_rom[19]=8'h00;
+        // Entry 0: XResolution  tag=0x011A type=RATIONAL(5) count=1 offset=50
+        app1_rom[20]=8'h1A; app1_rom[21]=8'h01;
+        app1_rom[22]=8'h05; app1_rom[23]=8'h00;
+        app1_rom[24]=8'h01; app1_rom[25]=8'h00; app1_rom[26]=8'h00; app1_rom[27]=8'h00;
+        app1_rom[28]=8'h32; app1_rom[29]=8'h00; app1_rom[30]=8'h00; app1_rom[31]=8'h00;
+        // Entry 1: YResolution  tag=0x011B type=RATIONAL(5) count=1 offset=58
+        app1_rom[32]=8'h1B; app1_rom[33]=8'h01;
+        app1_rom[34]=8'h05; app1_rom[35]=8'h00;
+        app1_rom[36]=8'h01; app1_rom[37]=8'h00; app1_rom[38]=8'h00; app1_rom[39]=8'h00;
+        app1_rom[40]=8'h3A; app1_rom[41]=8'h00; app1_rom[42]=8'h00; app1_rom[43]=8'h00;
+        // Entry 2: ResolutionUnit  tag=0x0128 type=SHORT(3) count=1 value=EXIF_RES_UNIT
+        app1_rom[44]=8'h28; app1_rom[45]=8'h01;
+        app1_rom[46]=8'h03; app1_rom[47]=8'h00;
+        app1_rom[48]=8'h01; app1_rom[49]=8'h00; app1_rom[50]=8'h00; app1_rom[51]=8'h00;
+        app1_rom[52]=EXIF_RES_UNIT[7:0]; app1_rom[53]=EXIF_RES_UNIT[15:8];
+        app1_rom[54]=8'h00; app1_rom[55]=8'h00;
+        // Next IFD offset = 0 (no more IFDs)
+        app1_rom[56]=8'h00; app1_rom[57]=8'h00; app1_rom[58]=8'h00; app1_rom[59]=8'h00;
+        // XResolution value: EXIF_X_RES / 1  (rational, 32-bit LE each)
+        app1_rom[60]=EXIF_X_RES[7:0];   app1_rom[61]=EXIF_X_RES[15:8];
+        app1_rom[62]=EXIF_X_RES[23:16]; app1_rom[63]=EXIF_X_RES[31:24];
+        app1_rom[64]=8'h01; app1_rom[65]=8'h00; app1_rom[66]=8'h00; app1_rom[67]=8'h00;
+        // YResolution value: EXIF_Y_RES / 1
+        app1_rom[68]=EXIF_Y_RES[7:0];   app1_rom[69]=EXIF_Y_RES[15:8];
+        app1_rom[70]=EXIF_Y_RES[23:16]; app1_rom[71]=EXIF_Y_RES[31:24];
+        app1_rom[72]=8'h01; app1_rom[73]=8'h00; app1_rom[74]=8'h00; app1_rom[75]=8'h00;
+    end
     /* verilator coverage_on */
 
     // State machine
@@ -372,6 +422,7 @@ if (LITE_MODE == 0) begin : g_full_header
     localparam S_EOI_0       = 4'd11;
     localparam S_EOI_1       = 4'd12;
     localparam S_DONE        = 4'd13;
+    localparam S_APP1        = 4'd14;
 
     reg [3:0]  state;
     reg [9:0]  seg_idx;
@@ -407,6 +458,22 @@ if (LITE_MODE == 0) begin : g_full_header
                     m_axis_tvalid <= 1'b1;
                     m_axis_tdata  <= soi_app0_rom[seg_idx[4:0]];
                     if (seg_idx == 10'd19) begin
+                        seg_idx <= 10'd0;
+                        if (EXIF_ENABLE)
+                            state <= S_APP1;
+                        else
+                            state <= S_DQT_L_HDR;
+                    end else begin
+                        seg_idx <= seg_idx + 10'd1;
+                    end
+                end
+
+                S_APP1: begin
+                    m_axis_tvalid <= 1'b1;
+                    /* verilator lint_off WIDTHTRUNC */
+                    m_axis_tdata  <= app1_rom[seg_idx[6:0]];
+                    /* verilator lint_on WIDTHTRUNC */
+                    if (seg_idx == APP1_SIZE[9:0] - 10'd1) begin
                         state   <= S_DQT_L_HDR;
                         seg_idx <= 10'd0;
                     end else begin
@@ -942,20 +1009,56 @@ end else begin : g_lite_header
         header_rom[618] = 8'h03; header_rom[619] = 8'h11;
         header_rom[620] = 8'h00; header_rom[621] = 8'h3F; header_rom[622] = 8'h00;
     end
+
+    // APP1 / EXIF segment ROM (76 bytes) — used only when EXIF_ENABLE=1
+    localparam APP1_SIZE = 76;
+    reg [7:0] app1_rom [0:APP1_SIZE-1];
+    initial begin : app1_init_lite
+        app1_rom[ 0]=8'hFF; app1_rom[ 1]=8'hE1;
+        app1_rom[ 2]=8'h00; app1_rom[ 3]=8'h4A;
+        app1_rom[ 4]=8'h45; app1_rom[ 5]=8'h78; app1_rom[ 6]=8'h69;
+        app1_rom[ 7]=8'h66; app1_rom[ 8]=8'h00; app1_rom[ 9]=8'h00;
+        app1_rom[10]=8'h49; app1_rom[11]=8'h49;
+        app1_rom[12]=8'h2A; app1_rom[13]=8'h00;
+        app1_rom[14]=8'h08; app1_rom[15]=8'h00; app1_rom[16]=8'h00; app1_rom[17]=8'h00;
+        app1_rom[18]=8'h03; app1_rom[19]=8'h00;
+        app1_rom[20]=8'h1A; app1_rom[21]=8'h01;
+        app1_rom[22]=8'h05; app1_rom[23]=8'h00;
+        app1_rom[24]=8'h01; app1_rom[25]=8'h00; app1_rom[26]=8'h00; app1_rom[27]=8'h00;
+        app1_rom[28]=8'h32; app1_rom[29]=8'h00; app1_rom[30]=8'h00; app1_rom[31]=8'h00;
+        app1_rom[32]=8'h1B; app1_rom[33]=8'h01;
+        app1_rom[34]=8'h05; app1_rom[35]=8'h00;
+        app1_rom[36]=8'h01; app1_rom[37]=8'h00; app1_rom[38]=8'h00; app1_rom[39]=8'h00;
+        app1_rom[40]=8'h3A; app1_rom[41]=8'h00; app1_rom[42]=8'h00; app1_rom[43]=8'h00;
+        app1_rom[44]=8'h28; app1_rom[45]=8'h01;
+        app1_rom[46]=8'h03; app1_rom[47]=8'h00;
+        app1_rom[48]=8'h01; app1_rom[49]=8'h00; app1_rom[50]=8'h00; app1_rom[51]=8'h00;
+        app1_rom[52]=EXIF_RES_UNIT[7:0]; app1_rom[53]=EXIF_RES_UNIT[15:8];
+        app1_rom[54]=8'h00; app1_rom[55]=8'h00;
+        app1_rom[56]=8'h00; app1_rom[57]=8'h00; app1_rom[58]=8'h00; app1_rom[59]=8'h00;
+        app1_rom[60]=EXIF_X_RES[7:0];   app1_rom[61]=EXIF_X_RES[15:8];
+        app1_rom[62]=EXIF_X_RES[23:16]; app1_rom[63]=EXIF_X_RES[31:24];
+        app1_rom[64]=8'h01; app1_rom[65]=8'h00; app1_rom[66]=8'h00; app1_rom[67]=8'h00;
+        app1_rom[68]=EXIF_Y_RES[7:0];   app1_rom[69]=EXIF_Y_RES[15:8];
+        app1_rom[70]=EXIF_Y_RES[23:16]; app1_rom[71]=EXIF_Y_RES[31:24];
+        app1_rom[72]=8'h01; app1_rom[73]=8'h00; app1_rom[74]=8'h00; app1_rom[75]=8'h00;
+    end
     /* verilator coverage_on */
 
     // Simplified state machine
-    // Output ROM bytes 0..176 (pre-SOF0), optional DRI, ROM bytes 177..622 (DHT+SOS)
-    localparam SL_IDLE      = 3'd0;
-    localparam SL_HDR_PRE   = 3'd1;  // bytes 0..176 (SOI+APP0+DQT_L+DQT_C+SOF0)
-    localparam SL_DRI       = 3'd2;  // optional 6 bytes
-    localparam SL_HDR_POST  = 3'd3;  // bytes 177..622 (DHT+SOS)
-    localparam SL_SCAN_DATA = 3'd4;
-    localparam SL_EOI_0     = 3'd5;
-    localparam SL_EOI_1     = 3'd6;
-    localparam SL_DONE      = 3'd7;
+    // Output ROM bytes 0..19 (SOI+APP0), optional APP1, bytes 20..176 (DQT+SOF0),
+    // optional DRI, bytes 177..622 (DHT+SOS), scan data, EOI
+    localparam SL_IDLE      = 4'd0;
+    localparam SL_HDR_PRE   = 4'd1;  // bytes 0..176 (SOI+APP0+DQT_L+DQT_C+SOF0)
+    localparam SL_DRI       = 4'd2;  // optional 6 bytes
+    localparam SL_HDR_POST  = 4'd3;  // bytes 177..622 (DHT+SOS)
+    localparam SL_SCAN_DATA = 4'd4;
+    localparam SL_EOI_0     = 4'd5;
+    localparam SL_EOI_1     = 4'd6;
+    localparam SL_DONE      = 4'd7;
+    localparam SL_APP1      = 4'd8;  // optional APP1/EXIF segment (76 bytes)
 
-    reg [2:0]  state;
+    reg [3:0]  state;
     reg [9:0]  seg_idx;
 
     assign scan_ready = (state == SL_SCAN_DATA);
@@ -986,7 +1089,7 @@ end else begin : g_lite_header
                     end
                 end
 
-                // Output bytes 0..176 (SOI+APP0+DQT_L+DQT_C+SOF0)
+                // Output ROM bytes — APP0 ends at byte 19, DQT..SOF0 follow at 20..176
                 SL_HDR_PRE: begin
                     m_axis_tvalid <= 1'b1;
                     m_axis_tdata  <= header_rom[seg_idx];
@@ -998,6 +1101,24 @@ end else begin : g_lite_header
                             state   <= SL_HDR_POST;
                             seg_idx <= DHT_START[9:0];
                         end
+                    end else if (EXIF_ENABLE && seg_idx == 10'd19) begin
+                        // After APP0 (bytes 0-19), inject APP1 before DQT
+                        state   <= SL_APP1;
+                        seg_idx <= 10'd0;
+                    end else begin
+                        seg_idx <= seg_idx + 10'd1;
+                    end
+                end
+
+                // APP1/EXIF segment: 76 bytes; resumes SL_HDR_PRE at byte 20 (DQT)
+                SL_APP1: begin
+                    m_axis_tvalid <= 1'b1;
+                    /* verilator lint_off WIDTHTRUNC */
+                    m_axis_tdata  <= app1_rom[seg_idx[6:0]];
+                    /* verilator lint_on WIDTHTRUNC */
+                    if (seg_idx == APP1_SIZE[9:0] - 10'd1) begin
+                        state   <= SL_HDR_PRE;
+                        seg_idx <= 10'd20;
                     end else begin
                         seg_idx <= seg_idx + 10'd1;
                     end

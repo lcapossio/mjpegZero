@@ -49,6 +49,36 @@ module tb_iverilog;
     localparam TB_TEST_QUALITY = 95;
 `endif
 
+`ifdef EXIF_ENABLE
+    localparam TB_EXIF_ENABLE   = 1;
+`else
+    localparam TB_EXIF_ENABLE   = 0;
+`endif
+
+`ifdef EXIF_X_RES
+    localparam TB_EXIF_X_RES    = `EXIF_X_RES;
+`else
+    localparam TB_EXIF_X_RES    = 72;
+`endif
+
+`ifdef EXIF_Y_RES
+    localparam TB_EXIF_Y_RES    = `EXIF_Y_RES;
+`else
+    localparam TB_EXIF_Y_RES    = 72;
+`endif
+
+`ifdef EXIF_RES_UNIT
+    localparam TB_EXIF_RES_UNIT = `EXIF_RES_UNIT;
+`else
+    localparam TB_EXIF_RES_UNIT = 2;
+`endif
+
+`ifdef NUM_FRAMES
+    localparam TB_NUM_FRAMES = `NUM_FRAMES;
+`else
+    localparam TB_NUM_FRAMES = 1;
+`endif
+
     // ========================================================================
     // Signals
     // ========================================================================
@@ -93,10 +123,14 @@ module tb_iverilog;
     // DUT
     // ========================================================================
     mjpegzero_enc_top #(
-        .IMG_WIDTH    (IMG_WIDTH),
-        .IMG_HEIGHT   (IMG_HEIGHT),
-        .LITE_MODE    (TB_LITE_MODE),
-        .LITE_QUALITY (TB_LITE_QUALITY)
+        .IMG_WIDTH     (IMG_WIDTH),
+        .IMG_HEIGHT    (IMG_HEIGHT),
+        .LITE_MODE     (TB_LITE_MODE),
+        .LITE_QUALITY  (TB_LITE_QUALITY),
+        .EXIF_ENABLE   (TB_EXIF_ENABLE),
+        .EXIF_X_RES    (TB_EXIF_X_RES),
+        .EXIF_Y_RES    (TB_EXIF_Y_RES),
+        .EXIF_RES_UNIT (TB_EXIF_RES_UNIT)
     ) dut (
         .clk               (clk),
         .rst_n             (rst_n),
@@ -141,16 +175,18 @@ module tb_iverilog;
     // ========================================================================
     integer output_file;
     integer output_byte_cnt;
+    integer frames_completed;
     reg     saw_soi;
     reg     saw_eoi;
     reg [7:0] prev_byte;
 
     initial begin
-        output_file     = $fopen("sim_output.jpg", "wb");
-        output_byte_cnt = 0;
-        saw_soi         = 0;
-        saw_eoi         = 0;
-        prev_byte       = 0;
+        output_file      = $fopen("sim_output.jpg", "wb");
+        output_byte_cnt  = 0;
+        frames_completed = 0;
+        saw_soi          = 0;
+        saw_eoi          = 0;
+        prev_byte        = 0;
     end
 
     always @(posedge clk) begin
@@ -168,7 +204,16 @@ module tb_iverilog;
 
         if (m_axis_jpg_tlast && m_axis_jpg_tvalid) begin
             $fclose(output_file);
-            $display("[%0t] Frame complete: %0d bytes", $time, output_byte_cnt);
+            $display("[%0t] Frame %0d complete: %0d bytes", $time, frames_completed, output_byte_cnt);
+            frames_completed = frames_completed + 1;
+            // Re-open for next frame (resets to the same filename; last frame is what remains)
+            if (frames_completed < TB_NUM_FRAMES) begin
+                output_file     = $fopen("sim_output.jpg", "wb");
+                output_byte_cnt = 0;
+                saw_soi         = 0;
+                saw_eoi         = 0;
+                prev_byte       = 0;
+            end
         end
     end
 
@@ -205,10 +250,35 @@ module tb_iverilog;
     endtask
 
     // ========================================================================
+    // AXI-Lite read task
+    // ========================================================================
+    // Set signals at negedge to guarantee setup before the next posedge.
+    // The reg file responds with rvalid+rdata in 1 clock cycle, so:
+    //   negedge C  : set araddr/arvalid/rready
+    //   posedge C+1: DUT samples arvalid=1, rvalid=0 → rvalid<=1, rdata<=reg
+    //   posedge C+2: DUT samples rvalid=1, rready=1 → rvalid<=0; rdata stable
+    //   after C+2  : capture s_axi_rdata, deassert
+    task axi_read(input [4:0] addr, output reg [31:0] data);
+        begin
+            @(negedge clk);
+            s_axi_araddr  = addr;
+            s_axi_arvalid = 1;
+            s_axi_rready  = 1;
+
+            @(posedge clk);   // C+1: DUT captures address, sets rvalid+rdata
+            @(posedge clk);   // C+2: DUT clears rvalid; rdata is stable
+            data = s_axi_rdata;
+            s_axi_arvalid = 0;
+            s_axi_rready  = 0;
+        end
+    endtask
+
+    // ========================================================================
     // Stimulus and validation
     // ========================================================================
-    integer x, y, pixel_idx;
+    integer x, y, pixel_idx, frame_num;
     integer pass_cnt, fail_cnt;
+    reg [31:0] reg_val;
 
     initial begin
         $display("====================================");
@@ -242,29 +312,37 @@ module tb_iverilog;
 
         repeat(600) @(posedge clk); // Wait for Q-table update
 
-        $display("[%0t] Feeding %0d pixels...", $time, NUM_PIXELS);
-        pixel_idx = 0;
-        for (y = 0; y < IMG_HEIGHT; y = y + 1) begin
-            for (x = 0; x < IMG_WIDTH; x = x + 1) begin
-                @(negedge clk);
-                s_axis_vid_tvalid = 1;
-                s_axis_vid_tuser  = (x == 0 && y == 0) ? 1 : 0;
-                s_axis_vid_tlast  = (x == IMG_WIDTH - 1) ? 1 : 0;
-                s_axis_vid_tdata  = yuyv_data[pixel_idx];
-                pixel_idx = pixel_idx + 1;
-                while (!s_axis_vid_tready) @(negedge clk);
+        // Feed TB_NUM_FRAMES frames; wait for each JPEG output before next
+        for (frame_num = 0; frame_num < TB_NUM_FRAMES; frame_num = frame_num + 1) begin
+            $display("[%0t] Feeding frame %0d/%0d (%0d pixels)...",
+                     $time, frame_num, TB_NUM_FRAMES - 1, NUM_PIXELS);
+            pixel_idx = 0;
+            for (y = 0; y < IMG_HEIGHT; y = y + 1) begin
+                for (x = 0; x < IMG_WIDTH; x = x + 1) begin
+                    @(negedge clk);
+                    s_axis_vid_tvalid = 1;
+                    s_axis_vid_tuser  = (x == 0 && y == 0) ? 1 : 0;
+                    s_axis_vid_tlast  = (x == IMG_WIDTH - 1) ? 1 : 0;
+                    s_axis_vid_tdata  = yuyv_data[pixel_idx];
+                    pixel_idx = pixel_idx + 1;
+                    while (!s_axis_vid_tready) @(negedge clk);
+                end
+            end
+
+            // Hold valid/last until posedge; #1 keeps de-assert after active region
+            @(posedge clk); #1;
+            s_axis_vid_tvalid = 0;
+            s_axis_vid_tlast  = 0;
+            s_axis_vid_tuser  = 0;
+
+            // Wait for this frame's JPEG output before sending next frame
+            if (frame_num < TB_NUM_FRAMES - 1) begin
+                wait(frames_completed == frame_num + 1);
+                repeat(20) @(posedge clk);
             end
         end
 
-        // Hold valid/last until the next posedge so the DUT samples the last
-        // pixel, then de-assert.  #1 ensures de-assertion happens after the
-        // posedge active region regardless of process scheduling order.
-        @(posedge clk); #1;
-        s_axis_vid_tvalid = 0;
-        s_axis_vid_tlast  = 0;
-        s_axis_vid_tuser  = 0;
-
-        repeat(200000) @(posedge clk); // Wait for pipeline to flush
+        repeat(200000) @(posedge clk); // Wait for last frame pipeline to flush
 
         // ====================================================================
         // Validation
@@ -306,6 +384,83 @@ module tb_iverilog;
             $display("FAIL: No output produced");
             fail_cnt = fail_cnt + 1;
         end
+
+`ifdef VERIFY_AXI_REGS
+        // ====================================================================
+        // AXI Register Checks
+        // ====================================================================
+        $display("");
+        $display("====================================");
+        $display("AXI REGISTER CHECKS");
+        $display("====================================");
+
+        // QUALITY register readback
+        axi_read(5'h0C, reg_val);
+        if (TB_LITE_MODE == 0 && reg_val[6:0] == TB_TEST_QUALITY[6:0]) begin
+            $display("PASS: QUALITY reg = %0d", reg_val[6:0]);
+            pass_cnt = pass_cnt + 1;
+        end else if (TB_LITE_MODE == 1 && reg_val[6:0] == 7'd95) begin
+            $display("PASS: QUALITY reg = 95 (LITE_MODE; write ignored as expected)");
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: QUALITY reg = %0d (expected %0d)", reg_val[6:0],
+                     TB_LITE_MODE ? 7'd95 : TB_TEST_QUALITY[6:0]);
+            fail_cnt = fail_cnt + 1;
+        end
+
+        // FRAME_CNT register
+        axi_read(5'h08, reg_val);
+        if (reg_val == TB_NUM_FRAMES) begin
+            $display("PASS: FRAME_CNT = %0d", reg_val);
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: FRAME_CNT = %0d, expected %0d", reg_val, TB_NUM_FRAMES);
+            fail_cnt = fail_cnt + 1;
+        end
+
+        // FRAME_SIZE register — running scan-data byte count (resets only on hard reset)
+        axi_read(5'h14, reg_val);
+        if (reg_val > 100) begin
+            $display("PASS: FRAME_SIZE (scan bytes total) = %0d", reg_val);
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: FRAME_SIZE = %0d (expected >100)", reg_val);
+            fail_cnt = fail_cnt + 1;
+        end
+
+        // STATUS frame_done bit (W1C, should be set after encoding)
+        axi_read(5'h04, reg_val);
+        if (reg_val[1]) begin
+            $display("PASS: STATUS[1] frame_done is set");
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: STATUS[1] frame_done not set");
+            fail_cnt = fail_cnt + 1;
+        end
+
+        // Clear frame_done via W1C write, then verify cleared
+        axi_write(5'h04, 32'h2);
+        axi_read(5'h04, reg_val);
+        if (!reg_val[1]) begin
+            $display("PASS: STATUS[1] frame_done W1C clear works");
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: STATUS[1] frame_done not cleared after W1C");
+            fail_cnt = fail_cnt + 1;
+        end
+
+        // RESTART register write/readback
+        axi_write(5'h10, 32'h7);
+        axi_read(5'h10, reg_val);
+        if (reg_val[15:0] == 16'h7) begin
+            $display("PASS: RESTART reg write/readback = 7");
+            pass_cnt = pass_cnt + 1;
+        end else begin
+            $display("FAIL: RESTART reg = %0h, expected 7", reg_val[15:0]);
+            fail_cnt = fail_cnt + 1;
+        end
+        axi_write(5'h10, 32'h0);  // restore
+`endif
 
         $display("------------------------------------");
         $display("Tests passed: %0d", pass_cnt);
