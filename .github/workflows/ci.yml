@@ -211,6 +211,18 @@ jobs:
       - name: RTL simulation — RGB_INPUT=1 (lite mode, Q=95)
         run: python python/verify_rtl_sim.py --lite --rgb
 
+      - name: RTL simulation — random backpressure gaps (full mode)
+        run: python python/verify_rtl_sim.py --gaps
+
+      - name: RTL simulation — random backpressure gaps (lite mode)
+        run: python python/verify_rtl_sim.py --lite --gaps
+
+      - name: RTL simulation — minimum width 16x8 (full mode)
+        run: python python/verify_rtl_sim.py --min-width
+
+      - name: RTL simulation — minimum width 16x8 (lite mode)
+        run: python python/verify_rtl_sim.py --lite --min-width
+
       - name: EXIF metadata simulation (full mode, 72 DPI)
         run: python python/verify_exif.py
 

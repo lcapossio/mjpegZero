@@ -20,6 +20,8 @@ All notable changes to mjpegZero are documented here.
   protocol rules (ready-without-valid, rvalid-without-request, etc.).
 - **Coverage improvements** — flat-gray (DC/EOB), checkerboard (ZRL), and
   `EXIF_ENABLE=1` coverage scenarios in `run_coverage.py`.
+- **Corner-case tests** — random input backpressure gaps (`--gaps`), minimum
+  16×8 frame width (`--min-width`) in `verify_rtl_sim.py` and CI.
 - **RGB_INPUT=1 functional simulation** in CI (iverilog, full + lite).
 - **Full-mode EXIF test** in CI (previously only tested in lite mode).
 - **Vendor BRAM stub lint** — CI now lints all vendor BRAM wrappers.

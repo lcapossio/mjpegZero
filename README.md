@@ -234,6 +234,16 @@ python python/verify_rtl_sim.py --dump-vcd
 # Optionally simulate with the real Xilinx RAMB36E1 primitive (requires Vivado)
 python python/verify_rtl_sim.py --unisims auto
 
+# RGB_INPUT=1 functional test (24-bit RGB through built-in color converter)
+python python/verify_rtl_sim.py --rgb
+python python/verify_rtl_sim.py --lite --rgb
+
+# Random input backpressure gaps (tests input_buffer gap handling)
+python python/verify_rtl_sim.py --gaps
+
+# Minimum-width 16×8 frame (1 MCU — corner case for MCU column counter)
+python python/verify_rtl_sim.py --min-width
+
 # EXIF APP1 segment validation (full mode, 72 DPI default)
 python python/verify_exif.py
 python python/verify_exif.py --lite --x-res 96 --y-res 96 --res-unit 2

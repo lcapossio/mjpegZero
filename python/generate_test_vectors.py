@@ -265,6 +265,22 @@ def main():
     n = write_rgb_hex(crop_rgb, os.path.join(out_dir, 'rgb_input.hex'))
     print(f"Exported RGB input data ({n} words) for 64x8 crop (RGB_INPUT=1 path)")
 
+    # ========================================================================
+    # Minimum-width 16x8 crop (1 MCU) — corner case for MCU column counter
+    # ========================================================================
+    min_crop_rgb = img_rgb[0:8, 0:16, :]
+    min_words, _, _ = rgb_array_to_yuyv_words(min_crop_rgb)
+    write_yuyv_hex(min_words, os.path.join(out_dir, 'yuyv_16x8.hex'))
+    print(f"Exported 16x8 YUYV ({len(min_words)} words) for minimum-width corner case")
+
+    # Reference JPEG for the 16x8 crop
+    min_jpeg = encode_jpeg(min_crop_rgb, quality=quality,
+                           output_path=os.path.join(out_dir, 'reference_1mcu.jpg'))
+    with open(os.path.join(out_dir, 'reference_1mcu_bytes.hex'), 'w') as f:
+        for b in min_jpeg:
+            f.write(f"{b:02X}\n")
+    print(f"Exported reference JPEG for 1 MCU ({len(min_jpeg)} bytes)")
+
     print(f"\nAll test vectors written to: {out_dir}")
     print(f"Total MCUs: {mcu_count}")
 

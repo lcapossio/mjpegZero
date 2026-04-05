@@ -311,21 +311,22 @@ def _decode_coefficients(jpeg_bytes, num_mcus):
     return blocks
 
 
-def compare_jpegs(ref_path, rtl_path):
+def compare_jpegs(ref_path, rtl_path, num_mcus_override=None):
     """Compare RTL JPEG output vs Python reference. Returns (passed, max_dc, max_ac)."""
+    n_mcus = num_mcus_override if num_mcus_override else NUM_MCUS
     with open(ref_path, 'rb') as f:
         ref_bytes = f.read()
     with open(rtl_path, 'rb') as f:
         rtl_bytes = f.read()
 
     try:
-        ref_blocks = _decode_coefficients(ref_bytes, NUM_MCUS)
-        rtl_blocks = _decode_coefficients(rtl_bytes, NUM_MCUS)
+        ref_blocks = _decode_coefficients(ref_bytes, n_mcus)
+        rtl_blocks = _decode_coefficients(rtl_bytes, n_mcus)
     except Exception as e:
         print(f'    ERROR decoding coefficients: {e}')
         return False, 999, 999
 
-    expected = NUM_MCUS * 4
+    expected = n_mcus * 4
     if len(ref_blocks) != expected or len(rtl_blocks) != expected:
         print(f'    ERROR: expected {expected} blocks, got ref={len(ref_blocks)} rtl={len(rtl_blocks)}')
         return False, 999, 999
@@ -350,13 +351,18 @@ def compare_jpegs(ref_path, rtl_path):
 # Single test run: compile + simulate + compare
 # ---------------------------------------------------------------------------
 def run_one(iverilog, vvp, build_dir, lite_mode, quality,
-            dump_vcd=False, unisims_dir=None, rgb_input=False):
+            dump_vcd=False, unisims_dir=None, rgb_input=False,
+            random_gaps=False, img_width=64, num_mcus=None):
     """
     Compile + simulate + compare for one (mode, quality) combination.
     Returns True if PASS.
     """
-    rgb_sfx = '_rgb' if rgb_input else ''
-    tag = f'lite_q{quality}{rgb_sfx}' if lite_mode else f'full_q{quality}{rgb_sfx}'
+    suffixes = []
+    if rgb_input:    suffixes.append('rgb')
+    if random_gaps:  suffixes.append('gaps')
+    if img_width != 64: suffixes.append(f'w{img_width}')
+    sfx = ('_' + '_'.join(suffixes)) if suffixes else ''
+    tag = f'lite_q{quality}{sfx}' if lite_mode else f'full_q{quality}{sfx}'
     vvp_out    = os.path.join(build_dir, f'sim_{tag}.vvp')
     output_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
 
@@ -367,6 +373,12 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
         defines['LITE_QUALITY'] = quality
     if rgb_input:
         defines['RGB_INPUT'] = 1
+    if random_gaps:
+        defines['RANDOM_GAPS'] = 1
+    if img_width != 64:
+        defines['TB_IMG_WIDTH'] = img_width
+        tv_hex = f'yuyv_{img_width}x8.hex'
+        defines['TV_HEX_FILE'] = f'"test_vectors/{tv_hex}"'
     if dump_vcd:
         defines['DUMP_VCD'] = 1
         defines['VCD_FILE'] = f'"tb_iverilog_{tag}.vcd"'
@@ -412,12 +424,18 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
             print(f'    ERROR: RGB_INPUT JPEG decode failed: {e}')
             return False
 
-    ref = reference_path(quality)
+    # Determine reference file and MCU count for this configuration
+    effective_mcus = num_mcus if num_mcus else NUM_MCUS
+    if img_width == 16 and quality == 95:
+        ref = os.path.join(TV_DIR, 'reference_1mcu.jpg')
+    else:
+        ref = reference_path(quality)
+
     if not os.path.exists(ref):
         print(f'    ERROR: reference not found: {ref}')
         return False
 
-    passed, _, _ = compare_jpegs(ref, output_jpg)
+    passed, _, _ = compare_jpegs(ref, output_jpg, num_mcus_override=effective_mcus)
     return passed
 
 
@@ -430,6 +448,10 @@ def main():
                         help='Test LITE_MODE=1 (fixed Q-tables, no AXI quality register)')
     parser.add_argument('--rgb', action='store_true',
                         help='Test RGB_INPUT=1 (24-bit RGB path through rgb_to_ycbcr)')
+    parser.add_argument('--gaps', action='store_true',
+                        help='Enable RANDOM_GAPS (random input backpressure)')
+    parser.add_argument('--min-width', action='store_true',
+                        help='Test minimum 16x8 (1 MCU) frame')
     parser.add_argument('--dump-vcd', action='store_true',
                         help='Enable VCD dump (build/sim_iverilog/tb_iverilog_<tag>.vcd)')
     parser.add_argument('--unisims', metavar='DIR', default=None,
@@ -501,18 +523,37 @@ def main():
                 shutil.copy2(src, os.path.join(tv_dst, f))
 
     results = {}
-    test_quals = TEST_QUALITIES if not args.rgb else [95]  # RGB: single quality is sufficient
-    for q in test_quals:
-        rgb_sfx = ' RGB_INPUT=1' if args.rgb else ''
-        label = f'{"LITE" if args.lite else "FULL"} Q={q}{rgb_sfx}'
+
+    if args.min_width:
+        # Minimum-width 16x8 (1 MCU) — single quality is sufficient
+        q = 95
+        label = f'{"LITE" if args.lite else "FULL"} Q={q} 16x8'
         print(f'\n{"-" * 65}')
         print(f'  Test: {label}')
         print(f'{"-" * 65}')
         passed = run_one(iverilog, vvp, BUILD_DIR, args.lite, q,
                          dump_vcd=args.dump_vcd, unisims_dir=unisims_dir,
-                         rgb_input=args.rgb)
+                         img_width=16, num_mcus=1)
         results[label] = passed
         print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
+    else:
+        # Standard or special-mode tests
+        single_q = args.rgb or args.gaps  # single quality sufficient for structural tests
+        test_quals = [95] if single_q else TEST_QUALITIES
+        for q in test_quals:
+            extras = []
+            if args.rgb:  extras.append('RGB_INPUT=1')
+            if args.gaps: extras.append('RANDOM_GAPS')
+            extra_str = (' ' + ' '.join(extras)) if extras else ''
+            label = f'{"LITE" if args.lite else "FULL"} Q={q}{extra_str}'
+            print(f'\n{"-" * 65}')
+            print(f'  Test: {label}')
+            print(f'{"-" * 65}')
+            passed = run_one(iverilog, vvp, BUILD_DIR, args.lite, q,
+                             dump_vcd=args.dump_vcd, unisims_dir=unisims_dir,
+                             rgb_input=args.rgb, random_gaps=args.gaps)
+            results[label] = passed
+            print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
 
     # Summary
     print(f'\n{"=" * 65}')

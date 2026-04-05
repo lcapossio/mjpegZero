@@ -27,7 +27,11 @@ module tb_iverilog;
     // Parameters
     // ========================================================================
     localparam CLK_PERIOD = 10;   // 100 MHz
+`ifdef TB_IMG_WIDTH
+    localparam IMG_WIDTH  = `TB_IMG_WIDTH;
+`else
     localparam IMG_WIDTH  = 64;   // 4 MCUs wide
+`endif
     localparam IMG_HEIGHT = 8;    // 1 MCU row
     localparam NUM_PIXELS = IMG_WIDTH * IMG_HEIGHT;
 
@@ -85,6 +89,12 @@ module tb_iverilog;
 `else
     localparam TB_RGB_INPUT  = 0;
     localparam TB_VID_DATA_W = 16;
+`endif
+
+`ifdef RANDOM_GAPS
+    localparam TB_RANDOM_GAPS = 1;
+`else
+    localparam TB_RANDOM_GAPS = 0;
 `endif
 
     // ========================================================================
@@ -176,10 +186,14 @@ module tb_iverilog;
     reg [TB_VID_DATA_W-1:0] vid_data [0:NUM_PIXELS-1];
 
     initial begin
+`ifdef TV_HEX_FILE
+        $readmemh(`TV_HEX_FILE, vid_data);
+`else
         if (TB_RGB_INPUT)
             $readmemh("test_vectors/rgb_input.hex", vid_data);
         else
             $readmemh("test_vectors/yuyv_input.hex", vid_data);
+`endif
     end
 
     // ========================================================================
@@ -286,16 +300,29 @@ module tb_iverilog;
     endtask
 
     // ========================================================================
+    // Pseudo-random gap generator (16-bit LFSR, taps at 16,15,13,4)
+    // ========================================================================
+    reg [15:0] lfsr;
+    initial lfsr = 16'hACE1;
+    task lfsr_step;
+        begin
+            lfsr = {lfsr[14:0], lfsr[15] ^ lfsr[14] ^ lfsr[12] ^ lfsr[3]};
+        end
+    endtask
+
+    // ========================================================================
     // Stimulus and validation
     // ========================================================================
     integer x, y, pixel_idx, frame_num;
     integer pass_cnt, fail_cnt;
+    integer gap_cycles;
     reg [31:0] reg_val;
 
     initial begin
         $display("====================================");
         $display("mjpegZero CI Testbench");
-        $display("Image: %0d x %0d  LITE_MODE=%0d  RGB_INPUT=%0d", IMG_WIDTH, IMG_HEIGHT, TB_LITE_MODE, TB_RGB_INPUT);
+        $display("Image: %0d x %0d  LITE_MODE=%0d  RGB_INPUT=%0d  RANDOM_GAPS=%0d",
+                 IMG_WIDTH, IMG_HEIGHT, TB_LITE_MODE, TB_RGB_INPUT, TB_RANDOM_GAPS);
         $display("====================================");
 
         rst_n             = 0;
@@ -331,6 +358,17 @@ module tb_iverilog;
             pixel_idx = 0;
             for (y = 0; y < IMG_HEIGHT; y = y + 1) begin
                 for (x = 0; x < IMG_WIDTH; x = x + 1) begin
+                    // Random backpressure gap: ~10% of pixels get 1-3 idle cycles
+                    if (TB_RANDOM_GAPS) begin
+                        lfsr_step;
+                        if (lfsr[3:0] < 4'd2) begin  // ~12.5% probability
+                            gap_cycles = (lfsr[5:4] == 2'b00) ? 3 :
+                                         (lfsr[5:4] == 2'b01) ? 2 : 1;
+                            @(negedge clk);
+                            s_axis_vid_tvalid = 0;
+                            repeat(gap_cycles) @(negedge clk);
+                        end
+                    end
                     @(negedge clk);
                     s_axis_vid_tvalid = 1;
                     s_axis_vid_tuser  = (x == 0 && y == 0) ? 1 : 0;
