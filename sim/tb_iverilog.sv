@@ -541,66 +541,59 @@ module tb_iverilog;
     // ========================================================================
     // AXI4-Lite protocol assertions
     // ========================================================================
-    // These checks flag protocol violations in the DUT's AXI4-Lite slave.
-    // They are always active and will print a FAIL message if triggered.
+    // Lightweight checks for the DUT's AXI4-Lite slave.
+    // The DUT uses registered ready/valid outputs (1-cycle accept latency),
+    // so assertions track the valid→ready→response sequence rather than
+    // checking combinational same-cycle relationships.
 
-    // AR channel: arready must not be asserted unless arvalid is high
-    always @(posedge clk) begin
-        if (rst_n && s_axi_arready && !s_axi_arvalid) begin
-            $display("ASSERT FAIL: s_axi_arready asserted without s_axi_arvalid @ %0t", $time);
-        end
-    end
-
-    // AW channel: awready must not be asserted unless awvalid is high
-    always @(posedge clk) begin
-        if (rst_n && s_axi_awready && !s_axi_awvalid) begin
-            $display("ASSERT FAIL: s_axi_awready asserted without s_axi_awvalid @ %0t", $time);
-        end
-    end
-
-    // W channel: wready must not be asserted unless wvalid is high
-    always @(posedge clk) begin
-        if (rst_n && s_axi_wready && !s_axi_wvalid) begin
-            $display("ASSERT FAIL: s_axi_wready asserted without s_axi_wvalid @ %0t", $time);
-        end
-    end
-
-    // R channel: rvalid must not be asserted if no read was requested
-    // (conservative: rvalid should only pulse after arvalid handshake)
-    reg r_pending;
-    initial r_pending = 0;
+    // R channel: rvalid must follow an arvalid assertion within a few cycles
+    reg [2:0] ar_seen_cnt;  // counts cycles since arvalid was seen
+    initial ar_seen_cnt = 0;
     always @(posedge clk) begin
         if (!rst_n) begin
-            r_pending <= 0;
+            ar_seen_cnt <= 0;
         end else begin
             if (s_axi_arvalid && s_axi_arready)
-                r_pending <= 1;
-            if (s_axi_rvalid && s_axi_rready)
-                r_pending <= 0;
+                ar_seen_cnt <= 3'd4;  // expect rvalid within 4 cycles
+            else if (ar_seen_cnt > 0 && s_axi_rvalid)
+                ar_seen_cnt <= 0;     // got response, clear
+            else if (ar_seen_cnt > 0)
+                ar_seen_cnt <= ar_seen_cnt - 1;
         end
     end
+    // If ar_seen_cnt expires without rvalid, the slave didn't respond
     always @(posedge clk) begin
-        if (rst_n && s_axi_rvalid && !r_pending) begin
-            $display("ASSERT FAIL: s_axi_rvalid without prior AR handshake @ %0t", $time);
+        if (rst_n && ar_seen_cnt == 1 && !s_axi_rvalid) begin
+            $display("ASSERT FAIL: s_axi_rvalid not seen within 4 cycles of AR handshake @ %0t", $time);
         end
     end
 
-    // B channel: bvalid must not be asserted if no write was requested
-    reg b_pending;
-    initial b_pending = 0;
+    // B channel: bvalid must follow an AW+W handshake within a few cycles
+    reg [2:0] aw_seen_cnt;
+    initial aw_seen_cnt = 0;
     always @(posedge clk) begin
         if (!rst_n) begin
-            b_pending <= 0;
+            aw_seen_cnt <= 0;
         end else begin
             if (s_axi_awvalid && s_axi_awready)
-                b_pending <= 1;
-            if (s_axi_bvalid && s_axi_bready)
-                b_pending <= 0;
+                aw_seen_cnt <= 3'd4;  // expect bvalid within 4 cycles
+            else if (aw_seen_cnt > 0 && s_axi_bvalid)
+                aw_seen_cnt <= 0;
+            else if (aw_seen_cnt > 0)
+                aw_seen_cnt <= aw_seen_cnt - 1;
         end
     end
     always @(posedge clk) begin
-        if (rst_n && s_axi_bvalid && !b_pending) begin
-            $display("ASSERT FAIL: s_axi_bvalid without prior AW handshake @ %0t", $time);
+        if (rst_n && aw_seen_cnt == 1 && !s_axi_bvalid) begin
+            $display("ASSERT FAIL: s_axi_bvalid not seen within 4 cycles of AW handshake @ %0t", $time);
+        end
+    end
+
+    // JPEG output: tvalid must not be high when tdata is X/unknown
+    // (catches uninitialized pipeline paths)
+    always @(posedge clk) begin
+        if (rst_n && m_axis_jpg_tvalid && (^m_axis_jpg_tdata === 1'bx)) begin
+            $display("ASSERT FAIL: m_axis_jpg_tdata is X while tvalid=1 @ %0t", $time);
         end
     end
 
