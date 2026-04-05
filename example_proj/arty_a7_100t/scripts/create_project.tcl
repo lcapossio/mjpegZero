@@ -44,6 +44,7 @@ set rtl_files [list \
     $repo_root/rtl/bitstream_packer.v \
     $repo_root/rtl/jfif_writer.v \
     $repo_root/rtl/axi4_lite_regs.v \
+    $repo_root/rtl/rgb_to_ycbcr.v \
     $repo_root/rtl/mjpegzero_enc_top.v \
     $common_dir/rtl/clk_gen.v \
     $common_dir/rtl/axi_init.v \

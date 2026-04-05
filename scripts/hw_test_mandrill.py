@@ -132,12 +132,15 @@ def make_comparison(original, hw_decoded, sim_decoded, out_path, diff_scale=8):
         p, _, _ = psnr_y(original, sim_decoded)
         labels.append(f"RTL sim  PSNR={p:.2f} dB")
     if hw_decoded is not None and sim_decoded is not None:
-        diff = np.clip(
-            np.abs(hw_decoded.astype(np.int16) - sim_decoded.astype(np.int16)) * diff_scale,
-            0, 255).astype(np.uint8)
-        panels.append(diff)
-        p, _, mx = psnr_y(hw_decoded, sim_decoded)
-        labels.append(f"HW-Sim diff x{diff_scale}  PSNR={p:.2f}")
+        if hw_decoded.shape == sim_decoded.shape:
+            diff = np.clip(
+                np.abs(hw_decoded.astype(np.int16) - sim_decoded.astype(np.int16)) * diff_scale,
+                0, 255).astype(np.uint8)
+            panels.append(diff)
+            p, _, mx = psnr_y(hw_decoded, sim_decoded)
+            labels.append(f"HW-Sim diff x{diff_scale}  PSNR={p:.2f}")
+        else:
+            print(f"  WARNING: HW {hw_decoded.shape} vs Sim {sim_decoded.shape} — skipping diff panel")
 
     n = len(panels)
     total_w = n * w + (n-1) * gap
@@ -217,21 +220,28 @@ def main():
         print(f"  HW  vs Original:  Y-PSNR={p:.2f} dB  MSE={mse:.2f}  MaxErr={mx}  ({sz} bytes)")
 
     if sim_decoded is not None:
-        p, mse, mx = psnr_y(original, sim_decoded)
-        sz = os.path.getsize(sim_jpg)
-        print(f"  Sim vs Original:  Y-PSNR={p:.2f} dB  MSE={mse:.2f}  MaxErr={mx}  ({sz} bytes)")
+        if original.shape[:2] == sim_decoded.shape[:2]:
+            p, mse, mx = psnr_y(original, sim_decoded)
+            sz = os.path.getsize(sim_jpg)
+            print(f"  Sim vs Original:  Y-PSNR={p:.2f} dB  MSE={mse:.2f}  MaxErr={mx}  ({sz} bytes)")
+        else:
+            sz = os.path.getsize(sim_jpg)
+            print(f"  Sim vs Original:  SKIPPED (resolution mismatch: sim={sim_decoded.shape[1]}x{sim_decoded.shape[0]})  ({sz} bytes)")
 
     if hw_decoded is not None and sim_decoded is not None:
-        p, mse, mx = psnr_y(hw_decoded, sim_decoded)
-        print(f"  HW  vs Sim:       Y-PSNR={p:.2f} dB  MSE={mse:.2f}  MaxErr={mx}")
+        if hw_decoded.shape == sim_decoded.shape:
+            p, mse, mx = psnr_y(hw_decoded, sim_decoded)
+            print(f"  HW  vs Sim:       Y-PSNR={p:.2f} dB  MSE={mse:.2f}  MaxErr={mx}")
 
-        # Byte-level comparison of JPEG files
-        hw_bytes  = open(hw_jpg, 'rb').read()
-        sim_bytes = open(sim_jpg, 'rb').read()
-        if hw_bytes == sim_bytes:
-            print(f"  JPEG files: IDENTICAL ({len(hw_bytes)} bytes)")
+            # Byte-level comparison of JPEG files
+            hw_bytes  = open(hw_jpg, 'rb').read()
+            sim_bytes = open(sim_jpg, 'rb').read()
+            if hw_bytes == sim_bytes:
+                print(f"  JPEG files: IDENTICAL ({len(hw_bytes)} bytes)")
+            else:
+                print(f"  JPEG files: DIFFER (HW={len(hw_bytes)} bytes, Sim={len(sim_bytes)} bytes)")
         else:
-            print(f"  JPEG files: DIFFER (HW={len(hw_bytes)} bytes, Sim={len(sim_bytes)} bytes)")
+            print(f"  HW  vs Sim:       SKIPPED (resolution mismatch: HW={hw_decoded.shape[1]}x{hw_decoded.shape[0]}, Sim={sim_decoded.shape[1]}x{sim_decoded.shape[0]})")
 
     # 6. Comparison image
     print()
