@@ -151,6 +151,30 @@ jobs:
             rtl/rgb_to_ycbcr.v \
             rtl/mjpegzero_enc_top.v
 
+      - name: Lint top-level (LITE_MODE=0, RGB_INPUT=1)
+        run: |
+          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 -DRGB_INPUT=1 \
+            rtl/vendor/sim/bram_sdp.v \
+            rtl/dct_1d.v \
+            rtl/dct_2d.v \
+            rtl/input_buffer.v \
+            rtl/quantizer.v \
+            rtl/zigzag_reorder.v \
+            rtl/huffman_encoder.v \
+            rtl/bitstream_packer.v \
+            rtl/jfif_writer.v \
+            rtl/axi4_lite_regs.v \
+            rtl/rgb_to_ycbcr.v \
+            rtl/mjpegzero_enc_top.v
+
+      - name: Lint vendor BRAM stubs
+        run: |
+          set -e
+          for vendor in altera lattice microchip efinix gowin sim; do
+            echo "--- lint: rtl/vendor/$vendor/bram_sdp.v"
+            verilator --lint-only -Wall --bbox-unsup "rtl/vendor/$vendor/bram_sdp.v"
+          done
+
   # ---------------------------------------------------------------------------
   # RTL simulation — iverilog + golden coefficient comparison
   # ---------------------------------------------------------------------------
@@ -181,8 +205,17 @@ jobs:
       - name: RTL simulation + golden verification (lite mode, Q=50/75/95)
         run: python python/verify_rtl_sim.py --lite
 
+      - name: RTL simulation — RGB_INPUT=1 (full mode, Q=95)
+        run: python python/verify_rtl_sim.py --rgb
+
+      - name: RTL simulation — RGB_INPUT=1 (lite mode, Q=95)
+        run: python python/verify_rtl_sim.py --lite --rgb
+
       - name: EXIF metadata simulation (full mode, 72 DPI)
         run: python python/verify_exif.py
+
+      - name: EXIF metadata simulation (full mode, 96 DPI, custom res)
+        run: python python/verify_exif.py --x-res 96 --y-res 96 --res-unit 2
 
       - name: EXIF metadata simulation (lite mode, 96 DPI)
         run: python python/verify_exif.py --lite --x-res 96 --y-res 96 --res-unit 2

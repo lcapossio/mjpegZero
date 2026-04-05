@@ -277,7 +277,7 @@ def compare_files(ref_path, rtl_path, num_mcus=4):
                 rtl_blocks, _ = decode_jpeg_coefficients(rtl_bytes, (n + 3) // 4)
                 print(f"  (decoded {len(rtl_blocks)} blocks before error)")
                 break
-            except:
+            except Exception:
                 continue
 
     # Compare block by block

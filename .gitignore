@@ -41,8 +41,8 @@ sim/test_vectors/*.jpg
 # Claude settings
 .claude/
 
-# Board examples pending HW validation (local only)
-example_proj/arty_s7_50/
+# Board example build artifacts (source is tracked; build output is not)
+example_proj/*/build/
 
 # FuseSoC local config (machine-specific paths)
 fusesoc.conf

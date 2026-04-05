@@ -45,7 +45,8 @@ _CORE_RTL = [
     'vendor/sim/bram_sdp.v',
     'dct_1d.v', 'dct_2d.v', 'input_buffer.v', 'quantizer.v',
     'zigzag_reorder.v', 'huffman_encoder.v', 'bitstream_packer.v',
-    'jfif_writer.v', 'axi4_lite_regs.v', 'mjpegzero_enc_top.v',
+    'jfif_writer.v', 'axi4_lite_regs.v', 'rgb_to_ycbcr.v',
+    'mjpegzero_enc_top.v',
 ]
 
 APP0_SIZE   = 20   # SOI(2) + marker(2) + length(2) + "JFIF\0"(5) + rest

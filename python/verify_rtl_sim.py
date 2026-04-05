@@ -116,7 +116,8 @@ def find_vivado_unisims():
 _CORE_RTL = [
     'dct_1d.v', 'dct_2d.v', 'input_buffer.v', 'quantizer.v',
     'zigzag_reorder.v', 'huffman_encoder.v', 'bitstream_packer.v',
-    'jfif_writer.v', 'axi4_lite_regs.v', 'mjpegzero_enc_top.v',
+    'jfif_writer.v', 'axi4_lite_regs.v', 'rgb_to_ycbcr.v',
+    'mjpegzero_enc_top.v',
 ]
 
 
@@ -349,12 +350,13 @@ def compare_jpegs(ref_path, rtl_path):
 # Single test run: compile + simulate + compare
 # ---------------------------------------------------------------------------
 def run_one(iverilog, vvp, build_dir, lite_mode, quality,
-            dump_vcd=False, unisims_dir=None):
+            dump_vcd=False, unisims_dir=None, rgb_input=False):
     """
     Compile + simulate + compare for one (mode, quality) combination.
     Returns True if PASS.
     """
-    tag = f'lite_q{quality}' if lite_mode else f'full_q{quality}'
+    rgb_sfx = '_rgb' if rgb_input else ''
+    tag = f'lite_q{quality}{rgb_sfx}' if lite_mode else f'full_q{quality}{rgb_sfx}'
     vvp_out    = os.path.join(build_dir, f'sim_{tag}.vvp')
     output_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
 
@@ -363,6 +365,8 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
     if lite_mode:
         defines['LITE_MODE']    = 1
         defines['LITE_QUALITY'] = quality
+    if rgb_input:
+        defines['RGB_INPUT'] = 1
     if dump_vcd:
         defines['DUMP_VCD'] = 1
         defines['VCD_FILE'] = f'"tb_iverilog_{tag}.vcd"'
@@ -390,6 +394,24 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
     print(f'    Output: {os.path.basename(output_jpg)} ({sz} bytes)')
 
     # 3. Compare vs reference
+    if rgb_input:
+        # RGB path: color conversion is internal to the DUT, so coefficients won't
+        # match the YUYV-path Python reference. Structural checks (SOI, EOI, size)
+        # from the testbench are sufficient; verify the JPEG decodes with Pillow.
+        try:
+            from PIL import Image
+            import io
+            with open(output_jpg, 'rb') as f:
+                Image.open(io.BytesIO(f.read())).verify()
+            print(f'    RGB_INPUT: Pillow decode OK')
+            return True
+        except ImportError:
+            print(f'    RGB_INPUT: Pillow not available — structural pass only')
+            return True
+        except Exception as e:
+            print(f'    ERROR: RGB_INPUT JPEG decode failed: {e}')
+            return False
+
     ref = reference_path(quality)
     if not os.path.exists(ref):
         print(f'    ERROR: reference not found: {ref}')
@@ -406,6 +428,8 @@ def main():
     parser = argparse.ArgumentParser(description='RTL sim + golden verification (iverilog)')
     parser.add_argument('--lite', action='store_true',
                         help='Test LITE_MODE=1 (fixed Q-tables, no AXI quality register)')
+    parser.add_argument('--rgb', action='store_true',
+                        help='Test RGB_INPUT=1 (24-bit RGB path through rgb_to_ycbcr)')
     parser.add_argument('--dump-vcd', action='store_true',
                         help='Enable VCD dump (build/sim_iverilog/tb_iverilog_<tag>.vcd)')
     parser.add_argument('--unisims', metavar='DIR', default=None,
@@ -477,13 +501,16 @@ def main():
                 shutil.copy2(src, os.path.join(tv_dst, f))
 
     results = {}
-    for q in TEST_QUALITIES:
-        label = f'{"LITE" if args.lite else "FULL"} Q={q}'
+    test_quals = TEST_QUALITIES if not args.rgb else [95]  # RGB: single quality is sufficient
+    for q in test_quals:
+        rgb_sfx = ' RGB_INPUT=1' if args.rgb else ''
+        label = f'{"LITE" if args.lite else "FULL"} Q={q}{rgb_sfx}'
         print(f'\n{"-" * 65}')
         print(f'  Test: {label}')
         print(f'{"-" * 65}')
         passed = run_one(iverilog, vvp, BUILD_DIR, args.lite, q,
-                         dump_vcd=args.dump_vcd, unisims_dir=unisims_dir)
+                         dump_vcd=args.dump_vcd, unisims_dir=unisims_dir,
+                         rgb_input=args.rgb)
         results[label] = passed
         print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
 

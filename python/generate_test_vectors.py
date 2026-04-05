@@ -248,6 +248,23 @@ def main():
     write_yuyv_hex(checker_words, os.path.join(out_dir, 'yuyv_checker.hex'))
     print(f"Exported checkerboard YUYV ({len(checker_words)} words) for ZRL coverage")
 
+    # ========================================================================
+    # RGB 24-bit hex for RGB_INPUT=1 testbench path
+    # ========================================================================
+    # One 24-bit word per pixel: {R[23:16], G[15:8], B[7:0]}
+    def write_rgb_hex(rgb_array, out_path):
+        """Write RGB uint8 array as 24-bit hex file for $readmemh."""
+        h, w = rgb_array.shape[:2]
+        with open(out_path, 'w') as f:
+            for row in range(h):
+                for col in range(w):
+                    r, g, b = int(rgb_array[row, col, 0]), int(rgb_array[row, col, 1]), int(rgb_array[row, col, 2])
+                    f.write(f"{(r << 16) | (g << 8) | b:06X}\n")
+        return h * w
+
+    n = write_rgb_hex(crop_rgb, os.path.join(out_dir, 'rgb_input.hex'))
+    print(f"Exported RGB input data ({n} words) for 64x8 crop (RGB_INPUT=1 path)")
+
     print(f"\nAll test vectors written to: {out_dir}")
     print(f"Total MCUs: {mcu_count}")
 

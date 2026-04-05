@@ -30,18 +30,21 @@ A Python reference encoder is included for validation and test vector generation
 
 ## Interfaces
 
-### Video Input — AXI4-Stream Slave (16-bit)
+### Video Input — AXI4-Stream Slave
 
 | Signal               | Width | Direction | Description                        |
 |----------------------|-------|-----------|------------------------------------|
-| `s_axis_vid_tdata`   | 16    | In        | YUYV packed: `{Cb/Cr[15:8], Y[7:0]}` |
+| `s_axis_vid_tdata`   | 16/24 | In        | YUYV (16-bit) or RGB (24-bit, when `RGB_INPUT=1`) |
 | `s_axis_vid_tvalid`  | 1     | In        | Data valid                         |
 | `s_axis_vid_tready`  | 1     | Out       | Backpressure                       |
 | `s_axis_vid_tlast`   | 1     | In        | End of scanline                    |
 | `s_axis_vid_tuser`   | 1     | In        | Start of frame (first pixel)       |
 
-Even-indexed words carry `{Cb, Y}`, odd-indexed words carry `{Cr, Y}`.
-One word per pixel; width × height words per frame (e.g., 1920×1080 or 1280×720).
+**YUYV mode** (`RGB_INPUT=0`, default): 16-bit words. Even-indexed words carry
+`{Cb, Y}`, odd-indexed carry `{Cr, Y}`. One word per pixel.
+
+**RGB mode** (`RGB_INPUT=1`): 24-bit words `{R[23:16], G[15:8], B[7:0]}`. One
+word per pixel. An internal BT.601 color converter produces YUYV for the pipeline.
 
 ### JPEG Output — AXI4-Stream Master (8-bit)
 
@@ -184,6 +187,10 @@ for other vendors are provided as stubs under `rtl/vendor/` and are drop-in repl
 - AMD/Xilinx Vivado 2020.2+ (tested with 2025.2)
 - Python 3.8+ with NumPy, SciPy, Pillow (for reference encoder)
 - FFmpeg (for validation)
+
+```bash
+pip install -r python/requirements.txt
+```
 
 ### Verification
 

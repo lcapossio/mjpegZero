@@ -14,6 +14,7 @@ filesets:
       - rtl/bitstream_packer.v
       - rtl/jfif_writer.v
       - rtl/axi4_lite_regs.v
+      - rtl/rgb_to_ycbcr.v
       - rtl/mjpegzero_enc_top.v
     file_type: verilogSource
 
@@ -89,6 +90,36 @@ parameters:
     description: "Image height in pixels (must be a multiple of 8)"
     paramtype: vlogparam
 
+  EXIF_ENABLE:
+    datatype: int
+    default: 0
+    description: "1 = embed APP1/EXIF segment after APP0; 0 = no EXIF (default)"
+    paramtype: vlogparam
+
+  EXIF_X_RES:
+    datatype: int
+    default: 72
+    description: "EXIF XResolution numerator (DPI when EXIF_RES_UNIT=2)"
+    paramtype: vlogparam
+
+  EXIF_Y_RES:
+    datatype: int
+    default: 72
+    description: "EXIF YResolution numerator"
+    paramtype: vlogparam
+
+  EXIF_RES_UNIT:
+    datatype: int
+    default: 2
+    description: "EXIF ResolutionUnit: 1=no unit, 2=inch, 3=cm"
+    paramtype: vlogparam
+
+  RGB_INPUT:
+    datatype: int
+    default: 0
+    description: "1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV (default)"
+    paramtype: vlogparam
+
 targets:
   default:
     filesets:
@@ -99,6 +130,11 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - EXIF_X_RES
+      - EXIF_Y_RES
+      - EXIF_RES_UNIT
+      - RGB_INPUT
     toplevel: mjpegzero_enc_top
 
   # Note: simulation requires test vectors in sim/test_vectors/ relative to the
@@ -114,6 +150,11 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - EXIF_X_RES
+      - EXIF_Y_RES
+      - EXIF_RES_UNIT
+      - RGB_INPUT
     default_tool: icarus
     tools:
       icarus:
@@ -129,6 +170,11 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - EXIF_X_RES
+      - EXIF_Y_RES
+      - EXIF_RES_UNIT
+      - RGB_INPUT
     default_tool: icarus
     tools:
       icarus:
@@ -146,6 +192,8 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - RGB_INPUT
     default_tool: verilator
     tools:
       verilator:
@@ -165,6 +213,11 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - EXIF_X_RES
+      - EXIF_Y_RES
+      - EXIF_RES_UNIT
+      - RGB_INPUT
     default_tool: vivado
     tools:
       vivado:
@@ -180,6 +233,11 @@ targets:
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
+      - EXIF_ENABLE
+      - EXIF_X_RES
+      - EXIF_Y_RES
+      - EXIF_RES_UNIT
+      - RGB_INPUT
     default_tool: vivado
     tools:
       vivado:

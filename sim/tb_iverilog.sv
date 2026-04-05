@@ -79,13 +79,21 @@ module tb_iverilog;
     localparam TB_NUM_FRAMES = 1;
 `endif
 
+`ifdef RGB_INPUT
+    localparam TB_RGB_INPUT  = 1;
+    localparam TB_VID_DATA_W = 24;
+`else
+    localparam TB_RGB_INPUT  = 0;
+    localparam TB_VID_DATA_W = 16;
+`endif
+
     // ========================================================================
     // Signals
     // ========================================================================
     reg         clk;
     reg         rst_n;
 
-    reg  [15:0] s_axis_vid_tdata;
+    reg  [TB_VID_DATA_W-1:0] s_axis_vid_tdata;
     reg         s_axis_vid_tvalid;
     wire        s_axis_vid_tready;
     reg         s_axis_vid_tlast;
@@ -130,7 +138,8 @@ module tb_iverilog;
         .EXIF_ENABLE   (TB_EXIF_ENABLE),
         .EXIF_X_RES    (TB_EXIF_X_RES),
         .EXIF_Y_RES    (TB_EXIF_Y_RES),
-        .EXIF_RES_UNIT (TB_EXIF_RES_UNIT)
+        .EXIF_RES_UNIT (TB_EXIF_RES_UNIT),
+        .RGB_INPUT     (TB_RGB_INPUT)
     ) dut (
         .clk               (clk),
         .rst_n             (rst_n),
@@ -164,10 +173,13 @@ module tb_iverilog;
     // ========================================================================
     // Test vector storage
     // ========================================================================
-    reg [15:0] yuyv_data [0:NUM_PIXELS-1];
+    reg [TB_VID_DATA_W-1:0] vid_data [0:NUM_PIXELS-1];
 
     initial begin
-        $readmemh("test_vectors/yuyv_input.hex", yuyv_data);
+        if (TB_RGB_INPUT)
+            $readmemh("test_vectors/rgb_input.hex", vid_data);
+        else
+            $readmemh("test_vectors/yuyv_input.hex", vid_data);
     end
 
     // ========================================================================
@@ -283,7 +295,7 @@ module tb_iverilog;
     initial begin
         $display("====================================");
         $display("mjpegZero CI Testbench");
-        $display("Image: %0d x %0d  LITE_MODE=%0d", IMG_WIDTH, IMG_HEIGHT, TB_LITE_MODE);
+        $display("Image: %0d x %0d  LITE_MODE=%0d  RGB_INPUT=%0d", IMG_WIDTH, IMG_HEIGHT, TB_LITE_MODE, TB_RGB_INPUT);
         $display("====================================");
 
         rst_n             = 0;
@@ -323,7 +335,7 @@ module tb_iverilog;
                     s_axis_vid_tvalid = 1;
                     s_axis_vid_tuser  = (x == 0 && y == 0) ? 1 : 0;
                     s_axis_vid_tlast  = (x == IMG_WIDTH - 1) ? 1 : 0;
-                    s_axis_vid_tdata  = yuyv_data[pixel_idx];
+                    s_axis_vid_tdata  = vid_data[pixel_idx];
                     pixel_idx = pixel_idx + 1;
                     while (!s_axis_vid_tready) @(negedge clk);
                 end
@@ -486,6 +498,72 @@ module tb_iverilog;
         $display("WATCHDOG TIMEOUT");
         $display("Output bytes so far: %0d", output_byte_cnt);
         $finish;
+    end
+
+    // ========================================================================
+    // AXI4-Lite protocol assertions
+    // ========================================================================
+    // These checks flag protocol violations in the DUT's AXI4-Lite slave.
+    // They are always active and will print a FAIL message if triggered.
+
+    // AR channel: arready must not be asserted unless arvalid is high
+    always @(posedge clk) begin
+        if (rst_n && s_axi_arready && !s_axi_arvalid) begin
+            $display("ASSERT FAIL: s_axi_arready asserted without s_axi_arvalid @ %0t", $time);
+        end
+    end
+
+    // AW channel: awready must not be asserted unless awvalid is high
+    always @(posedge clk) begin
+        if (rst_n && s_axi_awready && !s_axi_awvalid) begin
+            $display("ASSERT FAIL: s_axi_awready asserted without s_axi_awvalid @ %0t", $time);
+        end
+    end
+
+    // W channel: wready must not be asserted unless wvalid is high
+    always @(posedge clk) begin
+        if (rst_n && s_axi_wready && !s_axi_wvalid) begin
+            $display("ASSERT FAIL: s_axi_wready asserted without s_axi_wvalid @ %0t", $time);
+        end
+    end
+
+    // R channel: rvalid must not be asserted if no read was requested
+    // (conservative: rvalid should only pulse after arvalid handshake)
+    reg r_pending;
+    initial r_pending = 0;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            r_pending <= 0;
+        end else begin
+            if (s_axi_arvalid && s_axi_arready)
+                r_pending <= 1;
+            if (s_axi_rvalid && s_axi_rready)
+                r_pending <= 0;
+        end
+    end
+    always @(posedge clk) begin
+        if (rst_n && s_axi_rvalid && !r_pending) begin
+            $display("ASSERT FAIL: s_axi_rvalid without prior AR handshake @ %0t", $time);
+        end
+    end
+
+    // B channel: bvalid must not be asserted if no write was requested
+    reg b_pending;
+    initial b_pending = 0;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            b_pending <= 0;
+        end else begin
+            if (s_axi_awvalid && s_axi_awready)
+                b_pending <= 1;
+            if (s_axi_bvalid && s_axi_bready)
+                b_pending <= 0;
+        end
+    end
+    always @(posedge clk) begin
+        if (rst_n && s_axi_bvalid && !b_pending) begin
+            $display("ASSERT FAIL: s_axi_bvalid without prior AW handshake @ %0t", $time);
+        end
     end
 
 `ifdef DUMP_VCD
