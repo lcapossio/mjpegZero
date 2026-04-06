@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-          pip install numpy scipy Pillow
+          pip install -r python/requirements.txt
 
       - name: Verify Huffman ROM tables
         run: python python/verify_huffman_rom.py
@@ -194,7 +194,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends iverilog ffmpeg
-          pip install numpy Pillow
+          pip install -r python/requirements.txt
 
       - name: Generate test image (download mandrill or synthetic fallback)
         run: python python/test_encoder.py
@@ -265,7 +265,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends verilator g++ make
-          pip install Pillow
+          pip install -r python/requirements.txt
 
       - name: Generate test vectors
         run: python python/test_encoder.py
@@ -303,7 +303,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends verilator g++ make lcov ffmpeg
-          pip install numpy Pillow
+          pip install -r python/requirements.txt
 
       - name: Generate test vectors
         run: python python/test_encoder.py
