@@ -261,7 +261,8 @@ def job_rtl_sim():
 def job_rtl_verilator_sim():
     return run_job(
         'rtl-verilator-sim',
-        prereqs_tools=['verilator', 'g++', 'make'],
+        # ffmpeg is needed by test_encoder.py (generate test vectors step)
+        prereqs_tools=['verilator', 'g++', 'make', 'ffmpeg'],
         prereqs_modules=['numpy', 'PIL'],
         steps=[
             ('generate test vectors',  py('python/test_encoder.py')),
@@ -285,20 +286,22 @@ def job_rtl_coverage():
 
 
 def job_fusesoc():
+    # Use --cores-root instead of `library add` to avoid mutating the user's
+    # global ~/.config/fusesoc/fusesoc.conf (which would store an absolute path
+    # that breaks across WSL/Windows/Linux boundaries).
     return run_job(
         'fusesoc',
         prereqs_tools=['fusesoc', 'verilator', 'make'],
         prereqs_modules=[],
         steps=[
-            ('register library',
-             ['fusesoc', 'library', 'add', 'mjpegzero', '.']),
             ('core-info',
-             ['fusesoc', 'core-info', 'bard0-design:mjpegzero:mjpegzero_enc']),
+             ['fusesoc', '--cores-root', '.', 'core-info',
+              'bard0-design:mjpegzero:mjpegzero_enc']),
             ('lint LITE_MODE=1 (default)',
-             ['fusesoc', 'run', '--target', 'lint',
+             ['fusesoc', '--cores-root', '.', 'run', '--target', 'lint',
               'bard0-design:mjpegzero:mjpegzero_enc']),
             ('lint LITE_MODE=0',
-             ['fusesoc', 'run', '--target', 'lint',
+             ['fusesoc', '--cores-root', '.', 'run', '--target', 'lint',
               'bard0-design:mjpegzero:mjpegzero_enc', '--LITE_MODE', '0']),
         ],
     )

@@ -386,10 +386,14 @@ int main(int argc, char **argv) {
     else           printf("SOME TESTS FAILED\n");
 
     // -----------------------------------------------------------------------
-    // Coverage output
+    // Coverage output (only when compiled with --coverage)
     // -----------------------------------------------------------------------
+#if VM_COVERAGE
     VerilatedCov::write(cov_path.c_str());
     printf("Coverage data written to %s\n", cov_path.c_str());
+#else
+    (void)cov_path;
+#endif
 
     dut->final();
     delete dut;

@@ -45,7 +45,6 @@ jobs:
         run: python python/test_encoder.py
 
       - name: Visual quality comparison (mandrill encode/decode, Q=50/75/95)
-        continue-on-error: true
         run: |
           python python/mandrill_compare.py --quality 50 --out mandrill_compare_Q50.png
           python python/mandrill_compare.py --quality 75 --out mandrill_compare_Q75.png
@@ -264,7 +263,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends verilator g++ make
+          sudo apt-get install -y --no-install-recommends verilator g++ make ffmpeg
           pip install -r python/requirements.txt
 
       - name: Generate test vectors
