@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
+# Copyright (c) 2026 Leonardo Capossio — bard0 design
+#
 # mjpegZero — Python dependencies for reference encoder and verification
 #
 # Install:  pip install -r python/requirements.txt
