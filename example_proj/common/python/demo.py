@@ -4,11 +4,11 @@
 # Copyright (c) 2026 Leonardo Capossio — bard0 design
 #
 """
-demo.py — mjpegZero board host program (fpgacapZero JTAG-to-AXI, 720p)
+demo.py — mjpegZero board host program (fpgacapZero, 720p)
 Supports: Arty S7-50, Arty A7-100T (any board using demo_top + fcapz_ejtagaxi)
 
 Converts images/video to 1280×720 YUYV, transfers them to the FPGA over the
-fpgacapZero JTAG-to-AXI bridge on USER4 (same USB cable used for programming),
+fpgacapZero EJTAG-AXI bridge on USER4 (same USB cable used for programming),
 and retrieves the compressed JPEG output.
 
 Drives the FPGA directly from Python via the fcapz host library — no Vivado
@@ -145,7 +145,7 @@ def _default_jpeg_max_for_target(fpga_name: str | None, bitfile: str | None) -> 
 
 
 class FcapzHW:
-    """Drive demo_top over the fpgacapZero JTAG-to-AXI bridge.
+    """Drive demo_top over the fpgacapZero EJTAG-AXI bridge.
 
     Holds a persistent hw_server/xsdb session through XilinxHwServerTransport
     and layers EjtagAxiController on top for AXI reads/writes.
@@ -403,7 +403,7 @@ def _default_fpga_for_bitfile(bitfile: str | None) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="mjpegZero demo host (fpgacapZero JTAG-to-AXI, 720p)")
+        description="mjpegZero demo host (fpgacapZero, 720p)")
     parser.add_argument('--bit', metavar='FILE',
                         help='Bitstream to program before encoding')
     parser.add_argument('--program', action='store_true',

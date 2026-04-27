@@ -2,7 +2,7 @@
 // Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
 // Copyright (c) 2026 Leonardo Capossio — bard0 design
 //
-// demo_top_bare.v — demo_top without clk_gen and jtag_axi_0
+// demo_top_bare.v — demo_top without clk_gen and the fcapz bridge
 // Exposes AXI4 master ports directly so a testbench can drive them.
 // Parameterized for simulation at small image sizes.
 // Verilog 2001
@@ -18,7 +18,7 @@ module demo_top_bare #(
     input  wire        clk,
     input  wire        rst_n,
 
-    // AXI4 master (driven by testbench — replaces jtag_axi_0)
+    // AXI4 master (driven by testbench — replaces the fcapz bridge)
     input  wire [31:0] m_awaddr,
     input  wire [7:0]  m_awlen,
     input  wire [2:0]  m_awsize,

@@ -3,13 +3,15 @@
 **Device:** XC7A100TCSG324-1 (Artix-7)
 **Resolution:** 1280 × 720 (720p)  **Mode:** LITE_MODE=1, LITE_QUALITY=75
 **Clock:** 150 MHz (100 MHz oscillator → MMCME2_ADV ×9 ÷ 6)
-**Host interface:** Xilinx JTAG-to-AXI Master IP (same USB cable as programming)
+**Host interface:** [fpgacapZero](../../fcapz/README.md) bridge on USER4 + ELA on USER1/USER2 (same USB cable as programming)
 
 ---
 
 ## Prerequisites
 
 - Vivado 2025.x (free WebPACK edition is sufficient)
+- `hw_server` + `xsdb` on PATH (bundled with Vivado; needed for fcapz host)
+- `fcapz/` submodule initialised: `git submodule update --init`
 - Python ≥ 3.8 with `pip install Pillow numpy tqdm`
 - Digilent Arty A7-100T board connected via USB
 
@@ -64,8 +66,9 @@ python example_proj/common/python/demo.py \
 |---------|------|--------|-------------|
 | `0x0000_0000–0x01BF_FFFF` | PIXEL_PORT | W | YUYV pixel data (burst) |
 | `0x0200_0000` | DEMO_CTRL | W | `[0]`=start, `[1]`=reset |
-| `0x0200_0000` | DEMO_STATUS | R | `[0]`=enc_done (same address as CTRL) |
-| `0x0200_0004` | JPEG_SIZE | R | `[17:0]`=byte count |
+| `0x0200_0000` | DEMO_STATUS | R | `[0]`=enc_done, `[1]`=overflow, `[2]`=axi_error, `[3]`=running, `[4]`=armed |
+| `0x0200_0004` | JPEG_SIZE | R | `[18:0]`=byte count |
+| `0x0200_0008` | JPEG_CAPACITY | R | JPEG buffer capacity in bytes |
 | `0x0300_0000–0x0301_FFFF` | JPEG_PORT | R | Compressed JPEG (burst) |
 
 ---
@@ -86,7 +89,8 @@ WNS = **+0.291 ns** at 150 MHz (timing met).
 ## Hardware Verification (Mandrill 1280x720, Q75)
 
 ```bash
-python scripts/hw_test_mandrill.py
+python scripts/hw_test_mandrill.py \
+    --bit example_proj/arty_a7_100t/build/arty_a7_demo.bit --program
 ```
 
 | Comparison       | Y-PSNR   | JPEG size  | Compression |

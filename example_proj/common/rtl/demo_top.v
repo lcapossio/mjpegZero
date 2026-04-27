@@ -2,13 +2,13 @@
 // Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
 // Copyright (c) 2026 Leonardo Capossio — bard0 design
 //
-// demo_top.v — mjpegZero board demo, JTAG-to-AXI + 720p streaming
+// demo_top.v — mjpegZero board demo, fcapz + 720p streaming
 // Shared across Arty S7-50 and Arty A7-100T (board differences in XDC only)
 //
-// Host communicates via the fpgacapZero JTAG-to-AXI bridge on BSCANE2 USER4
+// Host communicates via the fpgacapZero EJTAG-AXI bridge on BSCANE2 USER4
 // (same USB cable as programming). No UART required. An fpgacapZero ELA on
 // USER1/USER2 captures 32 curated encoder/AXI signals for hardware debug.
-// Pixel data streams directly from JTAG-AXI to the encoder; an on-chip JPEG
+// Pixel data streams directly from fcapz to the encoder; an on-chip JPEG
 // buffer holds the compressed output.
 //
 // AXI4 address map (32-bit, byte-addressed):
@@ -152,7 +152,7 @@ module demo_top #(
     );
 
     // -----------------------------------------------------------------------
-    // fpgacapZero JTAG-to-AXI bridge on USER4 (active-high reset: !rst_n)
+    // fpgacapZero EJTAG-AXI bridge on USER4 (active-high reset: !rst_n)
     // -----------------------------------------------------------------------
     wire [31:0] m_awaddr;  wire [7:0] m_awlen;  wire [2:0] m_awsize;
     wire [1:0]  m_awburst; wire [2:0] m_awprot; wire m_awvalid;

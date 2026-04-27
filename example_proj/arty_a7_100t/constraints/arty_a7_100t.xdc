@@ -2,7 +2,7 @@
 # Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
 # Copyright (c) 2026 Leonardo Capossio — bard0 design
 #
-# Arty A7-100T constraints for mjpegZero demo (JTAG-to-AXI, 720p)
+# Arty A7-100T constraints for mjpegZero demo (fcapz, 720p)
 # Device: XC7A100TCSG324-1
 # Reference: Digilent Arty A7 master XDC
 

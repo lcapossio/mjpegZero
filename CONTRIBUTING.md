@@ -38,7 +38,6 @@ example_proj/<board_name>/
     create_project.tcl  Vivado/Quartus/nextpnr build script
   python/
     demo.py             Host program (UART / JTAG-AXI / PCIe / etc.)
-    host.tcl            (if using JTAG-to-AXI)
   README.md             Board-specific build + run instructions
 ```
 

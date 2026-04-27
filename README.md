@@ -132,14 +132,15 @@ HW and RTL simulation outputs are byte-exact (PSNR = ∞ dB, Y-PSNR 49.56 dB vs 
 
 ### Arty A7-100T Example Project (XC7A100T, post place-and-route, 150 MHz)
 
-The example project includes the encoder core, a JTAG-to-AXI master (for host control),
-and a 65,536-word JPEG output buffer. Resources are split accordingly:
+The example project includes the encoder core, an fcapz EJTAG-AXI debug bridge
+for host control, and a 65,536-word JPEG output buffer. Resources are split
+accordingly:
 
 | Component             | LUTs  | FFs   | BRAM36 | DSP48 |
 |-----------------------|-------|-------|--------|-------|
 | Encoder core (Lite)   | ~3,100| ~4,500|  11    |  17   |
 | JPEG output buffer    | —     | —     |  64    |  —    |
-| JTAG-to-AXI IP        | ~300  | ~200  |   2    |  —    |
+| fcapz debug bridge    | ~300  | ~200  |   2    |  —    |
 | **Demo total**        | **3,413** | **4,720** | **77** | **21** |
 
 **WNS = +0.275 ns — timing closed at 150 MHz.**
@@ -372,8 +373,7 @@ Reports are written to `build/impl/`.
 | `python/gen_huffman_rom.py` | Regenerate the Huffman ROM `initial` block in `rtl/huffman_encoder.v` from the standard BITS/VALS arrays. |
 | `python/gen_lite_tables.py` | Regenerate the LITE_QUALITY quantisation table `initial` blocks in `rtl/quantizer.v`. |
 | `python/yuyv_convert.py` | Shared RGB-to-YUYV conversion for RTL simulation and hardware tests. |
-| `scripts/hw_test_mandrill.py` | End-to-end hardware verification: converts mandrill 720p, runs RTL sim + HW encode, compares outputs. |
-| `scripts/hw_test_a7.tcl` | Vivado batch script to program A7-100T and encode a YUYV file via JTAG-to-AXI. |
+| `scripts/hw_test_mandrill.py` | End-to-end hardware verification through fcapz: converts mandrill 720p, runs RTL sim + HW encode, compares outputs. |
 
 ## Integration Example
 
