@@ -11,14 +11,15 @@
 // Protocol mirroring demo_top AXI map:
 //   0x0000_0000  PIXEL PORT (write bursts)   32-bit word = {Cr,Y1}[31:16] | {Cb,Y0}[15:0]
 //   0x0200_0000  CTRL write: [1]=RESET [0]=START
-//   0x0200_0000  STATUS read: [0]=enc_done
-//   0x0200_0004  JPEG_SIZE read: [17:0]=byte count
+//   0x0200_0000  STATUS read: [0]=enc_done [1]=overflow [2]=axi_error [3]=running [4]=armed
+//   0x0200_0004  JPEG_SIZE read: [18:0]=byte count
+//   0x0200_0008  JPEG_CAPACITY read: output buffer capacity in bytes
 //   0x0300_0000  JPEG PORT (read bursts)
 //
 // Simulation flow:
-//   1. Assert RESET
-//   2. Upload 320x176 pixels as 28160 AXI words (max burst=256 words = 1024 B)
-//   3. Write START
+//   1. Assert RESET and verify capacity/error status paths
+//   2. Write START and verify the armed state
+//   3. Upload 320x176 pixels as 28160 AXI words (max burst=256 words = 1024 B)
 //   4. Poll STATUS until enc_done=1
 //   5. Read JPEG_SIZE
 //   6. Burst-read JPEG bytes
@@ -42,7 +43,15 @@ module tb_demo_top;
     localparam AXI_PIXEL_BASE = 32'h0000_0000;
     localparam AXI_CTRL_ADDR  = 32'h0200_0000;
     localparam AXI_SIZE_ADDR  = 32'h0200_0004;
+    localparam AXI_CAP_ADDR   = 32'h0200_0008;
     localparam AXI_JPEG_BASE  = 32'h0300_0000;
+    localparam JPEG_CAP_BYTES = JPEG_WORDS_P * 4;
+
+    localparam STATUS_DONE     = 0;
+    localparam STATUS_OVERFLOW = 1;
+    localparam STATUS_AXI_ERR  = 2;
+    localparam STATUS_RUNNING  = 3;
+    localparam STATUS_ARMED    = 4;
 
     // Max burst length (AXI4: len=N means N+1 transfers)
     localparam BURST_LEN = 8'd255;        // 256 words per burst
@@ -148,6 +157,20 @@ module tb_demo_top;
     task axi_write_word;
         input [31:0] addr;
         input [31:0] data;
+        reg [1:0] resp;
+        begin
+            axi_write_word_resp(addr, data, resp);
+            if (resp != 2'b00) begin
+                $display("[TB] ERROR: write to %08h returned BRESP=%0d", addr, resp);
+                $finish;
+            end
+        end
+    endtask
+
+    task axi_write_word_resp;
+        input  [31:0] addr;
+        input  [31:0] data;
+        output [1:0]  resp;
         begin
             // AW channel
             @(posedge clk);
@@ -177,6 +200,7 @@ module tb_demo_top;
             // so m_bvalid never goes high in the output register.
             @(posedge clk);
             while (!m_bvalid) @(posedge clk);
+            resp = m_bresp;
             m_bready <= 1'b1;
             @(posedge clk);
             m_bready <= 1'b0;
@@ -229,6 +253,20 @@ module tb_demo_top;
     task axi_read_word;
         input  [31:0] addr;
         output [31:0] data;
+        reg [1:0] resp;
+        begin
+            axi_read_word_resp(addr, data, resp);
+            if (resp != 2'b00) begin
+                $display("[TB] ERROR: read from %08h returned RRESP=%0d", addr, resp);
+                $finish;
+            end
+        end
+    endtask
+
+    task axi_read_word_resp;
+        input  [31:0] addr;
+        output [31:0] data;
+        output [1:0]  resp;
         begin
             @(posedge clk);
             m_araddr  <= addr;
@@ -245,6 +283,7 @@ module tb_demo_top;
             @(posedge clk);
             while (!m_rvalid) @(posedge clk);
             data = m_rdata;
+            resp = m_rresp;
             m_rready <= 1'b0;
             @(posedge clk);
         end
@@ -343,6 +382,7 @@ module tb_demo_top;
     integer   addr_offset;
     integer   total_words_to_read, words_read, read_len;
     reg [31:0] rdata;
+    reg [1:0]  axi_resp;
     integer   fd;
     integer   clk_count;
 
@@ -370,6 +410,33 @@ module tb_demo_top;
         axi_write_word(AXI_CTRL_ADDR, 32'h0000_0002);  // RESET demo state
         wait_clk(5);
 
+        axi_read_word(AXI_CAP_ADDR, rdata);
+        if (rdata != JPEG_CAP_BYTES[31:0]) begin
+            $display("[TB] ERROR: JPEG_CAPACITY got %0d expected %0d",
+                     rdata, JPEG_CAP_BYTES);
+            $finish;
+        end
+        $display("[TB] JPEG capacity = %0d bytes", rdata);
+
+        axi_write_word_resp(AXI_JPEG_BASE, 32'h1234_5678, axi_resp);
+        if (axi_resp != 2'b10) begin
+            $display("[TB] ERROR: invalid JPEG write BRESP=%0d expected SLVERR", axi_resp);
+            $finish;
+        end
+        axi_read_word(AXI_CTRL_ADDR, rdata);
+        if (!rdata[STATUS_AXI_ERR]) begin
+            $display("[TB] ERROR: axi_error did not latch after invalid write");
+            $finish;
+        end
+        axi_write_word(AXI_CTRL_ADDR, 32'h0000_0002);  // RESET clears axi_error
+        wait_clk(5);
+        axi_read_word(AXI_CTRL_ADDR, rdata);
+        if (rdata[STATUS_AXI_ERR] || rdata[STATUS_DONE] ||
+            rdata[STATUS_RUNNING] || rdata[STATUS_ARMED]) begin
+            $display("[TB] ERROR: unexpected status after reset: %08h", rdata);
+            $finish;
+        end
+
         // ----------------------------------------------------------------
         // Step 1: generate test image (color bars)
         // ----------------------------------------------------------------
@@ -384,6 +451,12 @@ module tb_demo_top;
         $display("[TB] Step 2: START (before pixel upload)");
         axi_write_word(AXI_CTRL_ADDR, 32'h0000_0001);  // START
         wait_clk(5);
+        axi_read_word(AXI_CTRL_ADDR, rdata);
+        if (!rdata[STATUS_ARMED] || rdata[STATUS_RUNNING] ||
+            rdata[STATUS_DONE] || rdata[STATUS_OVERFLOW] || rdata[STATUS_AXI_ERR]) begin
+            $display("[TB] ERROR: unexpected armed status after START: %08h", rdata);
+            $finish;
+        end
 
         // ----------------------------------------------------------------
         // Step 3: upload pixels via AXI burst writes
@@ -420,6 +493,10 @@ module tb_demo_top;
         while (rdata[0] == 1'b0) begin
             wait_clk(500);
             axi_read_word(AXI_CTRL_ADDR, rdata);
+            if (rdata[STATUS_OVERFLOW] || rdata[STATUS_AXI_ERR]) begin
+                $display("[TB] ERROR: unexpected status while encoding: %08h", rdata);
+                $finish;
+            end
             clk_count = clk_count + 500;
             if (clk_count > POLL_TIMEOUT) begin
                 $display("[TB] TIMEOUT waiting for enc_done!");
@@ -427,12 +504,16 @@ module tb_demo_top;
             end
         end
         $display("[TB] enc_done asserted after ~%0d clocks", clk_count);
+        if (rdata != 32'h0000_0001) begin
+            $display("[TB] ERROR: final status expected done-only, got %08h", rdata);
+            $finish;
+        end
 
         // ----------------------------------------------------------------
         // Step 5: read JPEG_SIZE
         // ----------------------------------------------------------------
         axi_read_word(AXI_SIZE_ADDR, rdata);
-        jpeg_byte_count = rdata[17:0];
+        jpeg_byte_count = rdata[18:0];
         $display("[TB] JPEG size = %0d bytes", jpeg_byte_count);
 
         if (jpeg_byte_count == 0) begin

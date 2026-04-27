@@ -153,6 +153,7 @@ module demo_top_bare #(
     reg        aw_to_pixel;
     reg        aw_to_ctrl;
     reg        axi_error;
+    reg        axi_rd_error_pulse;
 
     assign m_wready = (aw_state == AW_DATA) &&
                       ((aw_to_pixel && !pix_full) ||
@@ -260,6 +261,9 @@ module demo_top_bare #(
         end else begin
             m_awready  <= 1'b0;
             axi_wr_act <= 1'b0;
+
+            if (axi_rd_error_pulse)
+                axi_error <= 1'b1;
 
             // AXI4 Write slave
             case (aw_state)
@@ -426,8 +430,10 @@ module demo_top_bare #(
             ar_widx   <= 17'd0;
             ar_bad    <= 1'b0;
             ar_to_jpeg <= 1'b0;
+            axi_rd_error_pulse <= 1'b0;
         end else begin
             m_arready <= 1'b0;
+            axi_rd_error_pulse <= 1'b0;
             case (ar_state)
                 AR_IDLE: begin
                     m_rvalid <= 1'b0;
@@ -452,7 +458,7 @@ module demo_top_bare #(
                 AR_DATA: begin
                     if (ar_bad) begin
                         m_rdata <= 32'd0;
-                        axi_error <= 1'b1;
+                        axi_rd_error_pulse <= 1'b1;
                     end else if (ar_to_jpeg) begin
                         m_rdata <= jpeg_rd_data;
                     end else begin
