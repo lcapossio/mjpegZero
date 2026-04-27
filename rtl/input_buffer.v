@@ -50,6 +50,17 @@ module input_buffer #(
     output wire        lines_done
 );
 
+    initial begin
+        if (IMG_WIDTH <= 0) begin
+            $display("ERROR: IMG_WIDTH must be positive");
+            $finish;
+        end
+        if ((IMG_WIDTH % 16) != 0) begin
+            $display("ERROR: IMG_WIDTH must be a multiple of 16");
+            $finish;
+        end
+    end
+
     // ========================================================================
     // Derived parameters
     // ========================================================================

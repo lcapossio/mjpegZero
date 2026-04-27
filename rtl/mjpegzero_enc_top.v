@@ -71,6 +71,29 @@ module mjpegzero_enc_top #(
     input  wire        s_axi_rready
 );
 
+    initial begin
+        if (IMG_WIDTH <= 0 || IMG_HEIGHT <= 0) begin
+            $display("ERROR: IMG_WIDTH and IMG_HEIGHT must be positive");
+            $finish;
+        end
+        if ((IMG_WIDTH % 16) != 0) begin
+            $display("ERROR: IMG_WIDTH must be a multiple of 16 for 4:2:2 MCUs");
+            $finish;
+        end
+        if ((IMG_HEIGHT % 8) != 0) begin
+            $display("ERROR: IMG_HEIGHT must be a multiple of 8");
+            $finish;
+        end
+        if (LITE_QUALITY < 1 || LITE_QUALITY > 100) begin
+            $display("ERROR: LITE_QUALITY must be in the range 1..100");
+            $finish;
+        end
+        if (EXIF_RES_UNIT < 1 || EXIF_RES_UNIT > 3) begin
+            $display("ERROR: EXIF_RES_UNIT must be 1, 2, or 3");
+            $finish;
+        end
+    end
+
     // ========================================================================
     // Control/Status
     // ========================================================================

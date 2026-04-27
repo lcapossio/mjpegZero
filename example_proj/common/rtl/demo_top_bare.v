@@ -62,10 +62,21 @@ module demo_top_bare #(
     // Derived parameters
     // -----------------------------------------------------------------------
     localparam FRAME_PXLS = IMG_W * IMG_H;
+    localparam JPEG_BYTES = JPEG_WORDS * 4;
+    localparam PIX_PREFILL = 32;
     localparam AXI_JPEG_BASE = 32'h0300_0000;
     localparam AXI_CTRL_BASE = 32'h0200_0000;
 
-    // JPEG_WORDS_LOG2: for ar_widx bounds — just use 16 bits wide (safe up to 65536)
+    initial begin
+        if (JPEG_WORDS < 1) begin
+            $display("ERROR: JPEG_WORDS must be at least 1");
+            $finish;
+        end
+        if (JPEG_WORDS > 65536) begin
+            $display("ERROR: JPEG_WORDS must be <= 65536 for the demo address counters");
+            $finish;
+        end
+    end
 
     // -----------------------------------------------------------------------
     // JPEG BRAM — 32-bit wide
@@ -138,10 +149,14 @@ module demo_top_bare #(
     reg [1:0]  aw_state;
     reg [31:0] aw_addr;
     reg        axi_wr_act;
+    reg        aw_bad;
+    reg        aw_to_pixel;
+    reg        aw_to_ctrl;
+    reg        axi_error;
 
     assign m_wready = (aw_state == AW_DATA) &&
-                      ((!aw_addr[25] && !pix_full) ||
-                       ( aw_addr[25] && !aw_addr[24]));
+                      ((aw_to_pixel && !pix_full) ||
+                       aw_to_ctrl || aw_bad);
 
     wire aw_hs = m_wvalid && m_wready;
 
@@ -149,12 +164,17 @@ module demo_top_bare #(
     // JPEG capture state
     // -----------------------------------------------------------------------
     reg        enc_running;
+    reg        start_armed;
     reg        enc_done;
-    reg [17:0] jpeg_byte_cnt;
+    reg [18:0] jpeg_byte_cnt;
     reg [1:0]  jp_phase;
     reg [23:0] jp_accum;
-    reg [15:0] jp_wptr;
+    reg [16:0] jp_wptr;
     reg        flush_pend;
+    reg        jpeg_overflow;
+
+    wire jpeg_word_room = (jp_wptr < JPEG_WORDS[16:0]);
+    wire jpeg_byte_room = (jpeg_byte_cnt < JPEG_BYTES[18:0]);
 
     // -----------------------------------------------------------------------
     // Pixel pump state
@@ -167,7 +187,7 @@ module demo_top_bare #(
     // -----------------------------------------------------------------------
     // Push/pop enables
     // -----------------------------------------------------------------------
-    wire do_push = aw_hs && !aw_addr[25];
+    wire do_push = aw_hs && aw_to_pixel;
     wire do_pop  = enc_running && !pix_empty &&
                    (pix_sent < FRAME_PXLS[19:0]) && !enc_tvalid && pix_sub;
 
@@ -182,16 +202,18 @@ module demo_top_bare #(
     // JPEG BRAM write
     // -----------------------------------------------------------------------
     always @(posedge clk)
-        if (jpg_tvalid && enc_running && jp_phase == 2'd3)
+        if (jpg_tvalid && enc_running && jp_phase == 2'd3 && jpeg_word_room)
             jpeg_mem[jp_wptr] <= {jpg_tdata, jp_accum};
-        else if (flush_pend)
+        else if (flush_pend && jpeg_word_room)
             jpeg_mem[jp_wptr] <= {8'd0, jp_accum};
 
     // -----------------------------------------------------------------------
     // ar_widx — declared here (before the BRAM read always block that uses it)
     // Updated by the AXI4 read slave below.
     // -----------------------------------------------------------------------
-    reg [15:0] ar_widx;
+    reg [16:0] ar_widx;
+    reg        ar_bad;
+    reg        ar_to_jpeg;
 
     // -----------------------------------------------------------------------
     // JPEG BRAM read (1-cycle latency)
@@ -211,16 +233,22 @@ module demo_top_bare #(
             m_bresp       <= 2'b00;
             aw_addr       <= 32'd0;
             axi_wr_act    <= 1'b0;
+            aw_bad        <= 1'b0;
+            aw_to_pixel   <= 1'b0;
+            aw_to_ctrl    <= 1'b0;
+            axi_error     <= 1'b0;
             pix_wr_ptr    <= 6'd0;
             pix_rd_ptr    <= 6'd0;
             pix_count     <= 7'd0;
             enc_running   <= 1'b0;
+            start_armed   <= 1'b0;
             enc_done      <= 1'b0;
-            jpeg_byte_cnt <= 18'd0;
+            jpeg_byte_cnt <= 19'd0;
             jp_phase      <= 2'd0;
             jp_accum      <= 24'd0;
-            jp_wptr       <= 16'd0;
+            jp_wptr       <= 17'd0;
             flush_pend    <= 1'b0;
+            jpeg_overflow <= 1'b0;
             enc_tvalid    <= 1'b0;
             enc_tlast     <= 1'b0;
             enc_tuser     <= 1'b0;
@@ -239,19 +267,30 @@ module demo_top_bare #(
                     if (m_awvalid) begin
                         m_awready <= 1'b1;
                         aw_addr   <= m_awaddr;
+                        aw_to_pixel <= !m_awaddr[25];
+                        aw_to_ctrl  <=  m_awaddr[25] && !m_awaddr[24];
+                        aw_bad      <= (m_awsize != 3'b010) ||
+                                       (m_awburst != 2'b01) ||
+                                       (m_awaddr[1:0] != 2'b00) ||
+                                       (m_awaddr[25] && m_awaddr[24]);
                         aw_state  <= AW_DATA;
                     end
                 end
                 AW_DATA: begin
                     if (aw_hs) begin
                         axi_wr_act <= 1'b1;
-                        if (!aw_addr[25])
+                        if (aw_bad)
+                            axi_error <= 1'b1;
+                        if (aw_to_pixel)
                             pix_wr_ptr <= pix_wr_ptr + 6'd1;
-                        if (aw_addr[25] && !aw_addr[24]) begin
+                        if (aw_to_ctrl) begin
                             if (aw_addr[3:2] == 2'b00) begin // DEMO_CTRL
                                 if (m_wdata[1]) begin  // RESET
                                     enc_running   <= 1'b0;
+                                    start_armed   <= 1'b0;
                                     enc_done      <= 1'b0;
+                                    axi_error     <= 1'b0;
+                                    jpeg_overflow <= 1'b0;
                                     pix_wr_ptr    <= 6'd0;
                                     pix_rd_ptr    <= 6'd0;
                                     pix_count     <= 7'd0;
@@ -260,22 +299,26 @@ module demo_top_bare #(
                                     pix_sub       <= 1'b0;
                                     enc_tvalid    <= 1'b0;
                                     jp_phase      <= 2'd0;
-                                    jp_wptr       <= 16'd0;
-                                    jpeg_byte_cnt <= 18'd0;
+                                    jp_wptr       <= 17'd0;
+                                    jpeg_byte_cnt <= 19'd0;
                                     flush_pend    <= 1'b0;
                                 end
                                 if (m_wdata[0]) begin  // START
-                                    enc_running   <= 1'b1;
+                                    enc_running   <= 1'b0;
+                                    start_armed   <= 1'b1;
                                     enc_done      <= 1'b0;
+                                    jpeg_overflow <= 1'b0;
                                     pix_col       <= 11'd0;
                                     pix_sent      <= 20'd0;
                                     pix_sub       <= 1'b0;
                                     enc_tvalid    <= 1'b0;
                                     jp_phase      <= 2'd0;
-                                    jp_wptr       <= 16'd0;
-                                    jpeg_byte_cnt <= 18'd0;
+                                    jp_wptr       <= 17'd0;
+                                    jpeg_byte_cnt <= 19'd0;
                                     flush_pend    <= 1'b0;
                                 end
+                            end else begin
+                                axi_error <= 1'b1;
                             end
                         end
                         aw_addr <= aw_addr + 32'd4;
@@ -284,7 +327,7 @@ module demo_top_bare #(
                 end
                 AW_RESP: begin
                     m_bvalid <= 1'b1;
-                    m_bresp  <= 2'b00;
+                    m_bresp  <= aw_bad ? 2'b10 : 2'b00;
                     if (m_bready) begin
                         m_bvalid <= 1'b0;
                         aw_state <= AW_IDLE;
@@ -299,21 +342,35 @@ module demo_top_bare #(
             else if (!do_push && do_pop)
                 pix_count <= pix_count - 7'd1;
 
+            if (start_armed && !enc_running && (pix_count >= PIX_PREFILL[6:0])) begin
+                enc_running <= 1'b1;
+                start_armed <= 1'b0;
+            end
+
             // JPEG capture
             flush_pend <= 1'b0;
             if (jpg_tvalid && enc_running) begin
-                jpeg_byte_cnt <= jpeg_byte_cnt + 18'd1;
-                case (jp_phase)
-                    2'd0: jp_accum[7:0]   <= jpg_tdata;
-                    2'd1: jp_accum[15:8]  <= jpg_tdata;
-                    2'd2: jp_accum[23:16] <= jpg_tdata;
-                    2'd3: jp_wptr <= jp_wptr + 16'd1;
-                endcase
-                jp_phase <= jp_phase + 2'd1;
+                if (jpeg_byte_room) begin
+                    jpeg_byte_cnt <= jpeg_byte_cnt + 19'd1;
+                    case (jp_phase)
+                        2'd0: jp_accum[7:0]   <= jpg_tdata;
+                        2'd1: jp_accum[15:8]  <= jpg_tdata;
+                        2'd2: jp_accum[23:16] <= jpg_tdata;
+                        2'd3: begin
+                            if (jpeg_word_room)
+                                jp_wptr <= jp_wptr + 17'd1;
+                        end
+                    endcase
+                    jp_phase <= jp_phase + 2'd1;
+                end else begin
+                    jpeg_overflow <= 1'b1;
+                end
                 if (jpg_tlast) begin
                     enc_running <= 1'b0;
+                    start_armed <= 1'b0;
                     enc_done    <= 1'b1;
-                    if (jp_phase != 2'd3) flush_pend <= 1'b1;
+                    if (jp_phase != 2'd3 && jpeg_word_room && !jpeg_overflow)
+                        flush_pend <= 1'b1;
                 end
             end
 
@@ -366,7 +423,9 @@ module demo_top_bare #(
             m_rdata   <= 32'd0;
             ar_addr   <= 32'd0;
             ar_rem    <= 8'd0;
-            ar_widx   <= 16'd0;
+            ar_widx   <= 17'd0;
+            ar_bad    <= 1'b0;
+            ar_to_jpeg <= 1'b0;
         end else begin
             m_arready <= 1'b0;
             case (ar_state)
@@ -377,6 +436,13 @@ module demo_top_bare #(
                         ar_addr   <= m_araddr;
                         ar_rem    <= m_arlen;
                         ar_widx   <= (m_araddr - AXI_JPEG_BASE) >> 2;
+                        ar_to_jpeg <= m_araddr[25] && m_araddr[24];
+                        ar_bad    <= (m_arsize != 3'b010) ||
+                                     (m_arburst != 2'b01) ||
+                                     (m_araddr[1:0] != 2'b00) ||
+                                     (!m_araddr[25]) ||
+                                     ((m_araddr[25] && m_araddr[24]) &&
+                                      ((((m_araddr - AXI_JPEG_BASE) >> 2) + {24'd0, m_arlen}) >= JPEG_WORDS[31:0]));
                         ar_state  <= AR_PRE;
                     end
                 end
@@ -384,18 +450,22 @@ module demo_top_bare #(
                     ar_state <= AR_DATA;
                 end
                 AR_DATA: begin
-                    if (ar_addr[25] && ar_addr[24]) begin
+                    if (ar_bad) begin
+                        m_rdata <= 32'd0;
+                        axi_error <= 1'b1;
+                    end else if (ar_to_jpeg) begin
                         m_rdata <= jpeg_rd_data;
                     end else begin
                         case (ar_addr[3:2])
-                            2'd0: m_rdata <= {31'd0, enc_done};
-                            2'd1: m_rdata <= {14'd0, jpeg_byte_cnt};
+                            2'd0: m_rdata <= {27'd0, start_armed, enc_running, axi_error, jpeg_overflow, enc_done};
+                            2'd1: m_rdata <= {13'd0, jpeg_byte_cnt};
+                            2'd2: m_rdata <= JPEG_BYTES[31:0];
                             default: m_rdata <= 32'd0;
                         endcase
                     end
                     m_rvalid <= 1'b1;
                     m_rlast  <= (ar_rem == 8'd0);
-                    m_rresp  <= 2'b00;
+                    m_rresp  <= ar_bad ? 2'b10 : 2'b00;
                     if (m_rvalid && m_rready) begin
                         if (ar_rem == 8'd0) begin
                             m_rvalid <= 1'b0;
@@ -403,7 +473,7 @@ module demo_top_bare #(
                             ar_state <= AR_IDLE;
                         end else begin
                             ar_addr  <= ar_addr + 32'd4;
-                            ar_widx  <= ar_widx + 16'd1;
+                            ar_widx  <= ar_widx + 17'd1;
                             ar_rem   <= ar_rem - 8'd1;
                             m_rvalid <= 1'b0;
                             ar_state <= AR_PRE;
@@ -429,7 +499,7 @@ module demo_top_bare #(
     end
 
     assign led0 = hb_toggle;
-    assign led1 = enc_running;
+    assign led1 = start_armed || enc_running;
     assign led2 = enc_done;
     assign led3 = axi_wr_act;
 
