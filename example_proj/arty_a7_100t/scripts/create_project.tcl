@@ -33,6 +33,8 @@ file delete -force $proj_dir
 # ============================================================================
 # Source files
 # ============================================================================
+set fcapz_rtl [file normalize $repo_root/fcapz/rtl]
+
 set rtl_files [list \
     $repo_root/rtl/vendor/amd/bram_sdp.v \
     $repo_root/rtl/dct_1d.v \
@@ -49,6 +51,18 @@ set rtl_files [list \
     $common_dir/rtl/clk_gen.v \
     $common_dir/rtl/axi_init.v \
     $common_dir/rtl/demo_top.v \
+    $fcapz_rtl/dpram.v \
+    $fcapz_rtl/reset_sync.v \
+    $fcapz_rtl/trig_compare.v \
+    $fcapz_rtl/fcapz_async_fifo.v \
+    $fcapz_rtl/jtag_reg_iface.v \
+    $fcapz_rtl/fcapz_regbus_mux.v \
+    $fcapz_rtl/jtag_burst_read.v \
+    $fcapz_rtl/fcapz_ela.v \
+    $fcapz_rtl/fcapz_ejtagaxi.v \
+    $fcapz_rtl/jtag_tap/jtag_tap_xilinx7.v \
+    $fcapz_rtl/fcapz_ela_xilinx7.v \
+    $fcapz_rtl/fcapz_ejtagaxi_xilinx7.v \
 ]
 
 set xdc_file [file normalize $ex_dir/constraints/arty_a7_100t.xdc]
@@ -63,19 +77,12 @@ add_files -fileset constrs_1 -norecurse $xdc_file
 
 set_property top $top [current_fileset]
 
+# fcapz_ela.v uses `include "fcapz_version.vh" — add fcapz/rtl to include path
+set_property include_dirs [list $fcapz_rtl] [get_filesets sources_1]
+
 # Top-level generics
 set_property generic {LITE_MODE=1 LITE_QUALITY=75 IMG_WIDTH=1280 IMG_HEIGHT=720 JPEG_WORDS=65536} \
     [get_filesets sources_1]
-
-# ============================================================================
-# JTAG-to-AXI Master IP
-# ============================================================================
-puts "Generating JTAG-to-AXI Master IP..."
-create_ip -name jtag_axi -vendor xilinx.com -library ip \
-    -module_name jtag_axi_0
-set_property -dict [list CONFIG.PROTOCOL {0}] [get_ips jtag_axi_0]
-generate_target all [get_ips jtag_axi_0]
-puts "JTAG-to-AXI IP generated."
 
 # ============================================================================
 # Synthesis
