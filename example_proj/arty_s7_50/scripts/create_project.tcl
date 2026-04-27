@@ -76,8 +76,8 @@ add_files -fileset constrs_1 -norecurse $xdc_file
 
 set_property top $top [current_fileset]
 
-# fcapz_ela.v uses `include "fcapz_version.vh" — add fcapz/rtl to include path
-set_property include_dirs [list $fcapz_rtl] [get_filesets sources_1]
+# fcapz_ela.v includes fcapz_version.vh from the same RTL directory.
+# Vivado resolves quoted includes relative to the source file location.
 
 # Top-level generics (project mode: set on sources fileset)
 set_property generic {LITE_MODE=1 LITE_QUALITY=75 IMG_WIDTH=1280 IMG_HEIGHT=720 JPEG_WORDS=16384} \

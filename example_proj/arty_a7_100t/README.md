@@ -73,16 +73,19 @@ python example_proj/common/python/demo.py \
 
 ---
 
-## Resource Utilisation (post-route)
+## Resource Utilisation
 
-| Resource | Used | Available | % |
-|----------|------|-----------|---|
-| LUT | 3 459 | 63 400 | 5.5% |
-| FF | 4 639 | 126 800 | 3.7% |
-| BRAM36 | 29 | 135 | 21.5% |
-| DSP | 21 | 240 | 8.75% |
+Latest post-route fcapz demo build at 150 MHz:
 
-WNS = **+0.291 ns** at 150 MHz (timing met).
+| Resource | Used  | Available | Utilization |
+|----------|-------|-----------|-------------|
+| LUT      | 6,500 | 63,400    | 10.25%      |
+| FF       | 7,344 | 126,800   | 5.79%       |
+| BRAM36   | 80    | 135       | 59.26%      |
+| DSP48E1  | 21    | 240       | 8.75%       |
+
+WNS = +0.099 ns at 150 MHz. The worst setup path is currently inside the
+fcapz ELA probe pipeline.
 
 ---
 

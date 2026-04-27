@@ -130,21 +130,23 @@ HW and RTL simulation outputs are byte-exact (PSNR = ∞ dB, Y-PSNR 49.56 dB vs 
 
 ## Resource Usage
 
-### Arty A7-100T Example Project (XC7A100T, post place-and-route, 150 MHz)
+### Arty A7-100T Example Project (XC7A100T, post-route fcapz demo, 150 MHz)
 
 The example project includes the encoder core, an fcapz EJTAG-AXI debug bridge
-for host control, and a 65,536-word JPEG output buffer. Resources are split
-accordingly:
+for host control, an fcapz ELA capture block, and a 65,536-word JPEG output
+buffer.
 
-| Component             | LUTs  | FFs   | BRAM36 | DSP48 |
-|-----------------------|-------|-------|--------|-------|
-| Encoder core (Lite)   | ~3,100| ~4,500|  11    |  17   |
-| JPEG output buffer    | —     | —     |  64    |  —    |
-| fcapz debug bridge    | ~300  | ~200  |   2    |  —    |
-| **Demo total**        | **3,413** | **4,720** | **77** | **21** |
+| Metric | Post-route |
+|--------|------------|
+| LUTs   | 6,500      |
+| FFs    | 7,344      |
+| BRAM36 | 80         |
+| DSP48  | 21         |
+| WNS    | +0.099 ns  |
 
-**WNS = +0.275 ns — timing closed at 150 MHz.**
-Utilization: 5.4% LUTs, 3.7% FFs, 57% BRAM36 (driven by the 64-BRAM output FIFO; encoder itself uses 11).
+The latest A7 build closes timing at 150 MHz. The worst setup path is inside
+the fcapz ELA probe pipeline, so this remains the path to watch if probe width
+or sample depth changes.
 
 ### Encoder Core Only (7-Series -1, post place-and-route, 150 MHz)
 
