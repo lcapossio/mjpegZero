@@ -8,11 +8,11 @@ hw_test_mandrill.py — End-to-end hardware verification with mandrill 720p
 
 1. Convert mandrill_720p.png → mandrill_720p.yuyv (binary)
 2. Run RTL sim:  python scripts/run_sim.py lite 720p quality=75
-3. Run HW encode: vivado -mode batch -source scripts/hw_test_a7.tcl
+3. Run HW encode through the fcapz host stack
 4. Compare: HW JPEG vs RTL sim JPEG vs original PNG
 
 Usage:
-    python scripts/hw_test_mandrill.py [--skip-sim] [--skip-hw]
+    python scripts/hw_test_mandrill.py [--skip-sim] [--skip-hw] [--bit build/arty_a7_demo.bit]
 """
 
 import os, sys, subprocess, argparse
@@ -23,35 +23,10 @@ REPO = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 
 # Import shared YUYV conversion (guarantees bit-exact input for sim and HW)
 sys.path.insert(0, os.path.join(REPO, 'python'))
-from yuyv_convert import png_to_yuyv, write_yuyv_binary, write_yuyv_hex
+sys.path.insert(0, os.path.join(REPO, 'example_proj', 'common', 'python'))
+from yuyv_convert import png_to_yuyv
+from demo import FcapzHW, _default_fpga_for_bitfile
 PYTHON = sys.executable
-
-
-def find_vivado():
-    """Search PATH then common install roots (Windows + Linux)."""
-    import shutil
-    exe = shutil.which('vivado') or shutil.which('vivado.bat')
-    if exe:
-        return exe
-    if sys.platform == 'win32':
-        drives = [os.environ.get('SystemDrive', 'C:') + os.sep, 'D:' + os.sep]
-        roots = [os.path.join(d, p) for d in drives
-                 for p in ('AMDDesignTools', 'Xilinx', os.path.join('Program Files', 'Xilinx'))]
-        bin_name = 'vivado.bat'
-    else:
-        roots = ['/tools/Xilinx', '/opt/Xilinx', '/opt/AMD', '/tools/AMD']
-        bin_name = 'vivado'
-    for root in roots:
-        if not os.path.isdir(root):
-            continue
-        for ver in sorted(os.listdir(root), reverse=True):
-            cand = os.path.join(root, ver, 'Vivado', 'bin', bin_name)
-            if os.path.isfile(cand):
-                return cand
-    return None
-
-
-VIVADO = find_vivado()
 
 
 def run_rtl_sim():
@@ -75,28 +50,25 @@ def run_rtl_sim():
         return None
 
 
-def run_hw_encode(yuyv_path, jpg_path):
-    """Program A7-100T and encode via JTAG-AXI."""
+def run_hw_encode(yuyv_path, jpg_path, args):
+    """Encode on hardware through the fcapz bridge."""
     print("\n" + "="*70)
-    print("HARDWARE ENCODE: A7-100T")
+    print("HARDWARE ENCODE: fcapz")
     print("="*70)
-    if not VIVADO:
-        print("  ERROR: Vivado not found")
-        return None
-    cmd = [VIVADO, '-mode', 'batch', '-notrace', '-nojournal', '-nolog',
-           '-source', os.path.join(REPO, 'scripts', 'hw_test_a7.tcl'),
-           '-tclargs', yuyv_path, jpg_path]
-    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=600)
-    lines = (r.stdout + r.stderr).strip().split('\n')
-    for line in lines[-15:]:
-        print(f"  {line}")
+    fpga = args.fpga or _default_fpga_for_bitfile(args.bit)
+    with FcapzHW(fpga_name=fpga, bitfile=args.bit,
+                 host=args.hw_host, port=args.hw_port,
+                 jpeg_max_bytes=args.jpeg_max_bytes) as hw:
+        if args.program:
+            hw.program()
+        nbytes = hw.encode_yuyv_file(yuyv_path, jpg_path)
+        print(f"  HW JPEG: {jpg_path} ({nbytes} bytes)")
+
     if os.path.isfile(jpg_path):
-        sz = os.path.getsize(jpg_path)
-        print(f"  HW JPEG: {jpg_path} ({sz} bytes)")
         return jpg_path
-    else:
-        print("  WARNING: HW JPEG not found")
-        return None
+
+    print("  WARNING: HW JPEG not found")
+    return None
 
 
 def psnr_y(img_a, img_b):
@@ -168,7 +140,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--skip-sim', action='store_true', help='Skip RTL simulation')
     ap.add_argument('--skip-hw', action='store_true', help='Skip hardware encode')
+    ap.add_argument('--bit', metavar='FILE', help='Bitstream to program when --program is set')
+    ap.add_argument('--program', action='store_true', help='Program --bit before hardware encode')
+    ap.add_argument('--fpga', default=None, help='FPGA name for hw_server (e.g. xc7a100t, xc7s50)')
+    ap.add_argument('--hw-host', default='127.0.0.1', help='hw_server host (default: 127.0.0.1)')
+    ap.add_argument('--hw-port', type=int, default=3121, help='hw_server port (default: 3121)')
+    ap.add_argument('--jpeg-max-bytes', type=int, default=None,
+                    help='Override JPEG output buffer capacity for old bitstreams')
     args = ap.parse_args()
+
+    if args.program and not args.bit:
+        ap.error('--program requires --bit')
 
     png_path  = os.path.join(REPO, 'python', 'test_images', 'mandrill_720p.png')
     yuyv_path = os.path.join(REPO, 'mandrill_720p.yuyv')
@@ -202,7 +184,7 @@ def main():
     # 4. HW encode
     hw_decoded = None
     if not args.skip_hw:
-        hw_result = run_hw_encode(yuyv_path, hw_jpg)
+        hw_result = run_hw_encode(yuyv_path, hw_jpg, args)
         if hw_result and os.path.isfile(hw_result):
             hw_decoded = np.array(Image.open(hw_result).convert('RGB'))
     elif os.path.isfile(hw_jpg):

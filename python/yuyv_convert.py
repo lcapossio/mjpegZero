@@ -51,7 +51,7 @@ def rgb_array_to_yuyv_words(img_rgb):
 def write_yuyv_binary(words, out_path):
     """Write YUYV words as little-endian 16-bit binary file.
 
-    This is the format read by host.tcl / hw_test_a7.tcl for hardware encode.
+    This is the .yuyv format consumed by example_proj/common/python/demo.py.
     Each 16-bit word is stored as 2 bytes: byte0=Y ([7:0]), byte1=C ([15:8]).
     """
     data = bytearray(len(words) * 2)
