@@ -57,6 +57,7 @@ set rtl_files [list \
     $fcapz_rtl/fcapz_async_fifo.v \
     $fcapz_rtl/jtag_reg_iface.v \
     $fcapz_rtl/fcapz_regbus_mux.v \
+    $fcapz_rtl/jtag_pipe_iface.v \
     $fcapz_rtl/jtag_burst_read.v \
     $fcapz_rtl/fcapz_ela.v \
     $fcapz_rtl/fcapz_ejtagaxi.v \
