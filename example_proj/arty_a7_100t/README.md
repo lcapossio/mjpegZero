@@ -79,13 +79,14 @@ Latest post-route fcapz demo build at 150 MHz:
 
 | Resource | Used  | Available | Utilization |
 |----------|-------|-----------|-------------|
-| LUT      | 6,500 | 63,400    | 10.25%      |
-| FF       | 7,344 | 126,800   | 5.79%       |
-| BRAM36   | 80    | 135       | 59.26%      |
+| LUT      | 5,587 | 63,400    | 8.81%       |
+| FF       | 6,275 | 126,800   | 4.95%       |
+| BRAM     | 78.5 tiles | 135 | 58.15%      |
 | DSP48E1  | 21    | 240       | 8.75%       |
 
-WNS = +0.099 ns at 150 MHz. The worst setup path is currently inside the
-fcapz ELA probe pipeline.
+WNS = +0.108 ns at 150 MHz. This build uses vanilla fcapz `da892ca` with a
+minimized 16-bit, 512-sample ELA (`INPUT_PIPE=1`, no timestamps, no decimation)
+plus the EJTAG-AXI bridge used by the hardware test.
 
 ---
 

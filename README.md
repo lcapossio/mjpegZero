@@ -138,15 +138,15 @@ buffer.
 
 | Metric | Post-route |
 |--------|------------|
-| LUTs   | 6,500      |
-| FFs    | 7,344      |
-| BRAM36 | 80         |
+| LUTs   | 5,587      |
+| FFs    | 6,275      |
+| BRAM   | 76 RAMB36 + 5 RAMB18, 78.5 tiles |
 | DSP48  | 21         |
-| WNS    | +0.099 ns  |
+| WNS    | +0.108 ns  |
 
-The latest A7 build closes timing at 150 MHz. The worst setup path is inside
-the fcapz ELA probe pipeline, so this remains the path to watch if probe width
-or sample depth changes.
+The latest A7 build closes timing at 150 MHz and uses a minimized 16-bit,
+512-sample fcapz ELA (`INPUT_PIPE=1`, no timestamps, no decimation) alongside
+the EJTAG-AXI bridge used by the demo host flow.
 
 ### Encoder Core Only (7-Series -1, post place-and-route, 150 MHz)
 

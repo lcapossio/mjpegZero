@@ -190,12 +190,12 @@ module demo_top #(
     );
 
     // -----------------------------------------------------------------------
-    // fpgacapZero ELA on USER1 (ctrl) / USER2 (burst data)
-    // 32-bit curated probe: encoder stream handshakes, AXI handshakes,
-    // pipeline state, and low 16 bits of the output byte counter.
+    // fpgacapZero ELA on USER1.
+    // Minimal 16-bit probe: encoder stream handshakes, AXI handshakes,
+    // and pipeline state. The demo's hardware test uses EJTAG-AXI; this
+    // ELA is intentionally kept small for occasional bring-up captures.
     // -----------------------------------------------------------------------
-    wire [31:0] ela_probe = {
-        jpeg_byte_cnt[15:0],   // [31:16] running JPEG byte count (low 16 bits)
+    wire [15:0] ela_probe = {
         axi_wr_act,            // [15]
         enc_done,              // [14]
         enc_running,           // [13]
@@ -215,15 +215,18 @@ module demo_top #(
     };
 
     fcapz_ela_xilinx7 #(
-        .SAMPLE_W    (32),
-        .DEPTH       (1024),
-        .INPUT_PIPE  (2),   // retime relief on trig_mask → WEA path at 150 MHz
-        .DECIM_EN    (1),
-        .EXT_TRIG_EN (0),
-        .TIMESTAMP_W (32),
-        .NUM_SEGMENTS(1),
-        .CTRL_CHAIN  (1),
-        .DATA_CHAIN  (2)
+        .SAMPLE_W         (16),
+        .DEPTH            (512),
+        .INPUT_PIPE       (1),
+        .DECIM_EN         (0),
+        .EXT_TRIG_EN      (0),
+        .TIMESTAMP_W      (0),
+        .NUM_SEGMENTS     (1),
+        .DUAL_COMPARE     (0),
+        .USER1_DATA_EN    (0),
+        .SINGLE_CHAIN_BURST(1),
+        .CTRL_CHAIN       (1),
+        .DATA_CHAIN       (2)
     ) u_ela (
         .sample_clk   (clk),
         .sample_rst   (~rst_n),
