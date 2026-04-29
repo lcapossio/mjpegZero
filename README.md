@@ -182,6 +182,8 @@ how closely the RTL matches the reference encoder, not the original image).
 ![HW vs Sim comparison](assets/hw_comparison.png)
 
 HW and RTL simulation outputs are byte-exact (PSNR = ∞ dB, Y-PSNR 49.56 dB vs original).
+The figure above is from the pre-fcapz Arty A7-100T build; the post-fcapz bitstream
+closes timing at +0.108 ns but a Mandrill HW re-run is pending.
 
 <a id="resource-usage"></a>
 ## Resource Usage <sub>[↑ Top](#top)</sub>
@@ -537,7 +539,8 @@ mjpegzero_enc_top #(
 
 | Board | Part | Example project | Status |
 |-------|------|-----------------|--------|
-| Digilent Arty A7-100T | XC7A100TCSG324-1 | [`example_proj/arty_a7_100t/`](example_proj/arty_a7_100t/) | HW verified |
+| Digilent Arty A7-100T | XC7A100TCSG324-1 | [`example_proj/arty_a7_100t/`](example_proj/arty_a7_100t/) | Post-fcapz bitstream closes timing at +0.108 ns; HW Mandrill test pending re-run |
+| Digilent Arty S7-50   | XC7S50CSGA324-1  | [`example_proj/arty_s7_50/`](example_proj/arty_s7_50/)     | Build scaffolded; rebuild + HW verification pending |
 
 Any AMD/Xilinx 7-Series device is a straightforward port — swap the XDC and adjust `JPEG_WORDS`
 for available BRAM. Vendor BRAM wrappers for Altera, Lattice, Microchip, Efinix, and Gowin are
@@ -568,7 +571,10 @@ mjpegZero/
   python/           Reference encoder, verification, test vector generation
   scripts/          Vivado TCL scripts and Python runner
   example_proj/     Ready-to-build board examples
-    arty_a7_100t/   Digilent Arty A7-100T (HW verified)
+    common/         Shared demo top-level + Python host (used by every board)
+    arty_a7_100t/   Digilent Arty A7-100T (verified reference)
+    arty_s7_50/     Digilent Arty S7-50 (rebuild + HW test pending)
+  fcapz/            Git submodule: fpgacapZero EJTAG-AXI bridge + ELA + host
   build/            Synthesis/implementation output (generated)
 ```
 

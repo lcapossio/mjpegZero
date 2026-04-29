@@ -1,5 +1,9 @@
 # Arty S7-50 mjpegZero Demo - fcapz, 720p
 
+> Status: unverified board port. This project has not yet been built, timed, or
+> hardware-tested by the maintainers. The verified reference demo is
+> [`../arty_a7_100t/`](../arty_a7_100t/).
+
 Board-level example for the mjpegZero core. A Python host program prepares
 1280x720 YUYV frames and transfers them to the FPGA via the
 [fpgacapZero](../../fcapz/README.md) debug bridge on the same USB cable used
@@ -23,7 +27,7 @@ encoding.
 
 ## Prerequisites
 
-- Vivado 2024.x or 2025.x with Spartan-7 device support installed
+- Vivado 2025.x with Spartan-7 device support installed (project flow tested with 2025.2)
 - `vivado` executable in PATH for bitstream builds
 - `hw_server` and `xsdb` on PATH for the fcapz host
 - `fcapz/` submodule initialized with `git submodule update --init`
@@ -43,6 +47,10 @@ The script adds the fcapz RTL (`fcapz_ejtagaxi_xilinx7` on USER4 and
 ```text
 example_proj/arty_s7_50/build/arty_s7_demo.bit
 ```
+
+If this build succeeds, record the Vivado version, utilization, WNS, fcapz
+configuration, and hardware-test result here before treating the port as
+validated.
 
 ## Running The Demo
 
@@ -81,9 +89,9 @@ standard AXI4 burst transactions on USER4.
 | `0x0000_0000` - `0x01BF_FFFF` | Write burst | Pixel stream, two pixels per 32-bit word |
 | `0x0200_0000` | Write | DEMO_CTRL: bit 0 = start, bit 1 = reset |
 | `0x0200_0000` | Read | DEMO_STATUS: bit 0 = done, bit 1 = overflow, bit 2 = axi_error, bit 3 = running, bit 4 = armed |
-| `0x0200_0004` | Read | JPEG_SIZE: byte count |
+| `0x0200_0004` | Read | JPEG_SIZE: `[18:0]` = byte count |
 | `0x0200_0008` | Read | JPEG_CAPACITY: output buffer capacity in bytes |
-| `0x0300_0000` | Read burst | JPEG data, 32-bit little-endian words |
+| `0x0300_0000` - `0x0300_FFFF` | Read burst | JPEG data, 32-bit little-endian words (64 KB envelope at JPEG_WORDS=16384) |
 
 ## File Structure
 

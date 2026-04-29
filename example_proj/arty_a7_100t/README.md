@@ -110,6 +110,7 @@ HW and RTL simulation receive the same YUYV input via `python/yuyv_convert.py`.
 ## Shared RTL
 
 The top-level logic is in [`example_proj/common/rtl/demo_top.v`](../common/rtl/demo_top.v).
-All pin differences between this board and Arty S7-50 are handled entirely in the XDC.
+Other board ports reuse this RTL where possible, with board-specific pinout and device
+details handled in their local constraints and scripts.
 
 See the main [README](../../README.md) for full encoder documentation.

@@ -2,7 +2,7 @@
 
 Contributions are welcome. The most impactful contributions are
 **board-level examples** that show the encoder running on hardware beyond the
-reference Arty S7-50 — but bug fixes, verification improvements, and
+verified Arty A7-100T reference — but bug fixes, verification improvements, and
 documentation are equally appreciated.
 
 ---
@@ -21,25 +21,37 @@ documentation are equally appreciated.
 
 ## Adding a New Board Example
 
-All board examples live under [`example_proj/`](example_proj/), one
-subdirectory per board. The Arty S7-50 reference is at
-[`example_proj/arty_s7_50/`](example_proj/arty_s7_50/).
-To add support for another board, create a new subdirectory following the same
-layout:
+All board examples live under [`example_proj/`](example_proj/). The verified
+reference is [`example_proj/arty_a7_100t/`](example_proj/arty_a7_100t/). Other
+board directories may be scaffolds or ports until their README explicitly
+records a successful build and hardware test.
+
+Shared RTL and the Python host live under
+[`example_proj/common/`](example_proj/common/) and are reused by every board;
+each board directory only contributes its constraints and build scripts.
 
 ```
-example_proj/<board_name>/
-  rtl/
-    clk_gen.v           Clock generation (PLL/MMCM/PLL_ADV for your device)
-    <board>_top.v       Top-level (instantiates mjpegzero_enc_top)
-  constraints/
-    <board>.xdc         Pin assignments and timing constraints
-  scripts/
-    create_project.tcl  Vivado/Quartus/nextpnr build script
-  python/
-    demo.py             Host program (UART / JTAG-AXI / PCIe / etc.)
-  README.md             Board-specific build + run instructions
+example_proj/
+  common/                       (existing — shared by all boards)
+    rtl/
+      clk_gen.v                 Clock generation (MMCM/PLL primitives)
+      axi_init.v                One-shot AXI4-Lite init master
+      demo_top.v                Top-level: encoder + fcapz EJTAG-AXI + ELA
+      demo_top_bare.v           Sim variant of demo_top (no clock gen, no fcapz)
+    python/
+      demo.py                   Host program (drives the fcapz host stack)
+  <board_name>/                 (new — per-board files only)
+    constraints/
+      <board>.xdc               Pin assignments and timing constraints
+    scripts/
+      create_project.tcl        Vivado/Quartus/nextpnr build script
+    README.md                   Board-specific build + run instructions
 ```
+
+If your board needs a different host interface (UART / PCIe / Ethernet)
+instead of the fcapz EJTAG-AXI bridge, replace the bridge in `demo_top.v` or
+add a board-specific top-level alongside `common/rtl/demo_top.v` and document
+the swap in your README.
 
 ### Checklist for a new board example
 
@@ -73,7 +85,7 @@ tools. When writing board RTL:
 ## Reporting Bugs
 
 Open an issue with:
-- Vivado version and device part string (e.g. `xc7s50csga324-1`)
+- Vivado version and device part string (e.g. `xc7a100tcsg324-1`)
 - Synthesis / simulation command used
 - Relevant log excerpt or waveform showing the problem
 - Expected vs. actual behaviour
@@ -92,7 +104,8 @@ Open an issue with:
    - Whether timing was met and at what frequency
 
 Pull requests are automatically checked by CI (Python verification, Verilator RTL lint,
-and iverilog simulation). Hardware testing on Arty S7-50 is done manually before merge.
+and iverilog simulation). Hardware testing on the Arty A7-100T reference is done manually
+before merge when board-level behavior is affected.
 
 ---
 
@@ -109,6 +122,6 @@ and iverilog simulation). Hardware testing on Arty S7-50 is done manually before
 ## License
 
 By contributing you agree that your contribution will be licensed under the
-same [MIT + Commons Clause license](LICENSE) as the rest of the project.
+same [Apache 2.0 + Commons Clause license](LICENSE) as the rest of the project.
 This means non-commercial use remains free; commercial use requires written
 permission from the project author (hello@bard0.com).

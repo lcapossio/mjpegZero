@@ -18,7 +18,7 @@
 //   0x0200_0000                 DEMO_CTRL   (write)  [0]=start [1]=reset
 //                               DEMO_STATUS (read)   [0]=enc_done [1]=overflow
 //                                                    [2]=axi_error [3]=running
-//                                                    [4]=start_armed
+//                                                    [4]=armed
 //   0x0200_0004                 JPEG_SIZE   (read)   [18:0]=byte count
 //   0x0300_0000 – 0x0301_FFFF  JPEG_PORT   (read only, burst)
 //                                32-bit LE words; valid data = JPEG_SIZE bytes
@@ -49,7 +49,8 @@ module demo_top #(
     localparam JPEG_BYTES = JPEG_WORDS * 4;
     localparam PIX_PREFILL = 32;
     // NOTE: Vivado maps array depth to 2^ceil(log2(depth/1024)) RAMB36 banks.
-    // depth=65536 → 64 RAMB36; encoder uses 11 RAMB36; JTAG IP uses 2 RAMB36.
+    // depth=65536 → 64 RAMB36 (jpeg_mem) + 11 RAMB36 (encoder line buffers)
+    // + a few RAMB36/RAMB18 for the fcapz EJTAG-AXI async FIFOs and ELA buffers.
 
     // AXI address boundaries
     localparam AXI_JPEG_BASE = 32'h0300_0000;
