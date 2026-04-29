@@ -1,18 +1,57 @@
-# mjpegZero — FPGA Hardware JPEG Encoder
+<a id="top"></a>
+# mjpegZero — FPGA Hardware Motion JPEG Encoder
 
 [![CI](https://github.com/lcapossio/mjpegZero/actions/workflows/ci.yml/badge.svg)](https://github.com/lcapossio/mjpegZero/actions/workflows/ci.yml)
 [![License: Apache 2.0 + Commons Clause](https://img.shields.io/badge/license-Apache%202.0%20%2B%20Commons%20Clause-blue.svg)](LICENSE)
 [![RTL: Verilog 2001](https://img.shields.io/badge/RTL-Verilog%202001-orange.svg)](rtl/)
 [![FuseSoC](https://img.shields.io/badge/FuseSoC-compatible-blueviolet.svg)](mjpegzero.core)
 
-**Author:** Leonardo Capossio — [bard0 design](https://www.bard0.com) <hello@bard0.com>
+**Author:** Leonardo Capossio - [bard0 design](https://www.bard0.com) - <hello@bard0.com>
 
 Synthesizable MJPEG encoder written in behavioral Verilog 2001 with AXI interfaces, up to 1080p30 on low end AMD/Xilinx 7-Series FPGAs. Two operating modes: **Full** encodes with runtime quality control;
 **Lite** encodes with ~47% smaller LUT footprint and fixed synthesis-time quality.
 
 A Python reference encoder is included for validation and test vector generation.
 
-## Architecture
+<!-- index:start -->
+<a id="index"></a>
+## Index
+
+- [Architecture](#architecture)
+- [Interfaces](#interfaces)
+  - [Video Input — AXI4-Stream Slave](#video-input-axi4-stream-slave)
+  - [JPEG Output — AXI4-Stream Master (8-bit)](#jpeg-output-axi4-stream-master-8-bit)
+  - [Control — AXI4-Lite Slave (32-bit)](#control-axi4-lite-slave-32-bit)
+- [Parameters](#parameters)
+- [Capabilities](#capabilities)
+- [Performance](#performance)
+  - [Compression (Mandrill test image)](#compression-mandrill-test-image)
+- [Resource Usage](#resource-usage)
+- [Pipeline Modules](#pipeline-modules)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Verification](#verification)
+    - [Tier 1 — Python-only (no simulator, no Vivado)](#tier-1-python-only-no-simulator-no-vivado)
+    - [Tier 2 — RTL simulation with iverilog  ← CI path](#tier-2-rtl-simulation-with-iverilog-ci-path)
+    - [Verilator code coverage (optional, requires Verilator ≥ 4.2)](#verilator-code-coverage-optional-requires-verilator-4-2)
+    - [Tier 3 — Full 720p Vivado simulation  (local only, requires Vivado)](#tier-3-full-720p-vivado-simulation-local-only-requires-vivado)
+  - [FuseSoC](#fusesoc)
+  - [LiteX Integration](#litex-integration)
+  - [Run Synthesis](#run-synthesis)
+  - [Run Implementation (Place & Route)](#run-implementation-place-route)
+  - [Utility Scripts](#utility-scripts)
+- [Integration Example](#integration-example)
+- [Tested Hardware](#tested-hardware)
+- [Applications](#applications)
+- [Directory Structure](#directory-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+<!-- index:end -->
+
+<a id="architecture"></a>
+## Architecture <sub>[↑ Top](#top)</sub>
+
 
 ```
                   +----------------------------------------------------------+
@@ -28,9 +67,13 @@ A Python reference encoder is included for validation and test vector generation
                   +----------------------------------------------------------+
 ```
 
-## Interfaces
+<a id="interfaces"></a>
+## Interfaces <sub>[↑ Top](#top)</sub>
 
-### Video Input — AXI4-Stream Slave
+
+<a id="video-input-axi4-stream-slave"></a>
+### Video Input — AXI4-Stream Slave <sub>[↑ Top](#top)</sub>
+
 
 | Signal               | Width | Direction | Description                        |
 |----------------------|-------|-----------|------------------------------------|
@@ -46,7 +89,9 @@ A Python reference encoder is included for validation and test vector generation
 **RGB mode** (`RGB_INPUT=1`): 24-bit words `{R[23:16], G[15:8], B[7:0]}`. One
 word per pixel. An internal BT.601 color converter produces YUYV for the pipeline.
 
-### JPEG Output — AXI4-Stream Master (8-bit)
+<a id="jpeg-output-axi4-stream-master-8-bit"></a>
+### JPEG Output — AXI4-Stream Master (8-bit) <sub>[↑ Top](#top)</sub>
+
 
 | Signal               | Width | Direction | Description                  |
 |----------------------|-------|-----------|------------------------------|
@@ -63,7 +108,9 @@ the data rate well below the input rate. If the downstream sink may stall
 (e.g., shared DMA bus), place a small FIFO (256–512 bytes) between the encoder
 output and the sink.
 
-### Control — AXI4-Lite Slave (32-bit)
+<a id="control-axi4-lite-slave-32-bit"></a>
+### Control — AXI4-Lite Slave (32-bit) <sub>[↑ Top](#top)</sub>
+
 
 | Offset | Name       | Access | Description                            |
 |--------|------------|--------|----------------------------------------|
@@ -74,7 +121,9 @@ output and the sink.
 | 0x10   | RESTART    | R/W    | Restart interval in MCUs (0 = disabled)|
 | 0x14   | FRAME_SIZE | RO     | Byte count of last completed frame     |
 
-## Parameters
+<a id="parameters"></a>
+## Parameters <sub>[↑ Top](#top)</sub>
+
 
 | Parameter       | Default | Description                                                      |
 |-----------------|---------|------------------------------------------------------------------|
@@ -88,7 +137,9 @@ output and the sink.
 | `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
 | `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default) |
 
-## Capabilities
+<a id="capabilities"></a>
+## Capabilities <sub>[↑ Top](#top)</sub>
+
 
 - **Standard**: Baseline JPEG (ITU-T T.81), JFIF 1.01 container
 - **Chroma**: YUV 4:2:2 (H=2, V=1 subsampling)
@@ -100,7 +151,9 @@ output and the sink.
 - **EXIF**: Optional APP1/EXIF segment (`EXIF_ENABLE=1`) with XResolution, YResolution, ResolutionUnit IFD0 tags
 - **RGB input**: Optional built-in BT.601 color converter (`RGB_INPUT=1`) accepts 24-bit `{R,G,B}` and produces YUYV internally
 
-## Performance
+<a id="performance"></a>
+## Performance <sub>[↑ Top](#top)</sub>
+
 
 Both modes run at 150 MHz, delivering 2,343,750 blocks/sec with ~1 MCU row latency (8 lines).
 
@@ -111,7 +164,9 @@ Both modes run at 150 MHz, delivering 2,343,750 blocks/sec with ~1 MCU row laten
 | Quality             | Runtime adjustable (1–100) | Synthesis-time (1–100, Q95 default) |
 | Pipeline headroom   | 1080p30: 83%               | 720p60: 74%                     |
 
-### Compression (Mandrill test image)
+<a id="compression-mandrill-test-image"></a>
+### Compression (Mandrill test image) <sub>[↑ Top](#top)</sub>
+
 
 | Image    | Quality | Uncompressed (RGB) | JPEG Output | Ratio  | Bits/pixel | PSNR vs original |
 |----------|---------|--------------------|-------------|--------|------------|------------------|
@@ -128,40 +183,29 @@ how closely the RTL matches the reference encoder, not the original image).
 
 HW and RTL simulation outputs are byte-exact (PSNR = ∞ dB, Y-PSNR 49.56 dB vs original).
 
-## Resource Usage
+<a id="resource-usage"></a>
+## Resource Usage <sub>[↑ Top](#top)</sub>
 
-### Arty A7-100T Example Project (XC7A100T, post-route fcapz demo, 150 MHz)
+The numbers below are for the MJPEG encoder core (`mjpegzero_enc_top`) only.
+They exclude the Arty demo wrapper, fcapz EJTAG-AXI debug bridge, fcapz ELA,
+and the large on-chip JPEG readback buffer used by the hardware demo.
 
-The example project includes the encoder core, an fcapz EJTAG-AXI debug bridge
-for host control, an fcapz ELA capture block, and a 65,536-word JPEG output
-buffer.
+Current hardware-verified configuration: Lite mode, 1280x720, Q75, extracted
+from the post-route hierarchy of the Arty A7-100T demo build. This row is the
+`mjpegzero_enc_top` instance only.
 
-| Metric | Post-route |
-|--------|------------|
-| LUTs   | 5,587      |
-| FFs    | 6,275      |
-| BRAM   | 76 RAMB36 + 5 RAMB18, 78.5 tiles |
-| DSP48  | 21         |
-| WNS    | +0.108 ns  |
+| Configuration | LUTs | LUTRAM | FFs | BRAM | DSP48E1 |
+|---------------|-----:|-------:|----:|------|--------:|
+| Lite 720p Q75, 150 MHz | 2,045 | 136 | 1,895 | 11 RAMB36 + 1 RAMB18 | 21 |
 
-The latest A7 build closes timing at 150 MHz and uses a minimized 16-bit,
-512-sample fcapz ELA (`INPUT_PIPE=1`, no timestamps, no decimation) alongside
-the EJTAG-AXI bridge used by the demo host flow.
+The 11 RAMB36 blocks are the 720p Y/Cb/Cr input line buffers. The extra RAMB18
+is inferred inside the core for small ROM/storage structures in the placed
+design. The full Arty demo build, including fcapz and the JPEG readback buffer,
+closes timing at WNS +0.108 ns.
 
-### Encoder Core Only (7-Series -1, post place-and-route, 150 MHz)
+<a id="pipeline-modules"></a>
+## Pipeline Modules <sub>[↑ Top](#top)</sub>
 
-| Resource   | Full Mode (1080p) | Lite Mode (720p) |
-|------------|-------------------|------------------|
-| LUTs       | 4,559             | 4,311 (synth)    |
-| Flip-Flops | 3,227             | 8,697 (synth)    |
-| BRAM36     | 16                | 11               |
-| DSP48E1    | 23                | 17               |
-| WNS        | +0.072 ns         | +0.057 ns (S7-50)|
-
-Full mode BRAM breakdown: Y=8, Cb=4, Cr=4 = 16 tiles (1080p line buffer).
-Lite mode BRAM breakdown: Y=5, Cb=3, Cr=3 = 11 tiles (720p line buffer). Core pipeline uses zero BRAM.
-
-## Pipeline Modules
 
 | Module              | File                         | Description                                               |
 |---------------------|------------------------------|-----------------------------------------------------------|
@@ -183,9 +227,13 @@ All pipeline modules are written in behavioural Verilog 2001. The only vendor-sp
 file is `rtl/bram_sdp.v`, which instantiates the AMD `RAMB36E1` primitive. Equivalents
 for other vendors are provided as stubs under `rtl/vendor/` and are drop-in replacements.
 
-## Quick Start
+<a id="quick-start"></a>
+## Quick Start <sub>[↑ Top](#top)</sub>
 
-### Prerequisites
+
+<a id="prerequisites"></a>
+### Prerequisites <sub>[↑ Top](#top)</sub>
+
 
 - AMD/Xilinx Vivado 2020.2+ (tested with 2025.2)
 - Python 3.8+ with NumPy, SciPy, Pillow (for reference encoder)
@@ -195,13 +243,17 @@ for other vendors are provided as stubs under `rtl/vendor/` and are drop-in repl
 pip install -r python/requirements.txt
 ```
 
-### Verification
+<a id="verification"></a>
+### Verification <sub>[↑ Top](#top)</sub>
+
 
 The verification suite is split into three tiers. The first two tiers require
 only Python and iverilog — they are what GitHub Actions CI runs on every push.
 The third tier requires Vivado and is for local full-frame validation.
 
-#### Tier 1 — Python-only (no simulator, no Vivado)
+<a id="tier-1-python-only-no-simulator-no-vivado"></a>
+#### Tier 1 — Python-only (no simulator, no Vivado) <sub>[↑ Top](#top)</sub>
+
 
 ```bash
 # Huffman ROM tables match ITU-T T.81 Annex K
@@ -218,7 +270,9 @@ python python/mandrill_compare.py --quality 95
 python python/mandrill_compare.py --quality 75 --out compare_q75.png
 ```
 
-#### Tier 2 — RTL simulation with iverilog  ← CI path
+<a id="tier-2-rtl-simulation-with-iverilog-ci-path"></a>
+#### Tier 2 — RTL simulation with iverilog  ← CI path <sub>[↑ Top](#top)</sub>
+
 
 Compiles all RTL with iverilog, runs the CI testbench, and compares output
 JPEG coefficients block-by-block against Python reference files for Q=50, 75, 95.
@@ -259,7 +313,9 @@ python python/verify_axi_regs.py --lite
 Requires: `iverilog` / `vvp` on PATH, Python ≥ 3.8 with NumPy.
 Without `--unisims`, a portable behavioural BRAM model is used (default, CI path).
 
-#### Verilator code coverage (optional, requires Verilator ≥ 4.2)
+<a id="verilator-code-coverage-optional-requires-verilator-4-2"></a>
+#### Verilator code coverage (optional, requires Verilator ≥ 4.2) <sub>[↑ Top](#top)</sub>
+
 
 Compiles the RTL with `--coverage`, runs six scenarios designed to hit all major
 code paths (Q=50/75/95, flat-gray image for DC/EOB paths, checkerboard image for
@@ -284,7 +340,9 @@ Coverage data is written to `build/coverage/`. LCOV info at
 `build/coverage/coverage.info`; HTML report (if `--html`) at
 `build/coverage/html/index.html`.
 
-#### Tier 3 — Full 720p Vivado simulation  (local only, requires Vivado)
+<a id="tier-3-full-720p-vivado-simulation-local-only-requires-vivado"></a>
+#### Tier 3 — Full 720p Vivado simulation  (local only, requires Vivado) <sub>[↑ Top](#top)</sub>
+
 
 ```bash
 python scripts/run_sim.py 720p           # no waveforms
@@ -294,7 +352,9 @@ python scripts/run_sim.py lite vcd       # lite mode with VCD
 
 Output JPEG is written to `build/sim/sim_output.jpg`. Verified PSNR vs original: **37.77 dB**.
 
-### FuseSoC
+<a id="fusesoc"></a>
+### FuseSoC <sub>[↑ Top](#top)</sub>
+
 
 The core is described in [`mjpegzero.core`](mjpegzero.core) (CAPI2 format).
 
@@ -327,7 +387,43 @@ depend:
   - bard0-design:mjpegzero:mjpegzero_enc:0.1.0
 ```
 
-### Run Synthesis
+<a id="litex-integration"></a>
+### LiteX Integration <sub>[↑ Top](#top)</sub>
+
+A project-local LiteX wrapper is provided in
+[`integrations/litex/mjpegzero.py`](integrations/litex/mjpegzero.py). It adds
+the Verilog sources to a LiteX platform, instantiates `mjpegzero_enc_top`,
+exposes a LiteX video stream sink, exposes a JPEG byte stream source, and keeps
+the core register file on AXI-Lite.
+
+```python
+from integrations.litex.mjpegzero import MjpegZero, MjpegZeroConfig
+
+encoder = MjpegZero(
+    platform,
+    config=MjpegZeroConfig(
+        lite_mode=1,
+        lite_quality=75,
+        img_width=1280,
+        img_height=720,
+        rgb_input=0,
+    ),
+    vendor="xilinx7",
+    jpeg_fifo_depth=512,
+)
+
+# encoder.video_sink:  data/valid/ready/last/user input stream
+# encoder.jpeg_source: data/valid/ready/last JPEG byte stream
+# encoder.axi_lite:    AXI-Lite control/status register bus
+```
+
+The encoder's native JPEG output has no `tready`. The LiteX wrapper therefore
+inserts an optional stream FIFO and exposes `jpeg_overflow` as a sticky
+indicator if the downstream consumer stalls longer than the FIFO can absorb.
+
+<a id="run-synthesis"></a>
+### Run Synthesis <sub>[↑ Top](#top)</sub>
+
 
 ```bash
 # Using the master runner (recommended):
@@ -354,7 +450,9 @@ are scaffolded in `scripts/synth/<vendor>/` — implement the tool-specific Tcl 
 replace `rtl/bram_sdp.v` with the matching `rtl/vendor/<vendor>/bram_sdp.v`.
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Run Implementation (Place & Route)
+<a id="run-implementation-place-route"></a>
+### Run Implementation (Place & Route) <sub>[↑ Top](#top)</sub>
+
 
 ```bash
 python scripts/run_all.py impl
@@ -362,7 +460,9 @@ python scripts/run_all.py impl
 
 Reports are written to `build/impl/`.
 
-### Utility Scripts
+<a id="utility-scripts"></a>
+### Utility Scripts <sub>[↑ Top](#top)</sub>
+
 
 | Script | Purpose |
 |--------|---------|
@@ -377,7 +477,9 @@ Reports are written to `build/impl/`.
 | `python/yuyv_convert.py` | Shared RGB-to-YUYV conversion for RTL simulation and hardware tests. |
 | `scripts/hw_test_mandrill.py` | End-to-end hardware verification through fcapz: converts mandrill 720p, runs RTL sim + HW encode, compares outputs. |
 
-## Integration Example
+<a id="integration-example"></a>
+## Integration Example <sub>[↑ Top](#top)</sub>
+
 
 ```verilog
 mjpegzero_enc_top #(
@@ -429,7 +531,9 @@ mjpegzero_enc_top #(
 );
 ```
 
-## Tested Hardware
+<a id="tested-hardware"></a>
+## Tested Hardware <sub>[↑ Top](#top)</sub>
+
 
 | Board | Part | Example project | Status |
 |-------|------|-----------------|--------|
@@ -439,7 +543,9 @@ Any AMD/Xilinx 7-Series device is a straightforward port — swap the XDC and ad
 for available BRAM. Vendor BRAM wrappers for Altera, Lattice, Microchip, Efinix, and Gowin are
 provided as stubs in `rtl/vendor/`.
 
-## Applications
+<a id="applications"></a>
+## Applications <sub>[↑ Top](#top)</sub>
+
 
 - **Drone / UAV cameras** — lightweight MJPEG stream over a low-bandwidth radio link
 - **IP security cameras** — per-frame JPEG over Ethernet, no inter-frame dependency
@@ -450,7 +556,9 @@ provided as stubs in `rtl/vendor/`.
 - **Broadcast contribution** — MJPEG-over-RTP for low-latency studio feeds
 - **Frame grabbers** — capture and compress SDI/HDMI input on an FPGA capture card
 
-## Directory Structure
+<a id="directory-structure"></a>
+## Directory Structure <sub>[↑ Top](#top)</sub>
+
 
 ```
 mjpegZero/
@@ -464,7 +572,9 @@ mjpegZero/
   build/            Synthesis/implementation output (generated)
 ```
 
-## Contributing
+<a id="contributing"></a>
+## Contributing <sub>[↑ Top](#top)</sub>
+
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
@@ -473,7 +583,9 @@ running on hardware beyond the reference Arty A7-100T. All examples live under
 [`example_proj/<board_name>/`](example_proj/). New examples for Nexys Video,
 ZedBoard, DE10-Nano, iCEBreaker, and others are welcome.
 
-## License
+<a id="license"></a>
+## License <sub>[↑ Top](#top)</sub>
+
 
 Apache License 2.0 + Commons Clause v1.0. See [LICENSE](LICENSE) for full terms.
 
