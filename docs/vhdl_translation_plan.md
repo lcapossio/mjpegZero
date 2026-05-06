@@ -25,22 +25,22 @@ existing Verilog implementation as the golden reference.
 
 Translate top down, but verify bottom-up whenever a leaf becomes available.
 
-1. `mjpegzero_enc_top`
+1. `mjpegzero_enc_top` - translated
    - Create the VHDL entity first.
    - Initially allow mixed-language simulation by instantiating existing
      Verilog children where the simulator supports it.
 2. Control and format-facing blocks
-   - `axi4_lite_regs`
-   - `jfif_writer`
-   - `bitstream_packer`
+   - `axi4_lite_regs` - translated
+   - `jfif_writer` - remaining
+   - `bitstream_packer` - translated
 3. Core pipeline blocks
-   - `input_buffer`
-   - `dct_2d`
-   - `dct_1d`
-   - `quantizer`
-   - `zigzag_reorder`
-   - `huffman_encoder`
-   - `rgb_to_ycbcr`
+   - `input_buffer` - translated
+   - `dct_2d` - translated
+   - `dct_1d` - translated
+   - `quantizer` - translated
+   - `zigzag_reorder` - translated
+   - `huffman_encoder` - remaining
+   - `rgb_to_ycbcr` - translated
 4. RAM abstraction
    - Keep the Verilog `bram_sdp` shims for mixed-language tests.
    - Add VHDL RAM wrappers once the native VHDL pipeline needs pure-VHDL
@@ -53,6 +53,9 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
   VHDL counterpart.
 - Use `python scripts/run_vhdl_top_sim.py` for the current mixed-language
   top-level regression.
+- The current mixed run replaces the top, AXI registers, input buffer, DCT,
+  quantizer, zigzag, RGB conversion, and bitstream packer with VHDL. It still
+  uses Verilog `huffman_encoder`, `jfif_writer`, and vendor `bram_sdp`.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module

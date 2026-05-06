@@ -123,9 +123,6 @@ def main():
     print('=' * 70)
     run([xvlog] + defines + [
         os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'),
-        os.path.join(RTL_DIR, 'dct_1d.v'),
-        os.path.join(RTL_DIR, 'dct_2d.v'),
-        os.path.join(RTL_DIR, 'quantizer.v'),
         os.path.join(RTL_DIR, 'huffman_encoder.v'),
         os.path.join(RTL_DIR, 'jfif_writer.v'),
     ], cwd=build_dir)
@@ -135,6 +132,9 @@ def main():
          os.path.join(VHDL_DIR, 'mjpegzero_pkg.vhd'),
          os.path.join(VHDL_DIR, 'axi4_lite_regs.vhd'),
          os.path.join(VHDL_DIR, 'input_buffer.vhd'),
+         os.path.join(VHDL_DIR, 'dct_1d.vhd'),
+         os.path.join(VHDL_DIR, 'dct_2d.vhd'),
+         os.path.join(VHDL_DIR, 'quantizer.vhd'),
          os.path.join(VHDL_DIR, 'bitstream_packer.vhd'),
          os.path.join(VHDL_DIR, 'rgb_to_ycbcr.vhd'),
          os.path.join(VHDL_DIR, 'zigzag_reorder.vhd'),

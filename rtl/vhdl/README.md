@@ -9,7 +9,9 @@ The port is intentionally top-down:
 3. Keep the Verilog modules in `../` as the golden reference until equivalence
    tests pass.
 
-The initial bridge is `mjpegzero_enc_top.vhd`. It exposes a VHDL entity
-while binding to the current Verilog top for mixed-language tools.
+The current bridge is `mjpegzero_enc_top.vhd`, a VHDL structural top that
+keeps untranslated leaves in Verilog for mixed-language tools. The remaining
+Verilog leaves in the top-level regression are `huffman_encoder`, `jfif_writer`,
+and the vendor `bram_sdp` RAM shim.
 
 Use VHDL-2008 for new files.
