@@ -39,7 +39,7 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
    - `dct_1d` - translated
    - `quantizer` - translated
    - `zigzag_reorder` - translated
-   - `huffman_encoder` - remaining
+   - `huffman_encoder` - translated
    - `rgb_to_ycbcr` - translated
 4. RAM abstraction
    - Keep the Verilog `bram_sdp` shims for mixed-language tests.
@@ -54,8 +54,8 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 - Use `python scripts/run_vhdl_top_sim.py` for the current mixed-language
   top-level regression.
 - The current mixed run replaces the top, AXI registers, input buffer, DCT,
-  quantizer, zigzag, RGB conversion, and bitstream packer with VHDL. It still
-  uses Verilog `huffman_encoder`, `jfif_writer`, and vendor `bram_sdp`.
+  quantizer, zigzag, Huffman encoder, RGB conversion, and bitstream packer with
+  VHDL. It still uses Verilog `jfif_writer` and vendor `bram_sdp`.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module
