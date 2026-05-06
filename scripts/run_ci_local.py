@@ -21,6 +21,7 @@ Available jobs:
     rtl-sim            iverilog RTL simulation (full + lite + corner cases)
     rtl-verilator-sim  Verilator functional simulation
     rtl-coverage       Verilator code coverage
+    vhdl-top-sim       Vivado xsim VHDL top simulation (full + lite)
     fusesoc            FuseSoC core validation + lint
     all                All of the above (default)
 
@@ -285,6 +286,18 @@ def job_rtl_coverage():
     )
 
 
+def job_vhdl_top_sim():
+    return run_job(
+        'vhdl-top-sim',
+        prereqs_tools=[],
+        prereqs_modules=[],
+        steps=[
+            ('VHDL top sim full mode', py('scripts/run_vhdl_top_sim.py')),
+            ('VHDL top sim lite mode', py('scripts/run_vhdl_top_sim.py', 'lite')),
+        ],
+    )
+
+
 def job_fusesoc():
     # Use --cores-root instead of `library add` to avoid mutating the user's
     # global ~/.config/fusesoc/fusesoc.conf (which would store an absolute path
@@ -313,6 +326,7 @@ JOBS = {
     'rtl-sim':           job_rtl_sim,
     'rtl-verilator-sim': job_rtl_verilator_sim,
     'rtl-coverage':      job_rtl_coverage,
+    'vhdl-top-sim':      job_vhdl_top_sim,
     'fusesoc':           job_fusesoc,
 }
 
@@ -340,6 +354,7 @@ def main():
         print('Available jobs:')
         for j in ALL_JOBS_ORDER:
             print(f'  {j}')
+        print('  vhdl-top-sim')
         print('  all  (run everything in order)')
         return 0
 
