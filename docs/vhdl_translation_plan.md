@@ -31,7 +31,7 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
      Verilog children where the simulator supports it.
 2. Control and format-facing blocks
    - `axi4_lite_regs` - translated
-   - `jfif_writer` - remaining
+   - `jfif_writer` - translated
    - `bitstream_packer` - translated
 3. Core pipeline blocks
    - `input_buffer` - translated
@@ -54,8 +54,8 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 - Use `python scripts/run_vhdl_top_sim.py` for the current mixed-language
   top-level regression.
 - The current mixed run replaces the top, AXI registers, input buffer, DCT,
-  quantizer, zigzag, Huffman encoder, RGB conversion, and bitstream packer with
-  VHDL. It still uses Verilog `jfif_writer` and vendor `bram_sdp`.
+  quantizer, zigzag, Huffman encoder, RGB conversion, bitstream packer, and
+  JFIF writer with VHDL. It still uses the vendor Verilog `bram_sdp` RAM shim.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module

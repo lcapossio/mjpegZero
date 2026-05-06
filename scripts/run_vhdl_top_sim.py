@@ -123,7 +123,6 @@ def main():
     print('=' * 70)
     run([xvlog] + defines + [
         os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'),
-        os.path.join(RTL_DIR, 'jfif_writer.v'),
     ], cwd=build_dir)
 
     print('\nStep 2: Compiling VHDL sources...')
@@ -138,6 +137,7 @@ def main():
          os.path.join(VHDL_DIR, 'bitstream_packer.vhd'),
          os.path.join(VHDL_DIR, 'rgb_to_ycbcr.vhd'),
          os.path.join(VHDL_DIR, 'zigzag_reorder.vhd'),
+         os.path.join(VHDL_DIR, 'jfif_writer.vhd'),
          os.path.join(VHDL_DIR, 'mjpegzero_enc_top.vhd')], cwd=build_dir)
 
     print('\nStep 3: Compiling SystemVerilog testbench...')
