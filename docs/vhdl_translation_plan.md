@@ -56,6 +56,8 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
   regression.
 - The current VHDL top-level regression uses VHDL for the encoder hierarchy and
   keeps the existing SystemVerilog testbench as the golden driver/checker.
+- Use `scripts/synth/amd/run_synth_vhdl.tcl` for the AMD/Xilinx VHDL synthesis
+  smoke path.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module
