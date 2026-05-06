@@ -22,10 +22,17 @@ entity bram_sdp is
     );
 end entity bram_sdp;
 
-architecture sim of bram_sdp is
+architecture rtl of bram_sdp is
     type mem_t is array (0 to DEPTH-1) of std_logic_vector(WIDTH-1 downto 0);
     signal mem     : mem_t;
     signal rdata_r : std_logic_vector(WIDTH-1 downto 0);
+
+    attribute ram_style : string;
+    attribute ramstyle : string;
+    attribute syn_ramstyle : string;
+    attribute ram_style of mem : signal is "block";
+    attribute ramstyle of mem : signal is "no_rw_check";
+    attribute syn_ramstyle of mem : signal is "block_ram";
 begin
 
     assert DEPTH > 0 report "DEPTH must be positive" severity failure;
@@ -43,4 +50,4 @@ begin
         end if;
     end process;
 
-end architecture sim;
+end architecture rtl;

@@ -42,8 +42,9 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
    - `huffman_encoder` - translated
    - `rgb_to_ycbcr` - translated
 4. RAM abstraction
-   - `bram_sdp` - translated for simulation.
-   - Keep vendor-specific Verilog RAM shims for vendor synthesis flows.
+   - `bram_sdp` - translated as a portable inferred two-cycle RAM.
+   - Keep vendor-specific Verilog RAM shims where explicit primitives are
+     required for a vendor flow.
 5. Synthesis wrappers
    - `synth_timing_wrapper` - translated
 
