@@ -3,10 +3,9 @@
 
 -- Native VHDL structural top for mjpegzero_enc_top.
 --
--- This is the first real top-down translation step. The top-level control,
--- reset, frame accounting, component-ID tracking, and flow-control logic are
--- VHDL. Pipeline leaves still bind to the existing Verilog modules for tight
--- mixed-language equivalence against the current implementation.
+-- This is the translated structural encoder top. The VHDL top-level
+-- regression reuses the existing SystemVerilog testbench as the golden
+-- driver/checker.
 
 library ieee;
 use ieee.std_logic_1164.all;

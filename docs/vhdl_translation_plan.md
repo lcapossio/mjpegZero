@@ -44,6 +44,8 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 4. RAM abstraction
    - `bram_sdp` - translated for simulation.
    - Keep vendor-specific Verilog RAM shims for vendor synthesis flows.
+5. Synthesis wrappers
+   - `synth_timing_wrapper` - translated
 
 ## Verification Strategy
 
