@@ -27,8 +27,8 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 
 1. `mjpegzero_enc_top` - translated
    - Create the VHDL entity first.
-   - Initially allow mixed-language simulation by instantiating existing
-     Verilog children where the simulator supports it.
+   - The initial mixed-language shell has been replaced by native VHDL
+     children.
 2. Control and format-facing blocks
    - `axi4_lite_regs` - translated
    - `jfif_writer` - translated
@@ -42,20 +42,17 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
    - `huffman_encoder` - translated
    - `rgb_to_ycbcr` - translated
 4. RAM abstraction
-   - Keep the Verilog `bram_sdp` shims for mixed-language tests.
-   - Add VHDL RAM wrappers once the native VHDL pipeline needs pure-VHDL
-     synthesis.
+   - `bram_sdp` - translated for simulation.
+   - Keep vendor-specific Verilog RAM shims for vendor synthesis flows.
 
 ## Verification Strategy
 
 - Keep the existing SystemVerilog testbenches as golden regressions.
-- Add mixed-language runs that replace one Verilog module at a time with its
-  VHDL counterpart.
-- Use `python scripts/run_vhdl_top_sim.py` for the current mixed-language
-  top-level regression.
-- The current mixed run replaces the top, AXI registers, input buffer, DCT,
-  quantizer, zigzag, Huffman encoder, RGB conversion, bitstream packer, and
-  JFIF writer with VHDL. It still uses the vendor Verilog `bram_sdp` RAM shim.
+- Add runs that replace one Verilog module at a time with its VHDL counterpart.
+- Use `python scripts/run_vhdl_top_sim.py` for the current VHDL top-level
+  regression.
+- The current VHDL top-level regression uses VHDL for the encoder hierarchy and
+  keeps the existing SystemVerilog testbench as the golden driver/checker.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module

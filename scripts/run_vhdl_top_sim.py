@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Leonardo Capossio - bard0 design
 #
-# Mixed-language simulation for the VHDL mjpegzero_enc_top.
+# VHDL DUT simulation for the VHDL mjpegzero_enc_top.
 #
-# This reuses the existing SystemVerilog encoder testbench and Verilog leaf
-# modules, while replacing translated blocks with their rtl/vhdl counterparts.
+# This reuses the existing SystemVerilog encoder testbench while replacing the
+# encoder hierarchy with rtl/vhdl sources.
 
 import argparse
 import glob
@@ -73,7 +73,7 @@ def run_checked_sim(cmd, cwd=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Vivado xsim mixed-language VHDL top simulation')
+    parser = argparse.ArgumentParser(description='Vivado xsim VHDL top simulation')
     parser.add_argument('flags', nargs='*', help='Options: lite, 720p, vcd, quality=N')
     args = parser.parse_args()
 
@@ -119,16 +119,12 @@ def main():
 
     print('=' * 70)
     print(f'VHDL top  LITE_MODE={int(lite_mode)}  720P={int(mode_720p)}  Q={lite_quality or "default"}')
-    print('Step 1: Compiling Verilog leaf sources...')
+    print('Step 1: Compiling VHDL sources...')
     print('=' * 70)
-    run([xvlog] + defines + [
-        os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'),
-    ], cwd=build_dir)
-
-    print('\nStep 2: Compiling VHDL sources...')
     run([xvhdl, '--2008',
          os.path.join(VHDL_DIR, 'mjpegzero_pkg.vhd'),
          os.path.join(VHDL_DIR, 'axi4_lite_regs.vhd'),
+         os.path.join(VHDL_DIR, 'bram_sdp.vhd'),
          os.path.join(VHDL_DIR, 'input_buffer.vhd'),
          os.path.join(VHDL_DIR, 'dct_1d.vhd'),
          os.path.join(VHDL_DIR, 'dct_2d.vhd'),
@@ -140,15 +136,15 @@ def main():
          os.path.join(VHDL_DIR, 'jfif_writer.vhd'),
          os.path.join(VHDL_DIR, 'mjpegzero_enc_top.vhd')], cwd=build_dir)
 
-    print('\nStep 3: Compiling SystemVerilog testbench...')
+    print('\nStep 2: Compiling SystemVerilog testbench...')
     run([xvlog, '--sv'] + defines + ['-i', build_dir,
         os.path.join(SIM_DIR, 'tb_mjpegzero_enc.sv')], cwd=build_dir)
 
-    print('\nStep 4: Elaborating mixed-language snapshot...')
+    print('\nStep 3: Elaborating simulation snapshot...')
     run([xelab, 'tb_mjpegzero_enc', '-s', 'sim_vhdl_top_snapshot',
          '-timescale', '1ns/1ps'], cwd=build_dir)
 
-    print('\nStep 5: Running simulation...')
+    print('\nStep 4: Running simulation...')
     if dump_vcd:
         wave_tcl = os.path.join(build_dir, 'wave.tcl')
         with open(wave_tcl, 'w') as f:
