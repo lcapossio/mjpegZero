@@ -17,6 +17,8 @@ the existing Verilog implementation as the golden reference.
   - Existing vendor-specific Verilog RAM shims.
   - Vendor primitives should be wrapped or re-authored only when needed for a
     pure-VHDL synthesis target.
+- `rtl/vhdl/vendor/`
+  - Vendor-specific VHDL RAM shims used only by explicit vendor flows.
 - `sim/`
   - Existing Verilog/SystemVerilog testbenches and vectors.
 - `sim/vhdl/`
@@ -43,9 +45,10 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
    - `huffman_encoder` - translated
    - `rgb_to_ycbcr` - translated
 4. RAM abstraction
-   - `bram_sdp` - translated as a portable inferred two-cycle RAM.
-   - Keep vendor-specific Verilog RAM shims where explicit primitives are
-     required for a vendor flow.
+   - `bram_sdp` - translated as a vendor-neutral inferred two-cycle simple
+     dual-port RAM.
+   - Keep vendor-specific RAM shims under vendor directories where explicit
+     primitives are required for a vendor flow.
 5. Synthesis wrappers
    - `synth_timing_wrapper` - translated
 

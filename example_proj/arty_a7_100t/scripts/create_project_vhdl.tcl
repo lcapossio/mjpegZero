@@ -32,11 +32,12 @@ file delete -force $proj_dir
 
 set fcapz_rtl [file normalize $repo_root/fcapz/rtl]
 set vhdl_dir  [file normalize $repo_root/rtl/vhdl]
+set vhdl_vendor_dir [file normalize $repo_root/rtl/vhdl/vendor/amd]
 
 set vhdl_files [list \
     $vhdl_dir/mjpegzero_pkg.vhd \
     $vhdl_dir/axi4_lite_regs.vhd \
-    $vhdl_dir/bram_sdp.vhd \
+    $vhdl_vendor_dir/bram_sdp.vhd \
     $vhdl_dir/input_buffer.vhd \
     $vhdl_dir/dct_1d.vhd \
     $vhdl_dir/dct_2d.vhd \

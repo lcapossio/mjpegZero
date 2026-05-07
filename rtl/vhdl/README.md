@@ -30,11 +30,13 @@ Source list:
 | `bitstream_packer.vhd` | Bit packing and byte stuffing |
 | `jfif_writer.vhd` | JFIF/JPEG marker and header writer |
 | `rgb_to_ycbcr.vhd` | Optional RGB input conversion |
-| `bram_sdp.vhd` | Portable inferred simple dual-port RAM |
+| `bram_sdp.vhd` | Vendor-neutral inferred simple dual-port RAM |
 | `synth_timing_wrapper.vhd` | Core synthesis timing wrapper |
 
-`bram_sdp.vhd` is a portable inferred simple dual-port RAM with the same
-two-cycle read latency as the Verilog vendor shims. Vendor-specific Verilog RAM
-shims remain available where an explicit primitive is still needed.
+`bram_sdp.vhd` is the vendor-neutral core RAM. It uses behavioral VHDL and has
+the same two-cycle read latency as the vendor RAM shims. Optimized
+vendor-specific replacements live under `vendor/`; for example,
+`vendor/amd/bram_sdp.vhd` explicitly instantiates `RAMB36E1` for AMD/Xilinx
+7-series Vivado builds.
 
 Use VHDL-1993 for new files.
