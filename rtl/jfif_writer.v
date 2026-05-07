@@ -674,6 +674,7 @@ end else begin : g_lite_header
     localparam SOF0_END    = 176;   // Last byte of SOF0 (index 176)
     localparam DHT_START   = 177;   // First byte of DHT section
 
+    (* rom_style = "distributed", ram_style = "distributed" *)
     reg [7:0] header_rom [0:HEADER_SIZE-1];
 
     /* verilator coverage_off */
