@@ -7,7 +7,8 @@
 //
 // Host communicates via the fpgacapZero EJTAG-AXI bridge on BSCANE2 USER4
 // (same USB cable as programming). No UART required. An fpgacapZero ELA on
-// USER1/USER2 captures 32 curated encoder/AXI signals for hardware debug.
+// USER1 captures 32 curated encoder/AXI signals for hardware debug.  The ELA
+// uses the single-chain burst pipe, so no separate USER2 burst chain is needed.
 // Pixel data streams directly from fcapz to the encoder; an on-chip JPEG
 // buffer holds the compressed output.
 //
@@ -225,9 +226,9 @@ module demo_top #(
         .NUM_SEGMENTS     (1),
         .DUAL_COMPARE     (0),
         .USER1_DATA_EN    (0),
+        .BURST_EN         (0),
         .SINGLE_CHAIN_BURST(1),
-        .CTRL_CHAIN       (1),
-        .DATA_CHAIN       (2)
+        .CTRL_CHAIN       (1)
     ) u_ela (
         .sample_clk   (clk),
         .sample_rst   (~rst_n),

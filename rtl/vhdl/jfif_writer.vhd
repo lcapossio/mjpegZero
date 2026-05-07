@@ -38,6 +38,9 @@ end entity;
 
 architecture rtl of jfif_writer is
     type byte_array_t is array (natural range <>) of natural range 0 to 255;
+    type slv8_array_t is array (natural range <>) of std_logic_vector(7 downto 0);
+    subtype lite_header_rom_t is slv8_array_t(0 to 622);
+    subtype app1_rom_t is slv8_array_t(0 to 75);
     type nat_array64_t is array (0 to 63) of natural;
 
     constant ZIGZAG_ORDER : nat_array64_t := (
@@ -210,7 +213,184 @@ architecture rtl of jfif_writer is
         end case;
     end function;
 
+    function lite_header_init return lite_header_rom_t is
+        variable rom : lite_header_rom_t := (others => x"00");
+    begin
+        for i in SOI_APP0_ROM'range loop
+            rom(i) := b(SOI_APP0_ROM(i));
+        end loop;
+
+        rom(20) := x"FF"; rom(21) := x"DB";
+        rom(22) := x"00"; rom(23) := x"43"; rom(24) := x"00";
+        for i in 0 to 63 loop
+            rom(25 + i) := lite_q('0', i);
+        end loop;
+
+        rom(89) := x"FF"; rom(90) := x"DB";
+        rom(91) := x"00"; rom(92) := x"43"; rom(93) := x"01";
+        for i in 0 to 63 loop
+            rom(94 + i) := lite_q('1', i);
+        end loop;
+
+        rom(158) := x"FF"; rom(159) := x"C0";
+        rom(160) := x"00"; rom(161) := x"11"; rom(162) := x"08";
+        rom(163) := hi16(IMG_HEIGHT); rom(164) := lo16(IMG_HEIGHT);
+        rom(165) := hi16(IMG_WIDTH);  rom(166) := lo16(IMG_WIDTH);
+        rom(167) := x"03";
+        rom(168) := x"01"; rom(169) := x"21"; rom(170) := x"00";
+        rom(171) := x"02"; rom(172) := x"11"; rom(173) := x"01";
+        rom(174) := x"03"; rom(175) := x"11"; rom(176) := x"01";
+
+        for i in DHT_ROM'range loop
+            rom(177 + i) := b(DHT_ROM(i));
+        end loop;
+        for i in SOS_ROM'range loop
+            rom(609 + i) := b(SOS_ROM(i));
+        end loop;
+
+        return rom;
+    end function;
+
+    function app1_rom_init return app1_rom_t is
+        variable rom : app1_rom_t := (others => x"00");
+    begin
+        for i in rom'range loop
+            rom(i) := app1_byte(i);
+        end loop;
+        return rom;
+    end function;
+
+    constant LITE_HEADER_ROM : lite_header_rom_t := lite_header_init;
+    constant APP1_ROM        : app1_rom_t := app1_rom_init;
+
 begin
+    g_lite_header : if LITE_MODE /= 0 generate
+        type lite_state_t is (SL_IDLE, SL_HDR_PRE, SL_DRI, SL_HDR_POST,
+                              SL_SCAN_DATA, SL_EOI_0, SL_EOI_1, SL_DONE,
+                              SL_APP1);
+        signal lite_state : lite_state_t := SL_IDLE;
+        signal lite_idx   : unsigned(9 downto 0) := (others => '0');
+    begin
+        scan_ready <= '1' when lite_state = SL_SCAN_DATA else '0';
+        headers_done <= '1' when lite_state = SL_SCAN_DATA or lite_state = SL_EOI_0 or
+                                  lite_state = SL_EOI_1 or lite_state = SL_DONE else '0';
+
+        process (clk)
+            variable idx : natural;
+        begin
+            if rising_edge(clk) then
+                if rst_n = '0' then
+                    lite_state <= SL_IDLE;
+                    lite_idx <= (others => '0');
+                    m_axis_tvalid <= '0';
+                    m_axis_tdata <= (others => '0');
+                    m_axis_tlast <= '0';
+                    qt_rd_addr <= (others => '0');
+                    qt_rd_is_chroma <= '0';
+                else
+                    idx := to_integer(lite_idx);
+                    qt_rd_addr <= (others => '0');
+                    qt_rd_is_chroma <= '0';
+
+                    case lite_state is
+                        when SL_IDLE =>
+                            m_axis_tvalid <= '0';
+                            m_axis_tlast <= '0';
+                            if frame_start = '1' then
+                                lite_state <= SL_HDR_PRE;
+                                lite_idx <= (others => '0');
+                            end if;
+
+                        when SL_HDR_PRE =>
+                            m_axis_tvalid <= '1';
+                            m_axis_tdata <= LITE_HEADER_ROM(idx);
+                            if lite_idx = 176 then
+                                lite_idx <= (others => '0');
+                                if unsigned(restart_interval) /= 0 then
+                                    lite_state <= SL_DRI;
+                                else
+                                    lite_state <= SL_HDR_POST;
+                                    lite_idx <= to_unsigned(177, lite_idx'length);
+                                end if;
+                            elsif EXIF_ENABLE /= 0 and lite_idx = 19 then
+                                lite_state <= SL_APP1;
+                                lite_idx <= (others => '0');
+                            else
+                                lite_idx <= lite_idx + 1;
+                            end if;
+
+                        when SL_APP1 =>
+                            m_axis_tvalid <= '1';
+                            m_axis_tdata <= APP1_ROM(idx);
+                            if lite_idx = 75 then
+                                lite_state <= SL_HDR_PRE;
+                                lite_idx <= to_unsigned(20, lite_idx'length);
+                            else
+                                lite_idx <= lite_idx + 1;
+                            end if;
+
+                        when SL_DRI =>
+                            m_axis_tvalid <= '1';
+                            case idx is
+                                when 0 => m_axis_tdata <= x"FF";
+                                when 1 => m_axis_tdata <= x"DD";
+                                when 2 => m_axis_tdata <= x"00";
+                                when 3 => m_axis_tdata <= x"04";
+                                when 4 => m_axis_tdata <= restart_interval(15 downto 8);
+                                when 5 => m_axis_tdata <= restart_interval(7 downto 0);
+                                when others => m_axis_tdata <= x"00";
+                            end case;
+                            if lite_idx = 5 then
+                                lite_state <= SL_HDR_POST;
+                                lite_idx <= to_unsigned(177, lite_idx'length);
+                            else
+                                lite_idx <= lite_idx + 1;
+                            end if;
+
+                        when SL_HDR_POST =>
+                            m_axis_tvalid <= '1';
+                            m_axis_tdata <= LITE_HEADER_ROM(idx);
+                            if lite_idx = 622 then
+                                lite_state <= SL_SCAN_DATA;
+                                lite_idx <= (others => '0');
+                            else
+                                lite_idx <= lite_idx + 1;
+                            end if;
+
+                        when SL_SCAN_DATA =>
+                            if scan_valid = '1' and scan_last = '1' then
+                                m_axis_tvalid <= '0';
+                                lite_state <= SL_EOI_0;
+                            else
+                                m_axis_tvalid <= scan_valid;
+                                m_axis_tdata <= scan_data;
+                                m_axis_tlast <= '0';
+                            end if;
+
+                        when SL_EOI_0 =>
+                            m_axis_tvalid <= '1';
+                            m_axis_tdata <= x"FF";
+                            m_axis_tlast <= '0';
+                            lite_state <= SL_EOI_1;
+
+                        when SL_EOI_1 =>
+                            m_axis_tvalid <= '1';
+                            m_axis_tdata <= x"D9";
+                            m_axis_tlast <= '1';
+                            lite_state <= SL_DONE;
+
+                        when SL_DONE =>
+                            m_axis_tvalid <= '0';
+                            m_axis_tlast <= '0';
+                            lite_state <= SL_IDLE;
+                    end case;
+                end if;
+            end if;
+        end process;
+    end generate;
+
+    g_full_header : if LITE_MODE = 0 generate
+    begin
     scan_ready <= '1' when state = S_SCAN_DATA else '0';
     headers_done <= '1' when state = S_SCAN_DATA or state = S_EOI_0 or state = S_EOI_1 or state = S_DONE else '0';
 
@@ -422,4 +602,5 @@ begin
             end if;
         end if;
     end process;
+    end generate;
 end architecture;
