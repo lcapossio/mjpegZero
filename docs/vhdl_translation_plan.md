@@ -59,6 +59,10 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
   keeps the existing SystemVerilog testbench as the golden driver/checker.
 - Use `scripts/synth/amd/run_synth_vhdl.tcl` for the AMD/Xilinx VHDL synthesis
   smoke path.
+- Use `python scripts/check_core_resources.py --run-synth` or
+  `python scripts/run_ci_local.py core-resource-equiv` to check that the
+  Verilog and VHDL core builds keep the same hard resources and roughly the
+  same LUT/FF usage in full and lite modes.
 - Use `python scripts/run_postsim.py vhdl` for the VHDL post-synthesis
   functional simulation path.
 - Add VHDL testbenches under `sim/vhdl/` for modules where a small focused test

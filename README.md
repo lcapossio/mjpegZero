@@ -453,6 +453,7 @@ vivado -mode batch -source scripts/synth/amd/run_synth_vhdl.tcl -tclargs lite 80
 # Core-only Verilog/VHDL resource comparison
 vivado -mode batch -source scripts/synth/amd/run_core_synth.tcl -tclargs verilog
 vivado -mode batch -source scripts/synth/amd/run_core_synth.tcl -tclargs vhdl
+python scripts/check_core_resources.py
 ```
 
 Reports are written to `build/synth/` or `build/synth_lite/`.
