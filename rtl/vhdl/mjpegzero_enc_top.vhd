@@ -269,6 +269,8 @@ architecture rtl of mjpegzero_enc_top is
     signal vid_yuyv_tready : std_logic;
     signal vid_yuyv_tlast : std_logic;
     signal vid_yuyv_tuser : std_logic;
+    signal s_axis_vid_tvalid_gated : std_logic;
+    signal frame_cnt_slv : std_logic_vector(31 downto 0);
     signal quant_out_sof_unused : std_logic;
     signal huff_out_sob_unused : std_logic;
 
@@ -294,6 +296,8 @@ begin
     sts_busy <= frame_active;
     sts_frame_done_pulse <= frame_done_pulse;
     ibuf_blk_ready <= ctrl_enable and jfif_headers_done when pipeline_depth < 2 else '0';
+    s_axis_vid_tvalid_gated <= s_axis_vid_tvalid and ctrl_enable;
+    frame_cnt_slv <= std_logic_vector(frame_cnt);
 
     p_comp_fifo_q : process(clk)
     begin
@@ -410,7 +414,7 @@ begin
             port map (
                 clk => clk, rst_n => rst_int_n,
                 s_axis_tdata => s_axis_vid_tdata(23 downto 0),
-                s_axis_tvalid => s_axis_vid_tvalid and ctrl_enable,
+                s_axis_tvalid => s_axis_vid_tvalid_gated,
                 s_axis_tready => s_axis_vid_tready,
                 s_axis_tlast => s_axis_vid_tlast,
                 s_axis_tuser => s_axis_vid_tuser,
@@ -426,7 +430,7 @@ begin
     begin
         s_axis_vid_tready <= vid_yuyv_tready;
         vid_yuyv_tdata <= s_axis_vid_tdata(15 downto 0);
-        vid_yuyv_tvalid <= s_axis_vid_tvalid and ctrl_enable;
+        vid_yuyv_tvalid <= s_axis_vid_tvalid_gated;
         vid_yuyv_tlast <= s_axis_vid_tlast;
         vid_yuyv_tuser <= s_axis_vid_tuser;
     end generate;
@@ -447,7 +451,7 @@ begin
             ctrl_soft_reset => ctrl_soft_reset, ctrl_quality => ctrl_quality,
             ctrl_restart_interval => ctrl_restart_interval, sts_busy => sts_busy,
             sts_frame_done_pulse => sts_frame_done_pulse,
-            sts_frame_cnt => std_logic_vector(frame_cnt),
+            sts_frame_cnt => frame_cnt_slv,
             sts_frame_size => bs_byte_count
         );
 

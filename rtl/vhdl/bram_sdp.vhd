@@ -86,6 +86,7 @@ begin
         signal inner_ra : std_logic_vector(11 downto 0);
         signal addr_a : std_logic_vector(15 downto 0);
         signal addr_b : std_logic_vector(15 downto 0);
+        signal dia_in : std_logic_vector(31 downto 0);
         signal dob_out : std_logic_vector(31 downto 0);
     begin
         g_we_one : if N_TILES = 1 generate
@@ -103,6 +104,7 @@ begin
         inner_ra <= std_logic_vector(resize(unsigned(raddr(INNER_W-1 downto 0)), 12));
         addr_a <= '1' & inner_wa & "000";
         addr_b <= '1' & inner_ra & "000";
+        dia_in <= X"000000" & wdata;
 
         u_bram : RAMB36E1
             generic map (
@@ -140,7 +142,7 @@ begin
                 ENARDEN => tile_we,
                 WEA => "0001",
                 ADDRARDADDR => addr_a,
-                DIADI => X"000000" & wdata,
+                DIADI => dia_in,
                 DIPADIP => "0000",
                 DOADO => open,
                 DOPADOP => open,
@@ -183,7 +185,7 @@ begin
     end generate;
 
     g_out_mux : if N_TILES > 1 generate
-        process(all)
+        process(tile_dout, rsel_d2)
             variable selected : data_t;
         begin
             selected := tile_dout(0);

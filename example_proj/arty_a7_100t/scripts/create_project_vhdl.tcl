@@ -74,7 +74,7 @@ create_project -force arty_a7_demo_vhdl $proj_dir -part $part
 
 add_files -norecurse $vhdl_files
 foreach f $vhdl_files {
-    set_property file_type {VHDL 2008} [get_files $f]
+    set_property file_type {VHDL} [get_files $f]
 }
 add_files -norecurse $verilog_files
 add_files -fileset constrs_1 -norecurse $xdc_file

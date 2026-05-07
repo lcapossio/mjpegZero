@@ -90,6 +90,7 @@ architecture rtl of input_buffer is
     signal wr_frame_active : std_logic := '0';
     signal wr_8lines_done  : std_logic := '0';
 
+    signal s_axis_tready_i : std_logic;
     signal wr_accept : std_logic;
 
     type rd_state_t is (RD_IDLE, RD_READ);
@@ -147,8 +148,9 @@ begin
             wdata => cr_buf_wdata, raddr => cr_buf_raddr, rdata => cr_buf_rdata
         );
 
-    s_axis_tready <= '1' when wr_frame_active = '1' and (wr_bank /= rd_bank or rd_active = '0') else '0';
-    wr_accept <= s_axis_tvalid and s_axis_tready;
+    s_axis_tready_i <= '1' when wr_frame_active = '1' and (wr_bank /= rd_bank or rd_active = '0') else '0';
+    s_axis_tready <= s_axis_tready_i;
+    wr_accept <= s_axis_tvalid and s_axis_tready_i;
     lines_done <= wr_8lines_done;
 
     blk_valid <= blk_valid_r;

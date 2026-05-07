@@ -1,6 +1,6 @@
 # MJPEG Encoder VHDL Sources
 
-Native VHDL-2008 sources for the MJPEG encoder live here.
+Native VHDL-1993 sources for the MJPEG encoder live here.
 
 The port was done top-down:
 
@@ -37,4 +37,4 @@ Source list:
 two-cycle read latency as the Verilog vendor shims. Vendor-specific Verilog RAM
 shims remain available where an explicit primitive is still needed.
 
-Use VHDL-2008 for new files.
+Use VHDL-1993 for new files.

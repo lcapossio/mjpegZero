@@ -55,7 +55,7 @@ set mode_suffix [expr {$lite_mode ? "_lite" : ""}]
 set output_dir [file join $proj_dir build synth_vhdl${mode_suffix}]
 file mkdir $output_dir
 
-read_vhdl -vhdl2008 $src_files
+read_vhdl $src_files
 
 set xdc_file $output_dir/timing.xdc
 set fp [open $xdc_file w]

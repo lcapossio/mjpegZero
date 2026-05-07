@@ -74,7 +74,7 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 
 ## Coding Conventions
 
-- Use VHDL-2008.
+- Use VHDL-1993.
 - Use `ieee.std_logic_1164` and `ieee.numeric_std`.
 - Prefer `std_logic_vector` at module/entity boundaries to match the existing
   Verilog interfaces.

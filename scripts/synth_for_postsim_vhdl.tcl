@@ -54,7 +54,7 @@ set fp [open $xdc_file w]
 puts $fp "create_clock -period 6.667 -name clk \[get_ports clk\]"
 close $fp
 
-read_vhdl -vhdl2008 $src_files
+read_vhdl $src_files
 read_xdc $xdc_file
 
 synth_design -top $top_module -part $part \

@@ -121,7 +121,7 @@ def main():
     print(f'VHDL top  LITE_MODE={int(lite_mode)}  720P={int(mode_720p)}  Q={lite_quality or "default"}')
     print('Step 1: Compiling VHDL sources...')
     print('=' * 70)
-    run([xvhdl, '--2008',
+    run([xvhdl,
          os.path.join(VHDL_DIR, 'mjpegzero_pkg.vhd'),
          os.path.join(VHDL_DIR, 'axi4_lite_regs.vhd'),
          os.path.join(VHDL_DIR, 'bram_sdp.vhd'),

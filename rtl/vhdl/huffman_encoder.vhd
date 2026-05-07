@@ -480,7 +480,10 @@ architecture rtl of huffman_encoder is
     signal huff_code : std_logic_vector(15 downto 0) := (others => '0');
     signal huff_len : unsigned(4 downto 0) := (others => '0');
     signal restart_pending : std_logic := '0';
+    signal out_valid_i : std_logic := '0';
 begin
+    out_valid <= out_valid_i;
+
     process (clk)
         variable wr_addr : natural;
     begin
@@ -553,7 +556,7 @@ begin
         if rising_edge(clk) then
             if rst_n = '0' then
                 state <= S_IDLE;
-                out_valid <= '0';
+                out_valid_i <= '0';
                 out_sob <= '0';
                 out_eob <= '0';
                 out_bits <= (others => '0');
@@ -576,7 +579,7 @@ begin
 
                 case state is
                     when S_IDLE =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         out_sob <= '0';
                         out_eob <= '0';
                         if restart_pending = '1' then
@@ -596,7 +599,7 @@ begin
                         end if;
 
                     when S_DC_FETCH =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         if LITE_MODE /= 0 then rd_addr := 0; elsif coeff_rd_bank = '1' then rd_addr := 64; else rd_addr := 0; end if;
                         if unsigned(blk_comp_id) <= 1 then
                             cur_coeff <= coeff_buf(rd_addr) - prev_dc_y;
@@ -611,14 +614,14 @@ begin
                         state <= S_DC_ENCODE;
 
                     when S_DC_ENCODE =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         cur_sign <= cur_coeff(15);
                         cur_abs <= abs11(cur_coeff);
                         cur_cat <= to_unsigned(compute_category(abs11(cur_coeff)), 4);
                         state <= S_DC_CALC;
 
                     when S_DC_CALC =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         temp_cat := to_integer(cur_cat);
                         cur_vbits <= vbits_for(cur_coeff, temp_cat);
                         if blk_is_luma then dc_lookup := dc_luma_lookup(temp_cat); else dc_lookup := dc_chroma_lookup(temp_cat); end if;
@@ -627,13 +630,13 @@ begin
                         state <= S_DC_EMIT;
 
                     when S_DC_EMIT =>
-                        out_valid <= '1';
+                        out_valid_i <= '1';
                         out_sob <= '1';
                         out_eob <= '0';
                         out_bits <= pack_bits(huff_code, huff_len, cur_vbits, cur_cat);
                         out_len <= std_logic_vector(resize(huff_len, 6) + resize(cur_cat, 6));
-                        if out_ready = '1' and out_valid = '1' then
-                            out_valid <= '0';
+                        if out_ready = '1' and out_valid_i = '1' then
+                            out_valid_i <= '0';
                             out_sob <= '0';
                             if blk_last_nonzero = 0 then
                                 state <= S_EOB_EMIT;
@@ -645,7 +648,7 @@ begin
                         end if;
 
                     when S_AC_FETCH =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         out_sob <= '0';
                         out_eob <= '0';
                         if LITE_MODE /= 0 then rd_addr := to_integer(ac_idx); elsif coeff_rd_bank = '1' then rd_addr := 64 + to_integer(ac_idx); else rd_addr := to_integer(ac_idx); end if;
@@ -653,7 +656,7 @@ begin
                         state <= S_AC_SCAN;
 
                     when S_AC_SCAN =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         if cur_coeff = 0 then
                             if ac_idx > blk_last_nonzero then
                                 state <= S_EOB_EMIT;
@@ -671,7 +674,7 @@ begin
                         end if;
 
                     when S_AC_ENCODE =>
-                        out_valid <= '0';
+                        out_valid_i <= '0';
                         temp_cat := compute_category(cur_abs);
                         cur_cat <= to_unsigned(temp_cat, 4);
                         cur_vbits <= vbits_for(cur_coeff, temp_cat);
@@ -682,13 +685,13 @@ begin
                         state <= S_AC_EMIT;
 
                     when S_AC_EMIT =>
-                        out_valid <= '1';
+                        out_valid_i <= '1';
                         out_sob <= '0';
                         if ac_idx = 63 then out_eob <= '1'; else out_eob <= '0'; end if;
                         out_bits <= pack_bits(huff_code, huff_len, cur_vbits, cur_cat);
                         out_len <= std_logic_vector(resize(huff_len, 6) + resize(cur_cat, 6));
-                        if out_ready = '1' and out_valid = '1' then
-                            out_valid <= '0';
+                        if out_ready = '1' and out_valid_i = '1' then
+                            out_valid_i <= '0';
                             zero_run <= (others => '0');
                             if ac_idx = 63 then
                                 state <= S_IDLE;
@@ -699,28 +702,28 @@ begin
                         end if;
 
                     when S_ZRL_EMIT =>
-                        out_valid <= '1';
+                        out_valid_i <= '1';
                         out_sob <= '0';
                         out_eob <= '0';
                         if blk_is_luma then ac_lookup := ac_luma_lookup(16#F0#); else ac_lookup := ac_chroma_lookup(16#F0#); end if;
                         out_bits <= ac_lookup(15 downto 0) & x"0000";
                         out_len <= std_logic_vector(resize(unsigned(ac_lookup(20 downto 16)), 6));
-                        if out_ready = '1' and out_valid = '1' then
-                            out_valid <= '0';
+                        if out_ready = '1' and out_valid_i = '1' then
+                            out_valid_i <= '0';
                             zero_run <= (others => '0');
                             ac_idx <= ac_idx + 1;
                             state <= S_AC_FETCH;
                         end if;
 
                     when S_EOB_EMIT =>
-                        out_valid <= '1';
+                        out_valid_i <= '1';
                         out_sob <= '0';
                         out_eob <= '1';
                         if blk_is_luma then ac_lookup := ac_luma_lookup(16#00#); else ac_lookup := ac_chroma_lookup(16#00#); end if;
                         out_bits <= ac_lookup(15 downto 0) & x"0000";
                         out_len <= std_logic_vector(resize(unsigned(ac_lookup(20 downto 16)), 6));
-                        if out_ready = '1' and out_valid = '1' then
-                            out_valid <= '0';
+                        if out_ready = '1' and out_valid_i = '1' then
+                            out_valid_i <= '0';
                             out_eob <= '0';
                             state <= S_IDLE;
                         end if;

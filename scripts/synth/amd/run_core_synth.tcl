@@ -82,7 +82,7 @@ if {$language eq "verilog"} {
         $vhdl_dir/jfif_writer.vhd \
         $vhdl_dir/mjpegzero_enc_top.vhd \
     ]
-    read_vhdl -vhdl2008 $src_files
+    read_vhdl $src_files
 }
 
 set xdc_file [file join $output_dir timing.xdc]
