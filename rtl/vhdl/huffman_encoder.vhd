@@ -496,19 +496,27 @@ begin
                 end if;
 
                 if in_valid = '1' then
-                    if LITE_MODE /= 0 then
-                        wr_addr := to_integer(coeff_wr_idx);
-                    else
-                        wr_addr := to_integer(coeff_wr_bank & coeff_wr_idx);
-                    end if;
-                    coeff_buf(wr_addr) <= signed(in_data);
-
                     if in_sob = '1' then
+                        if LITE_MODE /= 0 then
+                            wr_addr := 0;
+                        elsif coeff_wr_bank = '1' then
+                            wr_addr := 64;
+                        else
+                            wr_addr := 0;
+                        end if;
+                        coeff_buf(wr_addr) <= signed(in_data);
                         coeff_wr_idx <= to_unsigned(1, 6);
-                        coeff_buf(wr_addr - to_integer(coeff_wr_idx)) <= signed(in_data);
                         coeff_comp_id <= comp_id;
                         last_nonzero_idx <= (others => '0');
                     else
+                        if LITE_MODE /= 0 then
+                            wr_addr := to_integer(coeff_wr_idx);
+                        elsif coeff_wr_bank = '1' then
+                            wr_addr := 64 + to_integer(coeff_wr_idx);
+                        else
+                            wr_addr := to_integer(coeff_wr_idx);
+                        end if;
+                        coeff_buf(wr_addr) <= signed(in_data);
                         if signed(in_data) /= 0 then
                             last_nonzero_idx <= coeff_wr_idx;
                         end if;
