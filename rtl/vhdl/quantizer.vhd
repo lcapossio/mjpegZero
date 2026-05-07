@@ -37,6 +37,7 @@ architecture rtl of quantizer is
     type nat_array64 is array (0 to 63) of natural;
     type u8_array64 is array (0 to 63) of unsigned(7 downto 0);
     type u16_array64 is array (0 to 63) of unsigned(15 downto 0);
+    type u16_array256 is array (0 to 255) of unsigned(15 downto 0);
 
     constant BASE_LUMA : nat_array64 := (
         16, 11, 10, 16, 24, 40, 51, 61,
@@ -72,6 +73,15 @@ architecture rtl of quantizer is
             end if;
         end if;
         return to_unsigned(recip, 16);
+    end function;
+
+    function recip_lut_init return u16_array256 is
+        variable r : u16_array256 := (others => to_unsigned(65535, 16));
+    begin
+        for i in 1 to 255 loop
+            r(i) := recip_for(i);
+        end loop;
+        return r;
     end function;
 
     function scale_full(q : natural) return natural is
@@ -161,15 +171,22 @@ architecture rtl of quantizer is
     signal recip_chroma  : u16_array64 := recip_init(BASE_CHROMA, LITE_MODE, LITE_QUALITY);
     signal qtable_luma   : u8_array64 := qtable_init(BASE_LUMA, LITE_MODE, LITE_QUALITY);
     signal qtable_chroma : u8_array64 := qtable_init(BASE_CHROMA, LITE_MODE, LITE_QUALITY);
+    constant RECIP_LUT   : u16_array256 := recip_lut_init;
+
+    attribute ram_style : string;
+    attribute ram_style of recip_luma : signal is "distributed";
+    attribute ram_style of recip_chroma : signal is "distributed";
+    attribute ram_style of qtable_luma : signal is "distributed";
+    attribute ram_style of qtable_chroma : signal is "distributed";
 
     signal upd_state     : upd_state_t := UPD_IDLE;
     signal upd_is_chroma : std_logic := '0';
     signal upd_pos       : unsigned(5 downto 0) := (others => '0');
     signal last_quality  : unsigned(6 downto 0) := (others => '0');
-    signal scale_factor  : natural range 0 to 5000 := 0;
-    signal scaled_raw    : natural range 0 to 1048575 := 0;
-    signal scaled_plus50 : natural range 0 to 1048575 := 0;
-    signal div100_product : natural range 0 to 2147483647 := 0;
+    signal scale_factor  : unsigned(12 downto 0) := (others => '0');
+    signal scaled_raw    : unsigned(20 downto 0) := (others => '0');
+    signal scaled_plus50 : unsigned(20 downto 0) := (others => '0');
+    signal div100_product : unsigned(31 downto 0) := (others => '0');
 
     signal coeff_idx : unsigned(5 downto 0) := (others => '0');
     signal latched_is_chroma : std_logic := '0';
@@ -194,9 +211,9 @@ architecture rtl of quantizer is
     signal p3_sign    : std_logic := '0';
 begin
     process (clk)
-        variable div_shift : natural;
         variable div_result : natural;
         variable pos : natural;
+        variable base_q : unsigned(7 downto 0);
     begin
         if rising_edge(clk) then
             if LITE_MODE = 0 then
@@ -205,26 +222,21 @@ begin
                     last_quality <= (others => '0');
                     upd_is_chroma <= '0';
                     upd_pos <= (others => '0');
-                    qtable_luma <= (others => to_unsigned(1, 8));
-                    qtable_chroma <= (others => to_unsigned(1, 8));
-                    recip_luma <= (others => to_unsigned(65535, 16));
-                    recip_chroma <= (others => to_unsigned(65535, 16));
                 else
                     pos := to_integer(upd_pos);
-                    div_shift := div100_product / 131072;
-                    if div_shift > 255 then
+                    if div100_product(31 downto 17) > to_unsigned(255, 15) then
                         div_result := 255;
-                    elsif div_shift < 1 then
+                    elsif div100_product(31 downto 17) < to_unsigned(1, 15) then
                         div_result := 1;
                     else
-                        div_result := (div100_product / 131072) mod 256;
+                        div_result := to_integer(div100_product(24 downto 17));
                     end if;
 
                     case upd_state is
                         when UPD_IDLE =>
                             if unsigned(quality) /= last_quality then
                                 last_quality <= unsigned(quality);
-                                scale_factor <= scale_full(to_integer(unsigned(quality)));
+                                scale_factor <= to_unsigned(scale_full(to_integer(unsigned(quality))), 13);
                                 upd_is_chroma <= '0';
                                 upd_pos <= (others => '0');
                                 upd_state <= UPD_SCALE;
@@ -232,27 +244,28 @@ begin
 
                         when UPD_SCALE =>
                             if upd_is_chroma = '1' then
-                                scaled_raw <= BASE_CHROMA(pos) * scale_factor;
+                                base_q := to_unsigned(BASE_CHROMA(pos), 8);
                             else
-                                scaled_raw <= BASE_LUMA(pos) * scale_factor;
+                                base_q := to_unsigned(BASE_LUMA(pos), 8);
                             end if;
+                            scaled_raw <= resize(base_q * scale_factor, scaled_raw'length);
                             upd_state <= UPD_ADD;
 
                         when UPD_ADD =>
-                            scaled_plus50 <= scaled_raw + 50;
+                            scaled_plus50 <= scaled_raw + to_unsigned(50, scaled_plus50'length);
                             upd_state <= UPD_DIV;
 
                         when UPD_DIV =>
-                            div100_product <= scaled_plus50 * 1311;
+                            div100_product <= resize(scaled_plus50 * to_unsigned(1311, 11), div100_product'length);
                             upd_state <= UPD_RECIP;
 
                         when UPD_RECIP =>
                             if upd_is_chroma = '1' then
                                 qtable_chroma(pos) <= to_unsigned(div_result, 8);
-                                recip_chroma(pos) <= recip_for(div_result);
+                                recip_chroma(pos) <= RECIP_LUT(div_result);
                             else
                                 qtable_luma(pos) <= to_unsigned(div_result, 8);
-                                recip_luma(pos) <= recip_for(div_result);
+                                recip_luma(pos) <= RECIP_LUT(div_result);
                             end if;
 
                             if upd_pos = 63 then

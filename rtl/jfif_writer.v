@@ -91,6 +91,7 @@ if (LITE_MODE == 0) begin : g_full_header
 
     // DHT ROM - all 4 Huffman tables (432 bytes)
     localparam DHT_SIZE = 432;
+    (* rom_style = "distributed", ram_style = "distributed" *)
     reg [7:0] dht_rom [0:DHT_SIZE-1];
 
     /* verilator coverage_off */
