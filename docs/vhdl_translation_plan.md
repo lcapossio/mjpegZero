@@ -1,7 +1,7 @@
 # VHDL Translation Plan
 
-This branch starts a top-down VHDL port of the MJPEG encoder while keeping the
-existing Verilog implementation as the golden reference.
+This branch contains a top-down VHDL port of the MJPEG encoder while keeping
+the existing Verilog implementation as the golden reference.
 
 ## Source Layout
 
@@ -12,6 +12,7 @@ existing Verilog implementation as the golden reference.
   - Files should mirror the Verilog module names where practical, for example
     `mjpegzero_enc_top.vhd`, `input_buffer.vhd`, and `dct_1d.vhd`.
   - Shared VHDL declarations live in `mjpegzero_pkg.vhd`.
+  - The VHDL encoder hierarchy is complete through `mjpegzero_enc_top.vhd`.
 - `rtl/vendor/`
   - Existing vendor-specific Verilog RAM shims.
   - Vendor primitives should be wrapped or re-authored only when needed for a
@@ -64,6 +65,12 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
   is faster than the full image pipeline.
 - Compare against the current image/JPEG byte outputs before declaring a module
   translated.
+- Build the Arty A7-100T board demo with both
+  `example_proj/arty_a7_100t/scripts/create_project.tcl` and
+  `example_proj/arty_a7_100t/scripts/create_project_vhdl.tcl`.
+- Run `python scripts/hw_test_mandrill.py --bit <bitstream> --program` for both
+  bitstreams. The current Verilog and VHDL Arty A7-100T bitstreams both produce
+  the same 235,118-byte Mandrill 720p Q75 JPEG as simulation.
 
 ## Coding Conventions
 

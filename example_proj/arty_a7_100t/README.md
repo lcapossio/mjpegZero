@@ -19,11 +19,21 @@
 
 ## Build
 
+Verilog encoder build:
+
 ```bash
 vivado -mode batch -source example_proj/arty_a7_100t/scripts/create_project.tcl
 ```
 
 Bitstream written to `example_proj/arty_a7_100t/build/arty_a7_demo.bit`.
+
+VHDL encoder build:
+
+```bash
+vivado -mode batch -source example_proj/arty_a7_100t/scripts/create_project_vhdl.tcl
+```
+
+Bitstream written to `example_proj/arty_a7_100t/build_vhdl/arty_a7_demo_vhdl.bit`.
 
 ---
 
@@ -75,18 +85,16 @@ python example_proj/common/python/demo.py \
 
 ## Resource Utilisation
 
-Latest post-route fcapz demo build at 150 MHz:
+Latest post-route fcapz demo builds at 150 MHz:
 
-| Resource | Used  | Available | Utilization |
-|----------|-------|-----------|-------------|
-| LUT      | 5,587 | 63,400    | 8.81%       |
-| FF       | 6,275 | 126,800   | 4.95%       |
-| BRAM     | 78.5 tiles | 135 | 58.15%      |
-| DSP48E1  | 21    | 240       | 8.75%       |
+| HDL | LUT | FF | BRAM tiles | DSP48E1 | WNS |
+|-----|----:|---:|-----------:|--------:|----:|
+| Verilog | 5,362 | 5,265 | 78 | 21 | +0.153 ns |
+| VHDL    | 5,348 | 5,258 | 78 | 21 | +0.167 ns |
 
-WNS = +0.108 ns at 150 MHz. This build uses vanilla fcapz `da892ca` with a
-minimized 16-bit, 512-sample ELA (`INPUT_PIPE=1`, no timestamps, no decimation)
-plus the EJTAG-AXI bridge used by the hardware test.
+Both builds use vanilla fcapz `da892ca` with a minimized 16-bit, 512-sample ELA
+(`INPUT_PIPE=1`, no timestamps, no decimation) plus the EJTAG-AXI bridge used by
+the hardware test.
 
 ---
 
@@ -95,13 +103,15 @@ plus the EJTAG-AXI bridge used by the hardware test.
 ```bash
 python scripts/hw_test_mandrill.py \
     --bit example_proj/arty_a7_100t/build/arty_a7_demo.bit --program
+
+python scripts/hw_test_mandrill.py \
+    --bit example_proj/arty_a7_100t/build_vhdl/arty_a7_demo_vhdl.bit --program
 ```
 
-| Comparison       | Y-PSNR   | JPEG size  | Compression |
-|------------------|----------|------------|-------------|
-| HW vs Original   | 38.45 dB | 230 KB     | 11.8:1      |
-| Sim vs Original  | 38.45 dB | 230 KB     | 11.8:1      |
-| HW vs Sim        | inf dB   | byte-exact | -           |
+| Bitstream | HW vs Original | Sim vs Original | HW vs Sim | JPEG size |
+|-----------|----------------|-----------------|-----------|----------:|
+| Verilog | 38.45 dB | 38.45 dB | byte-exact | 235,118 bytes |
+| VHDL    | 38.45 dB | 38.45 dB | byte-exact | 235,118 bytes |
 
 HW and RTL simulation receive the same YUYV input via `python/yuyv_convert.py`.
 
