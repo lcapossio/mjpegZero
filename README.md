@@ -55,19 +55,9 @@ A Python reference encoder is included for validation and test vector generation
 ## Architecture <sub>[↑ Top](#top)</sub>
 
 
-```
-                  +----------------------------------------------------------+
-                  |                  mjpegzero_enc_top                        |
-                  |                                                          |
-  AXI4-Stream  -->| Input    --> 2D  --> Quant --> Zigzag --> Huffman -->     |
-  16-bit YUYV     | Buffer      DCT     izer      Reorder    Encoder         |
-                  |                                                          |
-                  |    --> Bitstream --> JFIF    -->  AXI4-Stream 8-bit JPEG  |
-                  |       Packer        Writer                               |
-                  |                                                          |
-  AXI4-Lite    <->| Register File (ctrl, status, quality, frame count)       |
-                  +----------------------------------------------------------+
-```
+<a href="docs/architecture.svg">
+  <img src="docs/architecture.svg" alt="mjpegZero encoder top-level architecture" width="100%">
+</a>
 
 <a id="interfaces"></a>
 ## Interfaces <sub>[↑ Top](#top)</sub>
