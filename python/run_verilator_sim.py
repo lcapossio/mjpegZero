@@ -115,6 +115,9 @@ def run_sim(build_dir, quality, tag):
     ]
 
     print(f'  Running sim (Q={quality})...')
+    if not os.path.exists(sim_bin):
+        print(f'  ERROR: simulator binary not found: {sim_bin}')
+        return False, out_jpg
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=build_dir)
     print(result.stdout.strip())
     if result.returncode != 0:
@@ -217,14 +220,10 @@ def main():
         # Full mode: compile once for all qualities
         if args.lite:
             compile_ok = verilate(BUILD_DIR, lite_mode=True, lite_quality=q)
+        elif q == qualities[0]:
+            compile_ok = verilate(BUILD_DIR, lite_mode=False)
         else:
-            compile_ok = (q == qualities[0] and verilate(BUILD_DIR, lite_mode=False)) or \
-                         (q != qualities[0])
-            # Re-use compiled binary for full mode (quality set at runtime via AXI)
-            if q == qualities[0]:
-                compile_ok = verilate(BUILD_DIR, lite_mode=False)
-            else:
-                compile_ok = True  # already compiled
+            compile_ok = True  # full mode reuses binary; quality is runtime AXI state
 
         if not compile_ok:
             results.append((tag, False, 'compile failed'))
