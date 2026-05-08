@@ -59,6 +59,10 @@ A Python reference encoder is included for validation and test vector generation
   <img src="docs/architecture.svg" alt="mjpegZero encoder top-level architecture" width="100%">
 </a>
 
+The editable diagram spec [`docs/architecture.json`](docs/architecture.json)
+and rendered SVG [`docs/architecture.svg`](docs/architecture.svg) were created
+with the [`hdldiagZero`](https://github.com/lcapossio/hdldiagZero) skill.
+
 <a id="interfaces"></a>
 ## Interfaces <sub>[↑ Top](#top)</sub>
 
