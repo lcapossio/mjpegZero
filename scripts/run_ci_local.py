@@ -22,6 +22,7 @@ Available jobs:
     rtl-verilator-sim  Verilator functional simulation
     rtl-coverage       Verilator code coverage
     vhdl-top-sim       Vivado xsim VHDL top simulation (full + lite)
+    demo-shell-sim     Vivado xsim board shell simulation with AXI JPEG readback
     core-resource-equiv Vivado core Verilog/VHDL resource comparison
     fusesoc            FuseSoC core validation + lint
     all                All of the above (default)
@@ -297,6 +298,17 @@ def job_vhdl_top_sim():
     )
 
 
+def job_demo_shell_sim():
+    return run_job(
+        'demo-shell-sim',
+        prereqs_tools=['vivado'],
+        prereqs_modules=[],
+        steps=[
+            ('demo shell AXI JPEG readback sim', py('scripts/run_demo_sim.py')),
+        ],
+    )
+
+
 def job_core_resource_equiv():
     return run_job(
         'core-resource-equiv',
@@ -338,6 +350,7 @@ JOBS = {
     'rtl-verilator-sim': job_rtl_verilator_sim,
     'rtl-coverage':      job_rtl_coverage,
     'vhdl-top-sim':      job_vhdl_top_sim,
+    'demo-shell-sim':    job_demo_shell_sim,
     'core-resource-equiv': job_core_resource_equiv,
     'fusesoc':           job_fusesoc,
 }
@@ -367,6 +380,7 @@ def main():
         for j in ALL_JOBS_ORDER:
             print(f'  {j}')
         print('  vhdl-top-sim')
+        print('  demo-shell-sim')
         print('  core-resource-equiv')
         print('  all  (run everything in order)')
         return 0

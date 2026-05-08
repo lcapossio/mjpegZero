@@ -79,10 +79,9 @@ module demo_top_bare #(
     end
 
     // -----------------------------------------------------------------------
-    // JPEG BRAM — 32-bit wide
+    // JPEG buffer is shared with demo_top so simulation sees the same read
+    // latency and tiling behavior as the board shell.
     // -----------------------------------------------------------------------
-    (* ram_style = "block" *) reg [31:0] jpeg_mem [0:JPEG_WORDS-1];
-
     // -----------------------------------------------------------------------
     // Pixel FIFO — 64 x 32-bit, distributed RAM, async read
     // -----------------------------------------------------------------------
@@ -176,6 +175,10 @@ module demo_top_bare #(
 
     wire jpeg_word_room = (jp_wptr < JPEG_WORDS[16:0]);
     wire jpeg_byte_room = (jpeg_byte_cnt < JPEG_BYTES[18:0]);
+    wire jpeg_we = (jpg_tvalid && enc_running && jp_phase == 2'd3 && jpeg_word_room) ||
+                   (flush_pend && jpeg_word_room);
+    wire [31:0] jpeg_wdata = (jpg_tvalid && enc_running && jp_phase == 2'd3) ?
+                              {jpg_tdata, jp_accum} : {8'd0, jp_accum};
 
     // -----------------------------------------------------------------------
     // Pixel pump state
@@ -200,14 +203,8 @@ module demo_top_bare #(
             pix_fifo[pix_wr_ptr] <= m_wdata;
 
     // -----------------------------------------------------------------------
-    // JPEG BRAM write
+    // JPEG buffer write is handled by demo_jpeg_buffer.
     // -----------------------------------------------------------------------
-    always @(posedge clk)
-        if (jpg_tvalid && enc_running && jp_phase == 2'd3 && jpeg_word_room)
-            jpeg_mem[jp_wptr] <= {jpg_tdata, jp_accum};
-        else if (flush_pend && jpeg_word_room)
-            jpeg_mem[jp_wptr] <= {8'd0, jp_accum};
-
     // -----------------------------------------------------------------------
     // ar_widx — declared here (before the BRAM read always block that uses it)
     // Updated by the AXI4 read slave below.
@@ -217,11 +214,20 @@ module demo_top_bare #(
     reg        ar_to_jpeg;
 
     // -----------------------------------------------------------------------
-    // JPEG BRAM read (1-cycle latency)
+    // JPEG buffer read (1-cycle latency)
     // -----------------------------------------------------------------------
-    reg [31:0] jpeg_rd_data;
-    always @(posedge clk)
-        jpeg_rd_data <= jpeg_mem[ar_widx];
+    wire [31:0] jpeg_rd_data;
+    demo_jpeg_buffer #(
+        .JPEG_WORDS      (JPEG_WORDS),
+        .JPEG_TILE_DEPTH (4096)
+    ) u_jpeg_buffer (
+        .clk   (clk),
+        .we    (jpeg_we),
+        .waddr (jp_wptr),
+        .wdata (jpeg_wdata),
+        .raddr (ar_widx),
+        .rdata (jpeg_rd_data)
+    );
 
     // -----------------------------------------------------------------------
     // Main always block

@@ -50,6 +50,7 @@ set rtl_files [list \
     $repo_root/rtl/mjpegzero_enc_top.v \
     $common_dir/rtl/clk_gen.v \
     $common_dir/rtl/axi_init.v \
+    $common_dir/rtl/demo_jpeg_buffer.v \
     $common_dir/rtl/demo_top.v \
     $fcapz_rtl/dpram.v \
     $fcapz_rtl/reset_sync.v \
@@ -88,21 +89,15 @@ set_property generic {LITE_MODE=1 LITE_QUALITY=75 IMG_WIDTH=1280 IMG_HEIGHT=720 
 # ============================================================================
 # Synthesis
 # ============================================================================
-set_property strategy Flow_PerfOptimized_high [get_runs synth_1]
-
 puts "======================================================================"
 puts "Starting synthesis..."
 puts "======================================================================"
 
-launch_runs synth_1 -jobs 4
-wait_on_run synth_1
+synth_design -top $top -part $part -flatten_hierarchy rebuilt \
+    -directive PerformanceOptimized
 
-if {[get_property PROGRESS [get_runs synth_1]] != "100%"} {
-    error "Synthesis failed — see $proj_dir/arty_a7_demo.runs/synth_1/"
-}
 puts "Synthesis complete."
 
-open_run synth_1 -name synth_1
 report_utilization    -file $rpt_dir/synth_utilization.rpt
 report_timing_summary -file $rpt_dir/synth_timing.rpt
 write_checkpoint -force $build_dir/post_synth.dcp
@@ -110,21 +105,18 @@ write_checkpoint -force $build_dir/post_synth.dcp
 # ============================================================================
 # Implementation
 # ============================================================================
-set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
-
 puts "======================================================================"
 puts "Starting implementation..."
 puts "======================================================================"
 
-launch_runs impl_1 -jobs 4
-wait_on_run impl_1
+opt_design -directive Explore
+place_design -directive Explore
+phys_opt_design -directive Explore
+route_design -directive Explore -tns_cleanup
+phys_opt_design -directive Explore
 
-if {[get_property PROGRESS [get_runs impl_1]] != "100%"} {
-    error "Implementation failed — see $proj_dir/arty_a7_demo.runs/impl_1/"
-}
 puts "Implementation complete."
 
-open_run impl_1 -name impl_1
 report_utilization    -file $rpt_dir/impl_utilization.rpt
 report_timing_summary -file $rpt_dir/impl_timing_summary.rpt
 report_timing -nworst 10 -file $rpt_dir/impl_timing_worst10.rpt
@@ -134,18 +126,11 @@ write_checkpoint -force $build_dir/post_route.dcp
 # Bitstream
 # ============================================================================
 puts "Writing bitstream..."
-launch_runs impl_1 -to_step write_bitstream -jobs 4
-wait_on_run impl_1
+write_bitstream -force $build_dir/arty_a7_demo.bit
 
-set bit_src [glob -nocomplain $proj_dir/arty_a7_demo.runs/impl_1/*.bit]
-if {[llength $bit_src] > 0} {
-    file copy -force [lindex $bit_src 0] $build_dir/arty_a7_demo.bit
-    puts "======================================================================"
-    puts "DONE — bitstream: $build_dir/arty_a7_demo.bit"
-    puts "======================================================================"
-} else {
-    error "Bitstream not found — check impl run logs"
-}
+puts "======================================================================"
+puts "DONE — bitstream: $build_dir/arty_a7_demo.bit"
+puts "======================================================================"
 
 # ============================================================================
 # Parse and print post-route WNS

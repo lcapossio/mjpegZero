@@ -35,6 +35,7 @@ set vhdl_dir  [file normalize $repo_root/rtl/vhdl]
 
 set vhdl_files [list \
     $vhdl_dir/mjpegzero_pkg.vhd \
+    $vhdl_dir/demo_jpeg_buffer.vhd \
     $vhdl_dir/axi4_lite_regs.vhd \
     $vhdl_dir/bram_sdp.vhd \
     $vhdl_dir/input_buffer.vhd \
@@ -84,58 +85,42 @@ set_property generic {LITE_MODE=1 LITE_QUALITY=75 IMG_WIDTH=1280 IMG_HEIGHT=720 
     [get_filesets sources_1]
 update_compile_order -fileset sources_1
 
-set_property strategy Flow_PerfOptimized_high [get_runs synth_1]
-
 puts "======================================================================"
 puts "Starting VHDL encoder synthesis for Arty A7-100T..."
 puts "======================================================================"
 
-launch_runs synth_1 -jobs 4
-wait_on_run synth_1
+synth_design -top $top -part $part -flatten_hierarchy rebuilt \
+    -directive PerformanceOptimized
 
-if {[get_property PROGRESS [get_runs synth_1]] != "100%"} {
-    error "Synthesis failed - see $proj_dir/arty_a7_demo_vhdl.runs/synth_1/"
-}
 puts "Synthesis complete."
 
-open_run synth_1 -name synth_1
 report_utilization    -file $rpt_dir/synth_utilization.rpt
 report_timing_summary -file $rpt_dir/synth_timing.rpt
 write_checkpoint -force $build_dir/post_synth.dcp
-
-set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
 
 puts "======================================================================"
 puts "Starting implementation..."
 puts "======================================================================"
 
-launch_runs impl_1 -jobs 4
-wait_on_run impl_1
+opt_design -directive Explore
+place_design -directive Explore
+phys_opt_design -directive Explore
+route_design -directive Explore -tns_cleanup
+phys_opt_design -directive Explore
 
-if {[get_property PROGRESS [get_runs impl_1]] != "100%"} {
-    error "Implementation failed - see $proj_dir/arty_a7_demo_vhdl.runs/impl_1/"
-}
 puts "Implementation complete."
 
-open_run impl_1 -name impl_1
 report_utilization    -file $rpt_dir/impl_utilization.rpt
 report_timing_summary -file $rpt_dir/impl_timing_summary.rpt
 report_timing -nworst 10 -file $rpt_dir/impl_timing_worst10.rpt
 write_checkpoint -force $build_dir/post_route.dcp
 
 puts "Writing bitstream..."
-launch_runs impl_1 -to_step write_bitstream -jobs 4
-wait_on_run impl_1
+write_bitstream -force $build_dir/arty_a7_demo_vhdl.bit
 
-set bit_src [glob -nocomplain $proj_dir/arty_a7_demo_vhdl.runs/impl_1/*.bit]
-if {[llength $bit_src] > 0} {
-    file copy -force [lindex $bit_src 0] $build_dir/arty_a7_demo_vhdl.bit
-    puts "======================================================================"
-    puts "DONE - bitstream: $build_dir/arty_a7_demo_vhdl.bit"
-    puts "======================================================================"
-} else {
-    error "Bitstream not found - check impl run logs"
-}
+puts "======================================================================"
+puts "DONE - bitstream: $build_dir/arty_a7_demo_vhdl.bit"
+puts "======================================================================"
 
 set fp [open $rpt_dir/impl_timing_summary.rpt r]
 set content [read $fp]

@@ -91,8 +91,6 @@ module demo_top #(
     // Write port in a separate synchronous-only always block (required for
     // BRAM inference; async-reset prevents Vivado from mapping to RAMB36).
     // -----------------------------------------------------------------------
-    (* ram_style = "block" *) reg [31:0] jpeg_mem [0:JPEG_WORDS-1];
-
     // -----------------------------------------------------------------------
     // Pixel FIFO — 64 x 32-bit (= 128 pixels); distributed RAM, async read
     // Write port in a separate synchronous-only always block.
@@ -167,6 +165,10 @@ module demo_top #(
     reg         m_arready;
     reg  [31:0] m_rdata;   reg [1:0] m_rresp; reg m_rlast; reg m_rvalid;
     wire        m_rready;
+
+    reg        axi_wr_act;
+    reg        enc_running;
+    reg        enc_done;
 
     fcapz_ejtagaxi_xilinx7 #(
         .ADDR_W     (32),
@@ -245,7 +247,6 @@ module demo_top #(
     localparam [1:0] AW_IDLE = 2'd0, AW_DATA = 2'd1, AW_RESP = 2'd2;
     reg [1:0]  aw_state;
     reg [31:0] aw_addr;
-    reg        axi_wr_act;
     reg        aw_bad;
     reg        aw_to_pixel;
     reg        aw_to_ctrl;
@@ -265,9 +266,7 @@ module demo_top #(
     // -----------------------------------------------------------------------
     // JPEG capture control registers
     // -----------------------------------------------------------------------
-    reg        enc_running;
     reg        start_armed;
-    reg        enc_done;
     reg [18:0] jpeg_byte_cnt;
     reg [1:0]  jp_phase;
     reg [23:0] jp_accum;
@@ -302,22 +301,13 @@ module demo_top #(
             pix_fifo[pix_wr_ptr] <= m_wdata;
 
     // -----------------------------------------------------------------------
-    // JPEG BRAM write — separate synchronous block (no async reset)
-    // Allows Vivado to infer RAMB36 for the 192 KB jpeg_mem array.
+    // JPEG buffer write is handled by demo_jpeg_buffer.
     // -----------------------------------------------------------------------
-    always @(posedge clk)
-        if (jpg_tvalid && enc_running && jp_phase == 2'd3 && jpeg_word_room)
-            jpeg_mem[jp_wptr] <= {jpg_tdata, jp_accum};
-        else if (flush_pend && jpeg_word_room)
-            jpeg_mem[jp_wptr] <= {8'd0, jp_accum};   // flush partial last word (zero-pad MSB)
 
     // -----------------------------------------------------------------------
-    // JPEG BRAM read — synchronous registered output (1-cycle latency)
+    // JPEG buffer read — synchronous registered output (1-cycle latency)
     // AR_PRE state provides the latency gap; AR_DATA uses jpeg_rd_data.
     // -----------------------------------------------------------------------
-    reg [31:0] jpeg_rd_data;
-    always @(posedge clk)
-        jpeg_rd_data <= jpeg_mem[ar_widx];  // ar_widx declared below in AR block
 
     // -----------------------------------------------------------------------
     // Main always block — write slave, FIFO ptrs, pixel pump, JPEG ctrl
@@ -538,9 +528,29 @@ module demo_top #(
     reg [2:0]  ar_state;
     reg [31:0] ar_addr;
     reg [7:0]  ar_rem;
-    reg [16:0] ar_widx;   // declared here; referenced in jpeg_rd_data block above
+    reg [16:0] ar_widx;
     reg        ar_bad;
     reg        ar_to_jpeg;
+    wire        jpeg_we;
+    wire [31:0] jpeg_wdata;
+    wire [31:0] jpeg_rd_data;
+
+    assign jpeg_we = (jpg_tvalid && enc_running && jp_phase == 2'd3 && jpeg_word_room) ||
+                     (flush_pend && jpeg_word_room);
+    assign jpeg_wdata = (jpg_tvalid && enc_running && jp_phase == 2'd3) ?
+                        {jpg_tdata, jp_accum} : {8'd0, jp_accum};
+
+    demo_jpeg_buffer #(
+        .JPEG_WORDS      (JPEG_WORDS),
+        .JPEG_TILE_DEPTH (4096)
+    ) u_jpeg_buffer (
+        .clk   (clk),
+        .we    (jpeg_we),
+        .waddr (jp_wptr),
+        .wdata (jpeg_wdata),
+        .raddr (ar_widx),
+        .rdata (jpeg_rd_data)
+    );
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -580,8 +590,6 @@ module demo_top #(
                 end
 
                 AR_PRE: begin
-                    // BRAM read issued (jpeg_rd_data <= jpeg_mem[ar_widx] runs
-                    // this cycle); result available at start of AR_DATA.
                     ar_state <= AR_DATA;
                 end
 
