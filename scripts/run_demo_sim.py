@@ -87,7 +87,7 @@ def main():
 
     xvlog = vivado_tool(viv, 'xvlog')
     run([xvlog] + defines + [
-        os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'),
+        os.path.join(RTL_DIR, 'bram_sdp.v'),
         os.path.join(RTL_DIR, 'dct_1d.v'),
         os.path.join(RTL_DIR, 'dct_2d.v'),
         os.path.join(RTL_DIR, 'input_buffer.v'),

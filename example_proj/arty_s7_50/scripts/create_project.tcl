@@ -36,7 +36,7 @@ file delete -force $proj_dir
 set fcapz_rtl [file normalize $repo_root/fcapz/rtl]
 
 set rtl_files [list \
-    $repo_root/rtl/vendor/amd/bram_sdp.v \
+    $repo_root/rtl/bram_sdp.v \
     $repo_root/rtl/dct_1d.v \
     $repo_root/rtl/dct_2d.v \
     $repo_root/rtl/input_buffer.v \

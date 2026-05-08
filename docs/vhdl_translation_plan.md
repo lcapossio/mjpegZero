@@ -13,12 +13,6 @@ the existing Verilog implementation as the golden reference.
     `mjpegzero_enc_top.vhd`, `input_buffer.vhd`, and `dct_1d.vhd`.
   - Shared VHDL declarations live in `mjpegzero_pkg.vhd`.
   - The VHDL encoder hierarchy is complete through `mjpegzero_enc_top.vhd`.
-- `rtl/vendor/`
-  - Existing vendor-specific Verilog RAM shims.
-  - Vendor primitives should be wrapped or re-authored only when needed for a
-    pure-VHDL synthesis target.
-- `rtl/vhdl/vendor/`
-  - Vendor-specific VHDL RAM shims used only by explicit vendor flows.
 - `sim/`
   - Existing Verilog/SystemVerilog testbenches and vectors.
 - `sim/vhdl/`
@@ -47,8 +41,7 @@ Translate top down, but verify bottom-up whenever a leaf becomes available.
 4. RAM abstraction
    - `bram_sdp` - translated as a vendor-neutral inferred two-cycle simple
      dual-port RAM.
-   - Keep vendor-specific RAM shims under vendor directories where explicit
-     primitives are required for a vendor flow.
+   - Keep the core RAM behavioral and vendor-neutral.
 5. Synthesis wrappers
    - `synth_timing_wrapper` - translated
 

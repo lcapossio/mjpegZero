@@ -33,12 +33,11 @@ set script_dir [file normalize [file dirname [info script]]]
 set proj_dir   [file normalize [file join $script_dir ../../..]]
 set rtl_dir    [file join $proj_dir rtl]
 set vhdl_dir   [file join $rtl_dir vhdl]
-set vhdl_vendor_dir [file join $vhdl_dir vendor amd]
 
 set src_files [list \
     $vhdl_dir/mjpegzero_pkg.vhd \
     $vhdl_dir/axi4_lite_regs.vhd \
-    $vhdl_vendor_dir/bram_sdp.vhd \
+    $vhdl_dir/bram_sdp.vhd \
     $vhdl_dir/input_buffer.vhd \
     $vhdl_dir/dct_1d.vhd \
     $vhdl_dir/dct_2d.vhd \

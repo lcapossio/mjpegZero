@@ -198,10 +198,10 @@ XC7A100T target at 150 MHz.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,156 | 1,029 | 16 | 23 | +0.516 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,146 | 1,031 | 16 | 23 | +0.326 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 1,828 | 980 | 11 | 21 | +0.516 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 1,820 | 973 | 11 | 21 | +0.326 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,115 | 1,034 | 16 | 23 | +0.516 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,105 | 1,018 | 16 | 23 | +0.326 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 1,785 | 966 | 16 | 21 | +0.516 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 1,777 | 959 | 16 | 21 | +0.326 ns |
 
 Use `python scripts/check_core_resources.py --run-synth` to regenerate the
 Verilog/VHDL apples-to-apples comparison.
@@ -222,14 +222,13 @@ Verilog/VHDL apples-to-apples comparison.
 | Bitstream Packer    | `rtl/bitstream_packer.v`     | `rtl/vhdl/bitstream_packer.vhd`     | 64-bit accumulator, byte stuffing                         |
 | JFIF Writer         | `rtl/jfif_writer.v`          | `rtl/vhdl/jfif_writer.vhd`          | Header ROM, SOI/APP0/[APP1-EXIF]/DQT/EOI state machine   |
 | AXI4-Lite Regs      | `rtl/axi4_lite_regs.v`       | `rtl/vhdl/axi4_lite_regs.vhd`       | Control/status register file                              |
-| SDP BRAM            | `rtl/vendor/*/bram_sdp.v`    | `rtl/vhdl/bram_sdp.vhd`             | Vendor-neutral VHDL wrapper; vendor-specific primitives in `rtl/vendor/` and `rtl/vhdl/vendor/` |
+| SDP BRAM            | `rtl/bram_sdp.v`             | `rtl/vhdl/bram_sdp.vhd`             | Vendor-neutral behavioral simple dual-port RAM            |
 | Top-Level           | `rtl/mjpegzero_enc_top.v`    | `rtl/vhdl/mjpegzero_enc_top.vhd`    | Pipeline integration and frame control                    |
 | Timing Wrapper      | `rtl/synth_timing_wrapper.v` | `rtl/vhdl/synth_timing_wrapper.vhd` | I/O flip-flops for synthesis timing analysis              |
 
 The encoder is maintained in behavioural Verilog 2001 and native VHDL-1993.
-The only vendor-specific RTL primitive is the optional simple dual-port BRAM
-wrapper under `rtl/vendor/<vendor>/` or `rtl/vhdl/vendor/<vendor>/`.
-Everything else is portable and synchronous.
+The encoder core has no vendor-specific RTL primitives. The simple dual-port
+RAM wrappers are behavioral in both Verilog and VHDL.
 
 <a id="quick-start"></a>
 ## Quick Start <sub>[↑ Top](#top)</sub>
@@ -292,9 +291,6 @@ python python/verify_rtl_sim.py --lite
 # With VCD dump
 python python/verify_rtl_sim.py --dump-vcd
 
-# Optionally simulate with the real Xilinx RAMB36E1 primitive (requires Vivado)
-python python/verify_rtl_sim.py --unisims auto
-
 # RGB_INPUT=1 functional test (24-bit RGB through built-in color converter)
 python python/verify_rtl_sim.py --rgb
 python python/verify_rtl_sim.py --lite --rgb
@@ -315,7 +311,7 @@ python python/verify_axi_regs.py --lite
 ```
 
 Requires: `iverilog` / `vvp` on PATH, Python ≥ 3.8 with NumPy.
-Without `--unisims`, a portable behavioural BRAM model is used (default, CI path).
+RTL simulation uses the same behavioral `rtl/bram_sdp.v` as synthesis.
 
 <a id="verilator-code-coverage-optional-requires-verilator-4-2"></a>
 #### Verilator code coverage (optional, requires Verilator ≥ 4.2) <sub>[↑ Top](#top)</sub>
@@ -459,8 +455,7 @@ Reports are written to `build/synth/` or `build/synth_lite/`.
 
 AMD/Vivado and Altera/Quartus scripts are fully implemented.
 Synthesis scripts for Lattice Radiant, Microchip Libero, Efinix Efinity, and GoWin EDA
-are scaffolded in `scripts/synth/<vendor>/` — implement the tool-specific Tcl flow and
-replace `rtl/bram_sdp.v` with the matching `rtl/vendor/<vendor>/bram_sdp.v`.
+are scaffolded in `scripts/synth/<vendor>/` — implement the tool-specific Tcl flow.
 Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <a id="run-implementation-place-route"></a>
@@ -554,8 +549,7 @@ mjpegzero_enc_top #(
 | Digilent Arty S7-50   | XC7S50CSGA324-1  | [`example_proj/arty_s7_50/`](example_proj/arty_s7_50/)     | Build scaffolded; rebuild + HW verification pending |
 
 Any AMD/Xilinx 7-Series device is a straightforward port — swap the XDC and adjust `JPEG_WORDS`
-for available BRAM. Vendor BRAM wrappers for Altera, Lattice, Microchip, Efinix, and Gowin are
-provided as stubs in `rtl/vendor/`.
+for available BRAM.
 
 <a id="applications"></a>
 ## Applications <sub>[↑ Top](#top)</sub>

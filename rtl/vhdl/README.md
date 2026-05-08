@@ -34,9 +34,6 @@ Source list:
 | `synth_timing_wrapper.vhd` | Core synthesis timing wrapper |
 
 `bram_sdp.vhd` is the vendor-neutral core RAM. It uses behavioral VHDL and has
-the same two-cycle read latency as the vendor RAM shims. Optimized
-vendor-specific replacements live under `vendor/`; for example,
-`vendor/amd/bram_sdp.vhd` explicitly instantiates `RAMB36E1` for AMD/Xilinx
-7-series Vivado builds.
+the same two-cycle read latency as `../bram_sdp.v`.
 
 Use VHDL-1993 for new files.

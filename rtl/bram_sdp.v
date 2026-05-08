@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-// Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
-// Copyright (c) 2026 Leonardo Capossio — bard0 design
+// Commons Clause v1.0 applies - commercial use requires written permission. Contact: hello@bard0.com
+// Copyright (c) 2026 Leonardo Capossio - bard0 design
 //
 // ============================================================================
-// bram_sdp.v — Efinix inferred Simple Dual-Port Block RAM
+// bram_sdp.v - Vendor-neutral behavioral Simple Dual-Port RAM
 // ============================================================================
-// Synthesises to FIFO36K / EFX_RAM_AR blocks on Trion / Titanium devices.
-// Efinity uses standard (* ram_style = "block" *) for BRAM inference.
+// Two-cycle read latency:
+//   cycle 1: registered memory array read
+//   cycle 2: registered output
 //
-// Read latency: 2 clock cycles (matches Xilinx DOB_REG=1 behaviour).
-//
-// For explicit instantiation use EFX_RAM_AR with OUTPUT_REG=1.
-// Efinity Mapper reference: https://www.efinixinc.com/docs/efinity-mapper-ug-v2.html
+// This file is the single Verilog bram_sdp implementation used by simulation
+// and synthesis flows. Vendor tools may infer block RAM or another suitable
+// memory resource from the behavioral description.
 // ============================================================================
 
 module bram_sdp #(
@@ -26,18 +26,14 @@ module bram_sdp #(
     output reg  [WIDTH-1:0]           rdata
 );
 
-    (* ram_style = "block" *) reg [WIDTH-1:0] mem [0:DEPTH-1];
+    reg [WIDTH-1:0] mem [0:DEPTH-1];
     reg [WIDTH-1:0] rdata_r;
 
-    // Stage 1: BRAM array read (registered)
     always @(posedge clk) begin
         if (we)
             mem[waddr] <= wdata;
         rdata_r <= mem[raddr];
-    end
-
-    // Stage 2: Output register (matches Xilinx DOB_REG=1)
-    always @(posedge clk)
         rdata <= rdata_r;
+    end
 
 endmodule
