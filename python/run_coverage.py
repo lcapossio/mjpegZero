@@ -121,6 +121,9 @@ def run_sim(build_dir, quality, tag, tv_name='yuyv_input.hex', obj_suffix=''):
     ]
 
     print(f'  Running sim (Q={quality}, tv={tv_name})...')
+    if not os.path.exists(sim_bin):
+        print(f'  ERROR: simulator binary not found: {sim_bin}')
+        return False
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=build_dir)
     print(result.stdout.strip())
     if result.returncode != 0:

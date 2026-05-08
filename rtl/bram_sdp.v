@@ -35,7 +35,12 @@ module bram_sdp #(
     localparam INNER_W    = (N_TILES <= 1) ? ADDR_W : (ADDR_W - SEL_BITS);
 
     wire [SEL_BITS-1:0] rsel_now;
-    reg  [SEL_BITS-1:0] rsel_d1, rsel_d2;
+    reg  [SEL_BITS-1:0] rsel_d1;
+    // rsel_d2 is only consumed by the multi-tile output mux. Single-tile
+    // instances still build the common read-select pipeline for uniform timing.
+    /* verilator lint_off UNUSEDSIGNAL */
+    reg  [SEL_BITS-1:0] rsel_d2;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     generate
         if (N_TILES <= 1) begin : g_sel_one
