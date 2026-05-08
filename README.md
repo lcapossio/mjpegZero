@@ -198,10 +198,10 @@ XC7A100T target at 150 MHz.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,115 | 1,034 | 16 | 23 | +0.516 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,105 | 1,018 | 16 | 23 | +0.326 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 1,785 | 966 | 16 | 21 | +0.516 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 1,777 | 959 | 16 | 21 | +0.326 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,155 | 1,029 | 16 | 23 | +0.516 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,146 | 1,031 | 16 | 23 | +0.326 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 1,828 | 980 | 11 | 21 | +0.516 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 1,820 | 973 | 11 | 21 | +0.326 ns |
 
 Use `python scripts/check_core_resources.py --run-synth` to regenerate the
 Verilog/VHDL apples-to-apples comparison.
