@@ -30,7 +30,7 @@ puts "======================================================================"
 
 # Compile Verilog sources
 set verilog_files [list \
-    $rtl_dir/vendor/sim/bram_sdp.v \
+    $rtl_dir/bram_sdp.v \
     $rtl_dir/dct_1d.v \
     $rtl_dir/dct_2d.v \
     $rtl_dir/input_buffer.v \

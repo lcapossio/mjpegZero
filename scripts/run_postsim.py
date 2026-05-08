@@ -10,7 +10,8 @@
 # then simulates the netlist with the standard testbench.
 # Catches synthesis-introduced bugs invisible in RTL simulation.
 #
-# Usage: python scripts/run_postsim.py [lite] [720p] [vcd] [quality=N]
+# Usage: python scripts/run_postsim.py [vhdl] [lite] [720p] [vcd] [quality=N]
+#   vhdl:      synthesize the VHDL RTL instead of the Verilog RTL
 #   lite:      LITE_MODE=1 (lite mode)
 #   720p:      1280x720 test image
 #   vcd:       dump full VCD
@@ -26,7 +27,7 @@ import sys
 PROJ_DIR  = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 RTL_DIR   = os.path.join(PROJ_DIR, 'rtl')
 SIM_DIR   = os.path.join(PROJ_DIR, 'sim')
-BUILD_DIR = os.path.join(PROJ_DIR, 'build', 'postsim')
+BUILD_ROOT = os.path.join(PROJ_DIR, 'build')
 TV_DIR    = os.path.join(SIM_DIR, 'test_vectors')
 
 
@@ -76,6 +77,7 @@ def main():
     args = parser.parse_args()
 
     lite_mode    = 'lite' in args.flags
+    vhdl_mode    = 'vhdl' in args.flags
     mode_720p    = '720p' in args.flags
     dump_vcd     = 'vcd'  in args.flags
     lite_quality = next((f.split('=', 1)[1] for f in args.flags
@@ -83,13 +85,16 @@ def main():
 
     vivado_exe, viv = find_vivado()
 
-    os.makedirs(BUILD_DIR, exist_ok=True)
+    build_dir = os.path.join(BUILD_ROOT, 'postsim_vhdl' if vhdl_mode else 'postsim')
+
+    os.makedirs(build_dir, exist_ok=True)
 
     # -------------------------------------------------------------------------
     # Step 1: Synthesize and export funcsim.v
     # -------------------------------------------------------------------------
     print('=' * 70)
-    print(f'Post-synthesis sim: LITE_MODE={int(lite_mode)}  '
+    print(f'Post-synthesis sim: RTL={"VHDL" if vhdl_mode else "Verilog"}  '
+          f'LITE_MODE={int(lite_mode)}  '
           f'720P={int(mode_720p)}  Q={lite_quality or "default"}')
     print('Step 1: Synthesizing and exporting funcsim.v...')
     print('=' * 70)
@@ -100,14 +105,16 @@ def main():
         if lite_quality:
             tcl_args.append(lite_quality)
 
-    synth_tcl = os.path.join(PROJ_DIR, 'scripts', 'synth_for_postsim.tcl')
+    synth_tcl = os.path.join(PROJ_DIR, 'scripts',
+                             'synth_for_postsim_vhdl.tcl' if vhdl_mode
+                             else 'synth_for_postsim.tcl')
     cmd = [vivado_exe, '-mode', 'batch', '-nolog', '-nojournal',
            '-source', synth_tcl]
     if tcl_args:
         cmd += ['-tclargs'] + tcl_args
     run(cmd)
 
-    funcsim = os.path.join(BUILD_DIR, 'funcsim.v')
+    funcsim = os.path.join(build_dir, 'funcsim.v')
     if not os.path.isfile(funcsim):
         sys.exit('SYNTHESIS/EXPORT FAILED: funcsim.v not found')
 
@@ -121,14 +128,14 @@ def main():
     if mode_720p:    defines += ['-d', 'TB_720P']
     if dump_vcd:     defines += ['-d', 'DUMP_VCD']
     if lite_quality:
-        vh = os.path.join(BUILD_DIR, 'sim_defines.vh')
+        vh = os.path.join(build_dir, 'sim_defines.vh')
         with open(vh, 'w') as f:
             f.write(f'`define LITE_QUALITY {lite_quality}\n')
         defines += ['-d', 'HAVE_DEFINES']
 
-    os.makedirs(os.path.join(BUILD_DIR, 'test_vectors'), exist_ok=True)
+    os.makedirs(os.path.join(build_dir, 'test_vectors'), exist_ok=True)
     for f in glob.glob(os.path.join(TV_DIR, '*')):
-        shutil.copy2(f, os.path.join(BUILD_DIR, 'test_vectors'))
+        shutil.copy2(f, os.path.join(build_dir, 'test_vectors'))
 
     # Locate glbl.v
     vivado_root = os.path.dirname(viv)
@@ -138,10 +145,10 @@ def main():
                               'data', 'verilog', 'src', 'glbl.v')
 
     xvlog = vivado_tool(viv, 'xvlog')
-    run([xvlog, glbl_v], cwd=BUILD_DIR)
-    run([xvlog] + defines + [funcsim], cwd=BUILD_DIR)
-    run([xvlog, '--sv'] + defines + ['-i', BUILD_DIR,
-        os.path.join(SIM_DIR, 'tb_mjpegzero_enc.sv')], cwd=BUILD_DIR)
+    run([xvlog, glbl_v], cwd=build_dir)
+    run([xvlog] + defines + [funcsim], cwd=build_dir)
+    run([xvlog, '--sv'] + defines + ['-i', build_dir,
+        os.path.join(SIM_DIR, 'tb_mjpegzero_enc.sv')], cwd=build_dir)
 
     # -------------------------------------------------------------------------
     # Step 3: Elaborate
@@ -149,24 +156,24 @@ def main():
     print('\nStep 3: Elaborating...')
     run([vivado_tool(viv, 'xelab'), 'tb_mjpegzero_enc', 'glbl',
          '-s', 'postsim_snap', '-timescale', '1ns/1ps',
-         '-L', 'unisims_ver'], cwd=BUILD_DIR)
+         '-L', 'unisims_ver'], cwd=build_dir)
 
     # -------------------------------------------------------------------------
     # Step 4: Simulate
     # -------------------------------------------------------------------------
     print('\nStep 4: Running post-synthesis simulation...')
     if dump_vcd:
-        wave_tcl = os.path.join(BUILD_DIR, 'wave.tcl')
+        wave_tcl = os.path.join(build_dir, 'wave.tcl')
         with open(wave_tcl, 'w') as f:
             f.write('open_vcd postsim_output.vcd\n'
                     'log_vcd [get_objects -r /*]\nrun all\nclose_vcd\nquit\n')
         run([vivado_tool(viv, 'xsim'), 'postsim_snap',
-             '-t', wave_tcl, '-onfinish', 'quit'], cwd=BUILD_DIR)
+             '-t', wave_tcl, '-onfinish', 'quit'], cwd=build_dir)
     else:
         run([vivado_tool(viv, 'xsim'), 'postsim_snap',
-             '-R', '-onfinish', 'quit'], cwd=BUILD_DIR)
+             '-R', '-onfinish', 'quit'], cwd=build_dir)
 
-    out_jpg = os.path.join(BUILD_DIR, 'sim_output.jpg')
+    out_jpg = os.path.join(build_dir, 'sim_output.jpg')
     if os.path.isfile(out_jpg):
         print(f'\nOutput: {out_jpg} ({os.path.getsize(out_jpg)} bytes)')
     else:

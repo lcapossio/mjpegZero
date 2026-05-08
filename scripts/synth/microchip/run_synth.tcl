@@ -48,7 +48,6 @@ set hdl     "VERILOG"
 set script_dir [file normalize [file dirname [info script]]]
 set proj_dir   [file normalize [file join $script_dir ../../..]]
 set rtl_dir    [file join $proj_dir rtl]
-set vendor_dir [file join $rtl_dir vendor microchip]
 
 set mode_suffix [expr {$lite_mode ? "_lite" : ""}]
 set output_dir  [file normalize [file join $proj_dir build synth_microchip${mode_suffix}]]
@@ -66,7 +65,7 @@ new_project \
 
 # ---- Add RTL sources --------------------------------------------------------
 create_links -hdl_source [list \
-    $vendor_dir/bram_sdp.v \
+    $rtl_dir/bram_sdp.v \
     $rtl_dir/dct_1d.v \
     $rtl_dir/dct_2d.v \
     $rtl_dir/input_buffer.v \

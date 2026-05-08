@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="656" viewBox="0 0 1660 656" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" style="background:#000000">
+  <defs>
+    <marker id="ah-solid" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#e2e8f0"/></marker>
+    <marker id="ah-thin" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#9ca3af"/></marker>
+    <marker id="ah-stream" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#d9f99d"/></marker>
+    <marker id="ah-axil" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#93c5fd"/></marker>
+    <marker id="ah-cdc" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#d8b4fe"/></marker>
+    <marker id="ah-open" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0.5,0.5 L0.5,5.5 L8,3 z" fill="#000000" stroke="#e2e8f0" stroke-width="1"/></marker>
+  </defs>
+  <rect width="1660" height="656" fill="#000000" id="_canvas_bg"/>
+  <text x="830.0" y="24" text-anchor="middle" font-size="17" font-weight="600" fill="#e2e8f0" letter-spacing="0.2">mjpegZero Encoder Top-Level</text>
+  <rect id="video_in" x="44" y="74" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
+  <text x="154" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">Video AXI4-Stream In</text>
+  <text x="154" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#e2e8f0" opacity="0.85">16b YUYV / 24b RGB</text>
+  <rect id="input_path" x="382" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="492" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Input Format Path</text>
+  <text x="492" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">YUYV pass-through or rgb_to_ycbcr</text>
+  <rect id="input_buffer" x="720" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="830" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">input_buffer</text>
+  <text x="830" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">YUYV to 8x8 blocks</text>
+  <rect id="dct" x="1058" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="1168" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">dct_2d</text>
+  <text x="1168" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">level-shifted samples</text>
+  <rect id="quantizer" x="1396" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="1506" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">quantizer</text>
+  <text x="1506" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">quality + Q tables</text>
+  <rect id="zigzag" x="44" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="154" y="303" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">zigzag_reorder</text>
+  <rect id="huffman" x="382" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="492" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">huffman_encoder</text>
+  <text x="492" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">entropy coding</text>
+  <rect id="bitpacker" x="720" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="830" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">bitstream_packer</text>
+  <text x="830" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">stuff, restart, flush</text>
+  <rect id="jfif" x="1058" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="1168" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">jfif_writer</text>
+  <text x="1168" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">headers + scan stream</text>
+  <rect id="jpg_out" x="1396" y="252" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
+  <text x="1506" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">JPEG AXI4-Stream Out</text>
+  <text x="1506" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#e2e8f0" opacity="0.85">8b stream</text>
+  <rect id="host" x="382" y="430" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
+  <text x="492" y="481" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">AXI4-Lite Host</text>
+  <rect id="regs" x="720" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="830" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">axi4_lite_regs</text>
+  <text x="830" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">enable, quality, status</text>
+  <rect id="frame_ctrl" x="1058" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="1168" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Top Frame Control</text>
+  <text x="1168" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">frame start/done, ready gating</text>
+  <rect id="comp_track" x="1396" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
+  <text x="1506" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Component Tracking FIFOs</text>
+  <text x="1506" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">comp_id latency alignment</text>
+  <path id="edge_video_in_to_input_path" d="M 264.0,120.0 L 323.0,120.0 L 323.0,120.0 L 382.0,120.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
+  <rect x="271.6" y="104.7" width="102.8" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="323.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S VID_DATA_W</text>
+  <path id="edge_input_path_to_input_buffer" d="M 602.0,120.0 L 661.0,120.0 L 661.0,120.0 L 720.0,120.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
+  <rect x="630.8" y="104.7" width="60.5" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="661.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 16b</text>
+  <path id="edge_input_buffer_to_dct" d="M 940.0,120.0 L 999.0,120.0 L 999.0,120.0 L 1058.0,120.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="990.0" y="104.7" width="18.1" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="999.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">8b</text>
+  <path id="edge_dct_to_quantizer" d="M 1278.0,120.0 L 1337.0,120.0 L 1337.0,104.7 L 1396.0,104.7" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="1324.9" y="97.0" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="1337.0" y="108.3" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
+  <path id="edge_quantizer_to_zigzag" d="M 1506.0,166.0 L 1506.0,209.0 L 154.0,209.0 L 154.0,252.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="817.9" y="193.7" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="830.0" y="205.0" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
+  <path id="edge_zigzag_to_huffman" d="M 264.0,313.3 L 323.0,313.3 L 323.0,298.0 L 382.0,298.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="310.9" y="290.3" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="323.0" y="301.7" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
+  <path id="edge_huffman_to_bitpacker" d="M 602.0,298.0 L 661.0,298.0 L 661.0,298.0 L 720.0,298.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="648.9" y="282.6" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="661.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">38b</text>
+  <path id="edge_bitpacker_to_jfif" d="M 940.0,298.0 L 999.0,298.0 L 999.0,298.0 L 1058.0,298.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
+  <rect x="971.8" y="282.6" width="54.4" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="999.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 8b</text>
+  <path id="edge_jfif_to_jpg_out" d="M 1278.0,298.0 L 1337.0,298.0 L 1337.0,298.0 L 1396.0,298.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
+  <rect x="1309.8" y="282.6" width="54.4" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="1337.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 8b</text>
+  <path id="edge_host_to_regs" d="M 602.0,476.0 L 661.0,476.0 L 661.0,476.0 L 720.0,476.0" stroke="#93c5fd" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)"/>
+  <rect x="630.8" y="460.6" width="60.5" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="661.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-L 32b</text>
+  <path id="edge_regs_to_frame_ctrl" d="M 940.0,476.0 L 999.0,476.0 L 999.0,476.0 L 1058.0,476.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="962.7" y="460.6" width="72.6" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="999.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">ctrl/status</text>
+  <path id="edge_frame_ctrl_to_comp_track" d="M 1278.0,476.0 L 1337.0,476.0 L 1337.0,476.0 L 1396.0,476.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <rect x="1297.7" y="460.6" width="78.6" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
+  <text x="1337.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">block pulses</text>
+  <text x="44" y="576" font-size="11" font-weight="600" fill="#9ca3af" letter-spacing="0.5">CLOCK DOMAINS</text>
+  <rect x="44" y="590" width="18" height="14" fill="#90CAF9" stroke="#1565C0" stroke-width="0.8" rx="3"/>
+  <text x="68" y="601" font-size="11" fill="#e2e8f0">core</text>
+  <text x="44" y="626" font-size="11" font-weight="600" fill="#9ca3af" letter-spacing="0.5">CONNECTION STYLES</text>
+  <path id="legend-arrow-axi-stream" d="M 44,647 L 80,647" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
+  <text x="90" y="651" font-size="11" fill="#e2e8f0">AXI-Stream</text>
+  <path id="legend-arrow-generic" d="M 182,647 L 218,647" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
+  <text x="228" y="651" font-size="11" fill="#e2e8f0">Generic / discrete</text>
+  <path id="legend-arrow-axi-lite" d="M 376,647 L 412,647" stroke="#93c5fd" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)"/>
+  <text x="422" y="651" font-size="11" fill="#e2e8f0">AXI4-Lite control</text>
+</svg>

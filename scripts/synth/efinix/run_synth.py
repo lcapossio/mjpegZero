@@ -36,7 +36,6 @@ import textwrap
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJ_DIR   = os.path.normpath(os.path.join(SCRIPT_DIR, '../../..'))
 RTL_DIR    = os.path.join(PROJ_DIR, 'rtl')
-VENDOR_DIR = os.path.join(RTL_DIR, 'vendor', 'efinix')
 
 # Default device — edit for your target
 DEVICE   = 'T20F256I4'
@@ -135,7 +134,7 @@ def main():
     os.makedirs(os.path.join(output_dir, 'work'), exist_ok=True)
 
     rtl_files = [
-        os.path.join(VENDOR_DIR, 'bram_sdp.v'),
+        os.path.join(RTL_DIR, 'bram_sdp.v'),
         os.path.join(RTL_DIR, 'dct_1d.v'),
         os.path.join(RTL_DIR, 'dct_2d.v'),
         os.path.join(RTL_DIR, 'input_buffer.v'),

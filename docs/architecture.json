@@ -1,0 +1,204 @@
+{
+  "title": "mjpegZero Encoder Top-Level",
+  "top": "mjpegzero_enc_top",
+  "theme": "dark",
+  "grid": {
+    "cell_w": 220,
+    "cell_h": 92,
+    "gutter_x": 118,
+    "gutter_y": 86,
+    "margin": 44
+  },
+  "domains": {
+    "core": {
+      "color": "#90CAF9",
+      "border": "#1565C0"
+    }
+  },
+  "blocks": [
+    {
+      "id": "video_in",
+      "label": "Video AXI4-Stream In",
+      "sublabel": "16b YUYV / 24b RGB",
+      "external": true,
+      "row": 0,
+      "col": 0
+    },
+    {
+      "id": "input_path",
+      "label": "Input Format Path",
+      "sublabel": "YUYV pass-through or rgb_to_ycbcr",
+      "domain": "core",
+      "row": 0,
+      "col": 1
+    },
+    {
+      "id": "input_buffer",
+      "label": "input_buffer",
+      "sublabel": "YUYV to 8x8 blocks",
+      "domain": "core",
+      "row": 0,
+      "col": 2
+    },
+    {
+      "id": "dct",
+      "label": "dct_2d",
+      "sublabel": "level-shifted samples",
+      "domain": "core",
+      "row": 0,
+      "col": 3
+    },
+    {
+      "id": "quantizer",
+      "label": "quantizer",
+      "sublabel": "quality + Q tables",
+      "domain": "core",
+      "row": 0,
+      "col": 4
+    },
+    {
+      "id": "zigzag",
+      "label": "zigzag_reorder",
+      "domain": "core",
+      "row": 1,
+      "col": 0
+    },
+    {
+      "id": "huffman",
+      "label": "huffman_encoder",
+      "sublabel": "entropy coding",
+      "domain": "core",
+      "row": 1,
+      "col": 1
+    },
+    {
+      "id": "bitpacker",
+      "label": "bitstream_packer",
+      "sublabel": "stuff, restart, flush",
+      "domain": "core",
+      "row": 1,
+      "col": 2
+    },
+    {
+      "id": "jfif",
+      "label": "jfif_writer",
+      "sublabel": "headers + scan stream",
+      "domain": "core",
+      "row": 1,
+      "col": 3
+    },
+    {
+      "id": "jpg_out",
+      "label": "JPEG AXI4-Stream Out",
+      "sublabel": "8b stream",
+      "external": true,
+      "row": 1,
+      "col": 4
+    },
+    {
+      "id": "host",
+      "label": "AXI4-Lite Host",
+      "external": true,
+      "row": 2,
+      "col": 1
+    },
+    {
+      "id": "regs",
+      "label": "axi4_lite_regs",
+      "sublabel": "enable, quality, status",
+      "domain": "core",
+      "row": 2,
+      "col": 2
+    },
+    {
+      "id": "frame_ctrl",
+      "label": "Top Frame Control",
+      "sublabel": "frame start/done, ready gating",
+      "domain": "core",
+      "row": 2,
+      "col": 3
+    },
+    {
+      "id": "comp_track",
+      "label": "Component Tracking FIFOs",
+      "sublabel": "comp_id latency alignment",
+      "domain": "core",
+      "row": 2,
+      "col": 4
+    }
+  ],
+  "edges": [
+    {
+      "from": "video_in",
+      "to": "input_path",
+      "kind": "axi-stream",
+      "width": "VID_DATA_W"
+    },
+    {
+      "from": "input_path",
+      "to": "input_buffer",
+      "kind": "axi-stream",
+      "width": 16
+    },
+    {
+      "from": "input_buffer",
+      "to": "dct",
+      "kind": "generic",
+      "width": 8
+    },
+    {
+      "from": "dct",
+      "to": "quantizer",
+      "kind": "generic",
+      "width": 16
+    },
+    {
+      "from": "quantizer",
+      "to": "zigzag",
+      "kind": "generic",
+      "width": 16
+    },
+    {
+      "from": "zigzag",
+      "to": "huffman",
+      "kind": "generic",
+      "width": 16
+    },
+    {
+      "from": "huffman",
+      "to": "bitpacker",
+      "kind": "generic",
+      "width": "38b"
+    },
+    {
+      "from": "bitpacker",
+      "to": "jfif",
+      "kind": "axi-stream",
+      "width": 8
+    },
+    {
+      "from": "jfif",
+      "to": "jpg_out",
+      "kind": "axi-stream",
+      "width": 8
+    },
+    {
+      "from": "host",
+      "to": "regs",
+      "kind": "axi-lite",
+      "width": 32
+    },
+    {
+      "from": "regs",
+      "to": "frame_ctrl",
+      "kind": "generic",
+      "width": "ctrl/status"
+    },
+    {
+      "from": "frame_ctrl",
+      "to": "comp_track",
+      "kind": "generic",
+      "width": "block pulses"
+    }
+  ]
+}

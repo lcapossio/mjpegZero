@@ -454,7 +454,7 @@ module huffman_encoder #(
     // LITE_MODE=0: Double-buffered (2x64), allows overlap of write and FSM read
     // LITE_MODE=1: Single-buffered (1x64), saves ~64x16 = 1024 bits of registers
     // ========================================================================
-    reg signed [15:0] coeff_buf [0:(LITE_MODE ? 63 : 127)];
+    (* ram_style = "distributed" *) reg signed [15:0] coeff_buf [0:127];
     /* verilator coverage_off */
     reg [5:0]  coeff_wr_idx;
     reg        coeff_block_ready;
@@ -469,6 +469,10 @@ module huffman_encoder #(
     // Acknowledgment from FSM (driven in FSM always block)
     reg        fsm_ack;
 
+    wire [6:0] coeff_wr_addr =
+        LITE_MODE ? (in_sob ? 7'd0 : {1'b0, coeff_wr_idx}) :
+                    {coeff_wr_bank, (in_sob ? 6'd0 : coeff_wr_idx)};
+
     always @(posedge clk) begin
         if (!rst_n) begin
             coeff_wr_idx <= 6'd0;
@@ -481,13 +485,10 @@ module huffman_encoder #(
                 coeff_block_ready <= 1'b0;
 
             if (in_valid) begin
+                coeff_buf[coeff_wr_addr] <= in_data;
                 if (LITE_MODE) begin
-                    /* verilator lint_off WIDTHEXPAND */
-                    coeff_buf[coeff_wr_idx] <= in_data;
-                    /* verilator lint_on WIDTHEXPAND */
                     if (in_sob) begin
                         coeff_wr_idx <= 6'd1;
-                        coeff_buf[0] <= in_data;
                         coeff_comp_id <= comp_id;
                         last_nonzero_idx <= 6'd0;
                     end else begin
@@ -503,10 +504,8 @@ module huffman_encoder #(
                         end
                     end
                 end else begin
-                    coeff_buf[{coeff_wr_bank, coeff_wr_idx}] <= in_data;
                     if (in_sob) begin
                         coeff_wr_idx <= 6'd1;
-                        coeff_buf[{coeff_wr_bank, 6'd0}] <= in_data;
                         coeff_comp_id <= comp_id;
                         last_nonzero_idx <= 6'd0;
                     end else begin
@@ -568,6 +567,10 @@ module huffman_encoder #(
     reg [5:0]  vshift;
     /* verilator coverage_on */
     wire       blk_is_luma = (blk_comp_id <= 2'd1);
+    wire [6:0] coeff_dc_addr = LITE_MODE ? 7'd0 : {coeff_rd_bank, 6'd0};
+    wire [6:0] coeff_ac_addr = LITE_MODE ? {1'b0, ac_idx} : {coeff_rd_bank, ac_idx};
+    wire signed [15:0] coeff_dc = coeff_buf[coeff_dc_addr];
+    wire signed [15:0] coeff_ac = coeff_buf[coeff_ac_addr];
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -623,14 +626,14 @@ module huffman_encoder #(
                     // LITE_MODE: single buffer, direct 6-bit index
                     // Full mode: double buffer, {bank, index} 7-bit address
                     if (blk_comp_id <= 2'd1) begin
-                        cur_coeff <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}] - prev_dc_y;
-                        prev_dc_y <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}];
+                        cur_coeff <= coeff_dc - prev_dc_y;
+                        prev_dc_y <= coeff_dc;
                     end else if (blk_comp_id == 2'd2) begin
-                        cur_coeff <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}] - prev_dc_cb;
-                        prev_dc_cb <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}];
+                        cur_coeff <= coeff_dc - prev_dc_cb;
+                        prev_dc_cb <= coeff_dc;
                     end else begin
-                        cur_coeff <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}] - prev_dc_cr;
-                        prev_dc_cr <= coeff_buf[LITE_MODE ? {1'b0, 6'd0} : {coeff_rd_bank, 6'd0}];
+                        cur_coeff <= coeff_dc - prev_dc_cr;
+                        prev_dc_cr <= coeff_dc;
                     end
                     state <= S_DC_ENCODE;
                 end
@@ -702,7 +705,7 @@ module huffman_encoder #(
                     out_valid <= 1'b0;
                     out_sob <= 1'b0;
                     out_eob <= 1'b0;
-                    cur_coeff <= coeff_buf[LITE_MODE ? {1'b0, ac_idx} : {coeff_rd_bank, ac_idx}];
+                    cur_coeff <= coeff_ac;
                     state <= S_AC_SCAN;
                 end
 

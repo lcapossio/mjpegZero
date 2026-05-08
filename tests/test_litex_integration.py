@@ -24,17 +24,12 @@ def test_config_video_width_tracks_rgb_mode():
     assert MjpegZeroConfig(rgb_input=1).video_data_width == 24
 
 
-def test_rtl_sources_include_common_files_and_vendor_bram():
+def test_rtl_sources_include_common_files_and_bram():
     sources = [path.as_posix() for path in rtl_sources(vendor="xilinx7", rtl_dir="rtl")]
 
     assert "rtl/mjpegzero_enc_top.v" in sources
     assert "rtl/axi4_lite_regs.v" in sources
-    assert "rtl/vendor/amd/bram_sdp.v" in sources
-
-
-def test_rtl_sources_reject_unknown_vendor():
-    with pytest.raises(ValueError, match="unsupported BRAM vendor"):
-        rtl_sources(vendor="mystery")
+    assert "rtl/bram_sdp.v" in sources
 
 
 def test_add_sources_adds_manifest_to_platform():
@@ -44,7 +39,7 @@ def test_add_sources_adds_manifest_to_platform():
 
     source_names = {source.as_posix() for source in platform.sources}
     assert "rtl/input_buffer.v" in source_names
-    assert "rtl/vendor/sim/bram_sdp.v" in source_names
+    assert "rtl/bram_sdp.v" in source_names
 
 
 def test_wrapper_import_is_lazy_when_litex_is_not_installed():
@@ -172,4 +167,4 @@ def test_wrapper_instantiates_with_litex_like_modules(monkeypatch):
     assert encoder.axi_lite.data_width == 32
     assert encoder.submodules.jpeg_fifo.depth == 16
     assert any(item[0] == "instance" and item[1] == "mjpegzero_enc_top" for item in encoder.specials)
-    assert Path("rtl/vendor/sim/bram_sdp.v") in platform.sources
+    assert Path("rtl/bram_sdp.v") in platform.sources

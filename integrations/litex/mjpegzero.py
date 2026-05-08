@@ -21,6 +21,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 _RTL_DIR = _ROOT / "rtl"
 
 _COMMON_SOURCES = (
+    "bram_sdp.v",
     "input_buffer.v",
     "dct_1d.v",
     "dct_2d.v",
@@ -33,19 +34,6 @@ _COMMON_SOURCES = (
     "rgb_to_ycbcr.v",
     "mjpegzero_enc_top.v",
 )
-
-_VENDOR_BRAM_SOURCES: dict[str, str] = {
-    "amd": "vendor/amd/bram_sdp.v",
-    "xilinx": "vendor/amd/bram_sdp.v",
-    "xilinx7": "vendor/amd/bram_sdp.v",
-    "altera": "vendor/altera/bram_sdp.v",
-    "intel": "vendor/altera/bram_sdp.v",
-    "lattice": "vendor/lattice/bram_sdp.v",
-    "microchip": "vendor/microchip/bram_sdp.v",
-    "efinix": "vendor/efinix/bram_sdp.v",
-    "gowin": "vendor/gowin/bram_sdp.v",
-    "sim": "vendor/sim/bram_sdp.v",
-}
 
 
 @dataclass(frozen=True)
@@ -70,14 +58,8 @@ class MjpegZeroConfig:
 def rtl_sources(vendor: str = "amd", rtl_dir: Optional[Union[str, Path]] = None) -> list[Path]:
     """Return the RTL files needed for a LiteX instance."""
 
-    vendor_key = vendor.lower()
-    if vendor_key not in _VENDOR_BRAM_SOURCES:
-        known = ", ".join(sorted(_VENDOR_BRAM_SOURCES))
-        raise ValueError(f"unsupported BRAM vendor {vendor!r}; expected one of: {known}")
-
     base = Path(rtl_dir) if rtl_dir is not None else _RTL_DIR
-    rel_paths = (*_COMMON_SOURCES, _VENDOR_BRAM_SOURCES[vendor_key])
-    return [base / rel_path for rel_path in rel_paths]
+    return [base / rel_path for rel_path in _COMMON_SOURCES]
 
 
 def add_sources(

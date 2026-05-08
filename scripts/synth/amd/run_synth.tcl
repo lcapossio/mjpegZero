@@ -36,10 +36,9 @@ set top_module synth_timing_wrapper
 set script_dir [file normalize [file dirname [info script]]]
 set proj_dir   [file normalize [file join $script_dir ../../..]]
 set rtl_dir    [file join $proj_dir rtl]
-set vendor_dir [file join $rtl_dir vendor amd]
 
 set src_files [list \
-    $vendor_dir/bram_sdp.v \
+    $rtl_dir/bram_sdp.v \
     $rtl_dir/dct_1d.v \
     $rtl_dir/dct_2d.v \
     $rtl_dir/input_buffer.v \

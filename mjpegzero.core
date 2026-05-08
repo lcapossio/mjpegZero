@@ -5,6 +5,7 @@ description: "Synthesizable MJPEG encoder — behavioral Verilog 2001, AXI4-Stre
 filesets:
   rtl:
     files:
+      - rtl/bram_sdp.v
       - rtl/input_buffer.v
       - rtl/dct_1d.v
       - rtl/dct_2d.v
@@ -16,41 +17,6 @@ filesets:
       - rtl/axi4_lite_regs.v
       - rtl/rgb_to_ycbcr.v
       - rtl/mjpegzero_enc_top.v
-    file_type: verilogSource
-
-  bram_amd:
-    files:
-      - rtl/vendor/amd/bram_sdp.v
-    file_type: verilogSource
-
-  bram_altera:
-    files:
-      - rtl/vendor/altera/bram_sdp.v
-    file_type: verilogSource
-
-  bram_lattice:
-    files:
-      - rtl/vendor/lattice/bram_sdp.v
-    file_type: verilogSource
-
-  bram_microchip:
-    files:
-      - rtl/vendor/microchip/bram_sdp.v
-    file_type: verilogSource
-
-  bram_efinix:
-    files:
-      - rtl/vendor/efinix/bram_sdp.v
-    file_type: verilogSource
-
-  bram_gowin:
-    files:
-      - rtl/vendor/gowin/bram_sdp.v
-    file_type: verilogSource
-
-  bram_sim:
-    files:
-      - rtl/vendor/sim/bram_sdp.v
     file_type: verilogSource
 
   # XDC that downgrades NSTD-1/UCIO-1 to Warning so write_bitstream succeeds
@@ -124,7 +90,6 @@ targets:
   default:
     filesets:
       - rtl
-      - bram_amd
     parameters:
       - LITE_MODE
       - LITE_QUALITY
@@ -143,7 +108,6 @@ targets:
   sim:
     filesets:
       - rtl
-      - bram_sim
       - tb
     parameters:
       - LITE_MODE
@@ -164,7 +128,6 @@ targets:
   sim_lite:
     filesets:
       - rtl
-      - bram_sim
       - tb
     parameters:
       - LITE_QUALITY
@@ -186,7 +149,6 @@ targets:
   lint:
     filesets:
       - rtl
-      - bram_sim
     parameters:
       - LITE_MODE
       - LITE_QUALITY
@@ -206,7 +168,6 @@ targets:
   synth_amd:
     filesets:
       - rtl
-      - bram_amd
       - drc_waiver
     parameters:
       - LITE_MODE
@@ -227,7 +188,6 @@ targets:
   synth_amd_lite:
     filesets:
       - rtl
-      - bram_amd
       - drc_waiver
     parameters:
       - LITE_QUALITY
