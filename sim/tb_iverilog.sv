@@ -12,7 +12,7 @@
 //
 // Usage (iverilog + vvp):
 //   iverilog -g2012 -o sim.vvp \
-//     rtl/vendor/sim/bram_sdp.v rtl/dct_1d.v rtl/dct_2d.v \
+//     rtl/bram_sdp.v rtl/dct_1d.v rtl/dct_2d.v \
 //     rtl/input_buffer.v rtl/quantizer.v rtl/zigzag_reorder.v \
 //     rtl/huffman_encoder.v rtl/bitstream_packer.v rtl/jfif_writer.v \
 //     rtl/axi4_lite_regs.v rtl/mjpegzero_enc_top.v sim/tb_iverilog.sv

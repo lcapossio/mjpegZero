@@ -21,6 +21,9 @@ Available jobs:
     rtl-sim            iverilog RTL simulation (full + lite + corner cases)
     rtl-verilator-sim  Verilator functional simulation
     rtl-coverage       Verilator code coverage
+    vhdl-top-sim       Vivado xsim VHDL top simulation (full + lite)
+    demo-shell-sim     Vivado xsim board shell simulation with AXI JPEG readback
+    core-resource-equiv Vivado core Verilog/VHDL resource comparison
     fusesoc            FuseSoC core validation + lint
     all                All of the above (default)
 
@@ -177,7 +180,7 @@ def job_verify():
 
 def _lint_top(lite_mode, rgb_input):
     rtl = [
-        'rtl/vendor/sim/bram_sdp.v', 'rtl/dct_1d.v', 'rtl/dct_2d.v',
+        'rtl/bram_sdp.v', 'rtl/dct_1d.v', 'rtl/dct_2d.v',
         'rtl/input_buffer.v', 'rtl/quantizer.v', 'rtl/zigzag_reorder.v',
         'rtl/huffman_encoder.v', 'rtl/bitstream_packer.v', 'rtl/jfif_writer.v',
         'rtl/axi4_lite_regs.v', 'rtl/rgb_to_ycbcr.v', 'rtl/mjpegzero_enc_top.v',
@@ -203,7 +206,7 @@ def job_rtl_lint():
           'rtl/dct_1d.v', 'rtl/dct_2d.v']),
         ('lint input_buffer (with bram_sdp)',
          ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
-          'rtl/vendor/sim/bram_sdp.v', 'rtl/input_buffer.v']),
+          'rtl/bram_sdp.v', 'rtl/input_buffer.v']),
         ('lint quantizer LITE_MODE=0',
          ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
           '-DLITE_MODE=0', 'rtl/quantizer.v']),
@@ -218,11 +221,9 @@ def job_rtl_lint():
         ('lint top LITE_MODE=1 RGB_INPUT=1', _lint_top(1, True)),
         ('lint top LITE_MODE=0 RGB_INPUT=1', _lint_top(0, True)),
     ]
-    # Vendor BRAM stubs
-    for vendor in ('altera', 'lattice', 'microchip', 'efinix', 'gowin', 'sim'):
-        steps.append((f'lint vendor/{vendor}/bram_sdp.v',
-                      ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
-                       f'rtl/vendor/{vendor}/bram_sdp.v']))
+    steps.append(('lint bram_sdp',
+                  ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
+                   'rtl/bram_sdp.v']))
 
     return run_job('rtl-lint',
                    prereqs_tools=['verilator'],
@@ -285,6 +286,41 @@ def job_rtl_coverage():
     )
 
 
+def job_vhdl_top_sim():
+    return run_job(
+        'vhdl-top-sim',
+        prereqs_tools=[],
+        prereqs_modules=[],
+        steps=[
+            ('VHDL top sim full mode', py('scripts/run_vhdl_top_sim.py')),
+            ('VHDL top sim lite mode', py('scripts/run_vhdl_top_sim.py', 'lite')),
+        ],
+    )
+
+
+def job_demo_shell_sim():
+    return run_job(
+        'demo-shell-sim',
+        prereqs_tools=['vivado'],
+        prereqs_modules=[],
+        steps=[
+            ('demo shell AXI JPEG readback sim', py('scripts/run_demo_sim.py')),
+        ],
+    )
+
+
+def job_core_resource_equiv():
+    return run_job(
+        'core-resource-equiv',
+        prereqs_tools=['vivado'],
+        prereqs_modules=[],
+        steps=[
+            ('core Verilog/VHDL resource equivalence',
+             py('scripts/check_core_resources.py', '--run-synth')),
+        ],
+    )
+
+
 def job_fusesoc():
     # Use --cores-root instead of `library add` to avoid mutating the user's
     # global ~/.config/fusesoc/fusesoc.conf (which would store an absolute path
@@ -313,6 +349,9 @@ JOBS = {
     'rtl-sim':           job_rtl_sim,
     'rtl-verilator-sim': job_rtl_verilator_sim,
     'rtl-coverage':      job_rtl_coverage,
+    'vhdl-top-sim':      job_vhdl_top_sim,
+    'demo-shell-sim':    job_demo_shell_sim,
+    'core-resource-equiv': job_core_resource_equiv,
     'fusesoc':           job_fusesoc,
 }
 
@@ -340,6 +379,9 @@ def main():
         print('Available jobs:')
         for j in ALL_JOBS_ORDER:
             print(f'  {j}')
+        print('  vhdl-top-sim')
+        print('  demo-shell-sim')
+        print('  core-resource-equiv')
         print('  all  (run everything in order)')
         return 0
 

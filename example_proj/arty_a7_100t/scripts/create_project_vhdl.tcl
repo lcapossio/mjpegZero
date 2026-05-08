@@ -1,56 +1,58 @@
 # SPDX-License-Identifier: Apache-2.0
-# Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
-# Copyright (c) 2026 Leonardo Capossio — bard0 design
+# Copyright (c) 2026 Leonardo Capossio - bard0 design
 #
 # ============================================================================
-# create_project.tcl — Vivado project-mode script for Arty A7-100T MJPEG demo
+# create_project_vhdl.tcl - Vivado project-mode script for Arty A7-100T MJPEG demo
+#
+# Builds the existing Verilog board/fcapz shell with the VHDL MJPEG encoder
+# hierarchy under demo_top.
 #
 # Usage (from repo root):
-#   vivado -mode batch -source example_proj/arty_a7_100t/scripts/create_project.tcl
+#   vivado -mode batch -source example_proj/arty_a7_100t/scripts/create_project_vhdl.tcl
 #
 # Outputs:
-#   example_proj/arty_a7_100t/build/arty_a7_demo.bit  — bitstream
-#   example_proj/arty_a7_100t/build/reports/           — utilization + timing reports
+#   example_proj/arty_a7_100t/build_vhdl/arty_a7_demo_vhdl.bit
+#   example_proj/arty_a7_100t/build_vhdl/reports/
 # ============================================================================
 
 set part "xc7a100tcsg324-1"
 set top  "demo_top"
 
-# Locate directories
 set script_dir  [file normalize [file dirname [info script]]]
 set repo_root   [file normalize [file join $script_dir ../../..]]
 set ex_dir      [file normalize [file join $script_dir ..]]
 set common_dir  [file normalize [file join $script_dir ../../common]]
-set build_dir   [file normalize [file join $ex_dir build]]
+set build_dir   [file normalize [file join $ex_dir build_vhdl]]
 set rpt_dir     [file normalize [file join $build_dir reports]]
 set proj_dir    [file normalize [file join $build_dir project]]
 
 file mkdir $build_dir
 file mkdir $rpt_dir
-# Force-clean the project directory so Vivado doesn't reuse stale run checkpoints
 file delete -force $proj_dir
 
-# ============================================================================
-# Source files
-# ============================================================================
 set fcapz_rtl [file normalize $repo_root/fcapz/rtl]
+set vhdl_dir  [file normalize $repo_root/rtl/vhdl]
 
-set rtl_files [list \
-    $repo_root/rtl/bram_sdp.v \
-    $repo_root/rtl/dct_1d.v \
-    $repo_root/rtl/dct_2d.v \
-    $repo_root/rtl/input_buffer.v \
-    $repo_root/rtl/quantizer.v \
-    $repo_root/rtl/zigzag_reorder.v \
-    $repo_root/rtl/huffman_encoder.v \
-    $repo_root/rtl/bitstream_packer.v \
-    $repo_root/rtl/jfif_writer.v \
-    $repo_root/rtl/axi4_lite_regs.v \
-    $repo_root/rtl/rgb_to_ycbcr.v \
-    $repo_root/rtl/mjpegzero_enc_top.v \
+set vhdl_files [list \
+    $vhdl_dir/mjpegzero_pkg.vhd \
+    $vhdl_dir/demo_jpeg_buffer.vhd \
+    $vhdl_dir/axi4_lite_regs.vhd \
+    $vhdl_dir/bram_sdp.vhd \
+    $vhdl_dir/input_buffer.vhd \
+    $vhdl_dir/dct_1d.vhd \
+    $vhdl_dir/dct_2d.vhd \
+    $vhdl_dir/quantizer.vhd \
+    $vhdl_dir/huffman_encoder.vhd \
+    $vhdl_dir/bitstream_packer.vhd \
+    $vhdl_dir/rgb_to_ycbcr.vhd \
+    $vhdl_dir/zigzag_reorder.vhd \
+    $vhdl_dir/jfif_writer.vhd \
+    $vhdl_dir/mjpegzero_enc_top.vhd \
+]
+
+set verilog_files [list \
     $common_dir/rtl/clk_gen.v \
     $common_dir/rtl/axi_init.v \
-    $common_dir/rtl/demo_jpeg_buffer.v \
     $common_dir/rtl/demo_top.v \
     $fcapz_rtl/dpram.v \
     $fcapz_rtl/reset_sync.v \
@@ -69,28 +71,22 @@ set rtl_files [list \
 
 set xdc_file [file normalize $ex_dir/constraints/arty_a7_100t.xdc]
 
-# ============================================================================
-# Create Vivado project
-# ============================================================================
-create_project -force arty_a7_demo $proj_dir -part $part
+create_project -force arty_a7_demo_vhdl $proj_dir -part $part
 
-add_files -norecurse $rtl_files
+add_files -norecurse $vhdl_files
+foreach f $vhdl_files {
+    set_property file_type {VHDL} [get_files $f]
+}
+add_files -norecurse $verilog_files
 add_files -fileset constrs_1 -norecurse $xdc_file
 
 set_property top $top [current_fileset]
-
-# fcapz_ela.v includes fcapz_version.vh from the same RTL directory.
-# Vivado resolves quoted includes relative to the source file location.
-
-# Top-level generics
 set_property generic {LITE_MODE=1 LITE_QUALITY=75 IMG_WIDTH=1280 IMG_HEIGHT=720 JPEG_WORDS=65536} \
     [get_filesets sources_1]
+update_compile_order -fileset sources_1
 
-# ============================================================================
-# Synthesis
-# ============================================================================
 puts "======================================================================"
-puts "Starting synthesis..."
+puts "Starting VHDL encoder synthesis for Arty A7-100T..."
 puts "======================================================================"
 
 synth_design -top $top -part $part -flatten_hierarchy rebuilt \
@@ -102,9 +98,6 @@ report_utilization    -file $rpt_dir/synth_utilization.rpt
 report_timing_summary -file $rpt_dir/synth_timing.rpt
 write_checkpoint -force $build_dir/post_synth.dcp
 
-# ============================================================================
-# Implementation
-# ============================================================================
 puts "======================================================================"
 puts "Starting implementation..."
 puts "======================================================================"
@@ -122,19 +115,13 @@ report_timing_summary -file $rpt_dir/impl_timing_summary.rpt
 report_timing -nworst 10 -file $rpt_dir/impl_timing_worst10.rpt
 write_checkpoint -force $build_dir/post_route.dcp
 
-# ============================================================================
-# Bitstream
-# ============================================================================
 puts "Writing bitstream..."
-write_bitstream -force $build_dir/arty_a7_demo.bit
+write_bitstream -force $build_dir/arty_a7_demo_vhdl.bit
 
 puts "======================================================================"
-puts "DONE — bitstream: $build_dir/arty_a7_demo.bit"
+puts "DONE - bitstream: $build_dir/arty_a7_demo_vhdl.bit"
 puts "======================================================================"
 
-# ============================================================================
-# Parse and print post-route WNS
-# ============================================================================
 set fp [open $rpt_dir/impl_timing_summary.rpt r]
 set content [read $fp]
 close $fp
@@ -155,6 +142,6 @@ foreach line $lines {
 if {$wns ne ""} {
     puts "Post-Route WNS: $wns ns"
     if {$wns >= 0} { puts "TIMING MET at 150 MHz!" } \
-    else           { puts "TIMING VIOLATION — check reports" }
+    else           { puts "TIMING VIOLATION - check reports" }
 }
 puts "Reports: $rpt_dir"

@@ -124,19 +124,8 @@ _CORE_RTL = [
 def build_rtl_filelist(unisims_dir=None):
     """
     Return the ordered list of source files for iverilog.
-
-    unisims_dir=None  → use the behavioural sim BRAM wrapper (default / CI)
-    unisims_dir=<dir> → prepend glbl.v + RAMB36E1.v and use the AMD BRAM
-                        wrapper (real Xilinx primitive model, local only)
     """
-    files = []
-    if unisims_dir:
-        glbl_v = os.path.join(os.path.dirname(unisims_dir), 'glbl.v')
-        ramb   = os.path.join(unisims_dir, 'RAMB36E1.v')
-        files += [glbl_v, ramb,
-                  os.path.join(RTL_DIR, 'vendor', 'amd', 'bram_sdp.v')]
-    else:
-        files.append(os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'))
+    files = [os.path.join(RTL_DIR, 'bram_sdp.v')]
     files += [os.path.join(RTL_DIR, f) for f in _CORE_RTL]
     files.append(os.path.join(SIM_DIR, 'tb_iverilog.sv'))
     return files
@@ -147,7 +136,7 @@ def compile_rtl(iverilog, vvp_out, defines, unisims_dir=None):
     rtl_files = build_rtl_filelist(unisims_dir)
     def_flags = [f'-D{k}={v}' for k, v in defines.items()]
     cmd = [iverilog, '-g2012', '-o', vvp_out] + def_flags + rtl_files
-    bram_tag = 'amd-primitive' if unisims_dir else 'sim-behavioural'
+    bram_tag = 'behavioural'
     print(f'  iverilog [{bram_tag}] ' + ' '.join(def_flags) + ' ...')
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stdout:
@@ -454,28 +443,11 @@ def main():
                         help='Test minimum 16x8 (1 MCU) frame')
     parser.add_argument('--dump-vcd', action='store_true',
                         help='Enable VCD dump (build/sim_iverilog/tb_iverilog_<tag>.vcd)')
-    parser.add_argument('--unisims', metavar='DIR', default=None,
-                        help='Path to Vivado unisims directory; uses real RAMB36E1 primitive '
-                             'instead of the behavioural sim wrapper. '
-                             'Auto-discovered when --unisims=auto.')
     args = parser.parse_args()
-
-    # Resolve --unisims auto-discovery
     unisims_dir = None
-    if args.unisims == 'auto':
-        _, unisims_dir = find_vivado_unisims()
-        if not unisims_dir:
-            print('ERROR: --unisims=auto: Vivado installation not found.')
-            return 1
-        print(f'  unisims: {unisims_dir}')
-    elif args.unisims:
-        unisims_dir = args.unisims
-        if not os.path.isdir(unisims_dir):
-            print(f'ERROR: --unisims dir not found: {unisims_dir}')
-            return 1
 
     mode_str = 'LITE_MODE=1 (fixed tables)' if args.lite else 'LITE_MODE=0 (full, runtime AXI)'
-    bram_str = f'AMD primitive ({unisims_dir})' if unisims_dir else 'behavioural sim wrapper'
+    bram_str = 'behavioral rtl/bram_sdp.v'
     print('=' * 65)
     print(f'RTL Simulation + Golden Verification  [{mode_str}]')
     print(f'BRAM model:  {bram_str}')

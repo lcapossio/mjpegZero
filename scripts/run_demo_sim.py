@@ -87,7 +87,7 @@ def main():
 
     xvlog = vivado_tool(viv, 'xvlog')
     run([xvlog] + defines + [
-        os.path.join(RTL_DIR, 'vendor', 'sim', 'bram_sdp.v'),
+        os.path.join(RTL_DIR, 'bram_sdp.v'),
         os.path.join(RTL_DIR, 'dct_1d.v'),
         os.path.join(RTL_DIR, 'dct_2d.v'),
         os.path.join(RTL_DIR, 'input_buffer.v'),
@@ -99,6 +99,7 @@ def main():
         os.path.join(RTL_DIR, 'axi4_lite_regs.v'),
         os.path.join(RTL_DIR, 'mjpegzero_enc_top.v'),
         os.path.join(COMMON_RTL, 'axi_init.v'),
+        os.path.join(COMMON_RTL, 'demo_jpeg_buffer.v'),
         os.path.join(COMMON_RTL, 'demo_top_bare.v'),
     ], cwd=BUILD_DIR)
 

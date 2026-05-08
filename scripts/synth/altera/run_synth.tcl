@@ -54,7 +54,6 @@ set family  "Cyclone V"
 set script_dir [file normalize [file dirname [info script]]]
 set proj_dir   [file normalize [file join $script_dir ../../..]]
 set rtl_dir    [file join $proj_dir rtl]
-set vendor_dir [file join $rtl_dir vendor altera]
 
 set mode_suffix [expr {$lite_mode ? "_lite" : ""}]
 set output_dir  [file normalize [file join $proj_dir build synth_altera${mode_suffix}]]
@@ -70,7 +69,7 @@ set_global_assignment -name TOP_LEVEL_ENTITY synth_timing_wrapper
 
 # ---- RTL sources ------------------------------------------------------------
 foreach f [list \
-    $vendor_dir/bram_sdp.v \
+    $rtl_dir/bram_sdp.v \
     $rtl_dir/dct_1d.v \
     $rtl_dir/dct_2d.v \
     $rtl_dir/input_buffer.v \

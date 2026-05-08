@@ -99,15 +99,7 @@ module input_buffer #(
     reg [CR_ADDR_W-1:0] cr_buf_raddr;
     wire [7:0]          cr_buf_rdata;
 
-    // Explicit RAMB36E1 instances with DOB_REG=1.
-    // Vivado's behavioural inference creates depth-cascaded BRAM groups with
-    // an internal cascade MUX *before* the output register, blocking DOB_REG
-    // absorption. This causes tile duplication (11 → 16 at 720p) regardless
-    // of clock frequency. Explicit primitives guarantee DOB_REG=1 and
-    // optimal tile count. Read latency = 2 cycles.
-    //   Y:  ceil(20480/4096) = 5 tiles
-    //   Cb: ceil(10240/4096) = 3 tiles
-    //   Cr: ceil(10240/4096) = 3 tiles  →  11 total
+    // Behavioral simple dual-port RAMs with two-cycle read latency.
     bram_sdp #(.DEPTH(2*Y_BANK_SIZE),  .WIDTH(8)) u_y_mem  (
         .clk(clk), .we(y_buf_we),  .waddr(y_buf_waddr),  .wdata(y_buf_wdata),
         .raddr(y_buf_raddr),  .rdata(y_buf_rdata)

@@ -321,6 +321,7 @@ module tb_mjpegzero_enc;
 
         // Debug: monitor pipeline progress (RTL only — signals not in post-synth netlist)
 `ifndef POSTSIM
+`ifndef VHDL_DUT
         fork
             begin : debug_monitor
                 integer dbg_cnt;
@@ -382,6 +383,7 @@ module tb_mjpegzero_enc;
                 end
             end
         join_none
+`endif // VHDL_DUT
 `endif // POSTSIM
 
         // Wait for JPEG EOI (tlast seen) or generous timeout
@@ -466,6 +468,7 @@ module tb_mjpegzero_enc;
     // Pipeline value tracing - dump first block's values (RTL only)
     // ========================================================================
 `ifndef POSTSIM
+`ifndef VHDL_DUT
     integer dct_dump_cnt, quant_dump_cnt, zz_dump_cnt, huff_dump_cnt;
     integer row_dct_cnt, tbuf_rd_cnt, dct_in_cnt;
     initial begin
@@ -553,12 +556,14 @@ module tb_mjpegzero_enc;
             dct_in_cnt = dct_in_cnt + 1;
         end
     end
+`endif // VHDL_DUT
 `endif // POSTSIM
 
     // ========================================================================
     // Huffman encoder DC tracing for ALL blocks (RTL only)
     // ========================================================================
 `ifndef POSTSIM
+`ifndef VHDL_DUT
     integer huff_blk_num;
     initial huff_blk_num = 0;
 
@@ -584,12 +589,14 @@ module tb_mjpegzero_enc;
             huff_blk_num = huff_blk_num + 1;
         end
     end
+`endif // VHDL_DUT
 `endif // POSTSIM
 
     // ========================================================================
     // Bitstream packer tracing - track every accepted Huffman code (RTL only)
     // ========================================================================
 `ifndef POSTSIM
+`ifndef VHDL_DUT
     integer bp_byte_num;
     integer bp_total_bits_in;
     integer bp_huff_code_num;
@@ -613,18 +620,21 @@ module tb_mjpegzero_enc;
             bp_huff_code_num = bp_huff_code_num + 1;
         end
     end
+`endif // VHDL_DUT
 `endif // POSTSIM
 
     // ========================================================================
     // Comp ID FIFO tracing (RTL only)
     // ========================================================================
 `ifndef POSTSIM
+`ifndef VHDL_DUT
     always @(posedge clk) begin
         if (dut.zz_out_valid && dut.zz_out_sob) begin
             $display("[COMP] ZZ sob: huff_comp_id=%0d fifo_rd=%0d fifo_wr=%0d",
                 dut.huff_comp_id, dut.comp_fifo_h_rd, dut.comp_fifo_h_wr);
         end
     end
+`endif // VHDL_DUT
 `endif // POSTSIM
 
     // ========================================================================
