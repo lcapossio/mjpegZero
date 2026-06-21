@@ -194,9 +194,16 @@ L3: `net/net_rx`. Arty helpers: `arp_responder`, `arty_tx_arbiter` (from
    AXIS backpressure: G1 scan byte-exact, G2 in-band quant tables byte-exact, G3
    RTP/JPEG structural sanity, G4 reconstructed decodes pixel-identical. The `prep`
    validator also rejects non-type-0 JPEGs (DRI/EXIF). *No board needed.*
-2. **M2 — trigger + MAC + arbiter integration sim.** Add `net_rx`, trigger capture,
-   `arp_responder`, `arty_tx_arbiter`, `eth_mac_sys` (MII) in a top-level TB with a
-   MII loopback BFM; inject a trigger frame, capture MAC TX, depacketize.
+2. **M2 — trigger + arbiter integration sim. ✅ DONE.** New trigger
+   [rtl/eth/jpeg_rtp_trigger.v](../rtl/eth/jpeg_rtp_trigger.v); integration TB
+   [sim/tb_jpeg_rtp_eth.sv](../sim/tb_jpeg_rtp_eth.sv); runner
+   [scripts/run_rtp_eth_sim.py](../scripts/run_rtp_eth_sim.py). Chain
+   `net_rx -> jpeg_rtp_trigger -> jpeg_rtp_tx -> arty_tx_arbiter` (jpeg on the
+   arbiter's `udp` input). A crafted UDP trigger frame is streamed into net_rx; the
+   captured sender address drives the emitted stream. `python scripts/run_rtp_eth_sim.py`
+   passes G1-G4 plus **G5** (emitted dst MAC/IP/port == trigger sender) under
+   backpressure. The full MAC (`eth_mac_sys`) + MII loopback BFM is deferred — the
+   MAC is already emacZero-HW-validated; it gets elaborated/closed in M4.
 3. **M3 — `demo_top_eth.v` + dual-clock JPEG buffer + `mac_csr_init`.** Full top
    integration sim: JTAG-style pixel load → encode → trigger → RTP egress.
 4. **M4 — XDC + Vivado build.** New `create_project_eth.tcl`, merged XDC (demo pins +

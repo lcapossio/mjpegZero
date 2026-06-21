@@ -123,13 +123,14 @@ def be24(b, o):
     return (b[o] << 16) | (b[o + 1] << 8) | b[o + 2]
 
 
-def cmd_check(outdir, captured, inp):
+def cmd_check(outdir, captured, inp, expect=None):
     with open(inp, "rb") as f:
         orig = f.read()
     pkts = parse_packets(captured)
     print("[check] %d packets, source %s (%d bytes)" % (len(pkts), inp, len(orig)))
     if not pkts:
         return 1 if _err("no packets captured") is False else 1
+    rx_dst_mac = rx_dst_ip = rx_dst_port = None
 
     orig_scan = orig[SCAN_OFF:len(orig) - EOI_BYTES]
     orig_lqt  = orig[QT_LUMA_OFF:QT_LUMA_OFF + QT_LEN]
@@ -158,6 +159,10 @@ def cmd_check(outdir, captured, inp):
             g3 = _err("packet %d IP proto %d != UDP" % (i, proto)) and g3
         o = 14 + ihl                      # UDP start
         udp_len = be16(p, o + 4)
+        if i == 0:
+            rx_dst_mac  = p[0:6]
+            rx_dst_ip   = p[14 + 16:14 + 20]
+            rx_dst_port = be16(p, o + 2)
         o += 8                            # RTP start
         # ---- RTP ----
         v = (p[o] >> 6) & 0x3
@@ -242,7 +247,18 @@ def cmd_check(outdir, captured, inp):
     # ---- Gate 4: reconstruct (DQT from wire) and decode-compare ----
     g4 = check_decode(orig, scan, rx_lqt, rx_cqt, outdir)
 
-    ok = g1 and g2 and g3 and (g4 is not False)
+    # ---- Gate 5: captured destination address (M2 only) ----
+    g5 = True
+    if expect:
+        g5 = (rx_dst_mac == expect["mac"] and rx_dst_ip == expect["ip"]
+              and rx_dst_port == expect["port"])
+        print("  G5 %s: emitted dst = %s / %s / %d (expected %s / %s / %d)"
+              % ("PASS" if g5 else "FAIL",
+                 rx_dst_mac.hex(), ".".join(str(b) for b in rx_dst_ip), rx_dst_port,
+                 expect["mac"].hex(), ".".join(str(b) for b in expect["ip"]),
+                 expect["port"]))
+
+    ok = g1 and g2 and g3 and (g4 is not False) and g5
     print("[check] %s" % ("ALL GATES PASS" if ok else "FAILED"))
     return 0 if ok else 1
 
@@ -286,11 +302,28 @@ def check_decode(orig, scan, rx_lqt, rx_cqt, outdir):
     return _err("decoded pixels differ (max abs %d)" % diff)
 
 
+def parse_expect(args):
+    """Parse optional dstmac=.. dstip=a.b.c.d dstport=N into an expect dict."""
+    kv = {}
+    for a in args:
+        if "=" in a:
+            k, v = a.split("=", 1)
+            kv[k] = v
+    if not ("dstmac" in kv and "dstip" in kv and "dstport" in kv):
+        return None
+    return {
+        "mac": bytes.fromhex(kv["dstmac"]),
+        "ip": bytes(int(x) for x in kv["dstip"].split(".")),
+        "port": int(kv["dstport"]),
+    }
+
+
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "prep" and len(sys.argv) == 4:
         return cmd_prep(sys.argv[2], sys.argv[3])
-    if len(sys.argv) >= 2 and sys.argv[1] == "check" and len(sys.argv) == 5:
-        return cmd_check(sys.argv[2], sys.argv[3], sys.argv[4])
+    if len(sys.argv) >= 2 and sys.argv[1] == "check" and len(sys.argv) >= 5:
+        expect = parse_expect(sys.argv[5:])
+        return cmd_check(sys.argv[2], sys.argv[3], sys.argv[4], expect)
     print(__doc__)
     return 2
 
