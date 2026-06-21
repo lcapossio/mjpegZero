@@ -100,11 +100,14 @@ module jpeg_rtp_tx #(
     reg [10:0] p_chunk;         // scan bytes in this packet
     reg        p_first;         // this is the first packet of the frame
     reg        p_last;          // this is the last packet of the frame
-    reg [15:0] p_udp_total;     // UDP length field
-    reg [15:0] p_ip_total;      // IP total length field
-    reg [15:0] p_ip_csum;       // IP header checksum
     reg [15:0] p_ip_id;
     reg [23:0] p_frag;
+
+    // Per-packet length fields, combinational from the latched packet state
+    // (single driver; no separate clocked block). UDP data = RTP(12)+JHDR(8)
+    // + [QT 132 on first] + chunk; UDP length adds the 8-byte UDP header.
+    wire [15:0] p_udp_total = 16'd28 + (p_first ? 16'd132 : 16'd0) + {5'd0, p_chunk};
+    wire [15:0] p_ip_total  = 16'd20 + p_udp_total;
 
     // ---- Emission pointers ----
     reg [2:0]  sec;
@@ -212,8 +215,8 @@ module jpeg_rtp_tx #(
                     5'd7:  out_byte = 8'h00;
                     5'd8:  out_byte = 8'h40;        // TTL = 64
                     5'd9:  out_byte = 8'h11;        // proto = UDP
-                    5'd10: out_byte = p_ip_csum[15:8];
-                    5'd11: out_byte = p_ip_csum[7:0];
+                    5'd10: out_byte = ip_csum_calc[15:8];
+                    5'd11: out_byte = ip_csum_calc[7:0];
                     5'd12: out_byte = our_ip[31:24];
                     5'd13: out_byte = our_ip[23:16];
                     5'd14: out_byte = our_ip[15:8];
@@ -302,9 +305,6 @@ module jpeg_rtp_tx #(
             p_chunk        <= 11'd0;
             p_first        <= 1'b0;
             p_last         <= 1'b0;
-            p_udp_total    <= 16'd0;
-            p_ip_total     <= 16'd0;
-            p_ip_csum      <= 16'd0;
             p_ip_id        <= 16'd0;
             p_frag         <= 24'd0;
             r_data         <= 8'd0;
@@ -403,26 +403,6 @@ module jpeg_rtp_tx #(
                 default: fstate <= F_IDLE;
             endcase
         end
-    end
-
-    // Latch per-packet length/checksum fields the cycle after F_INIT computes
-    // p_chunk/p_first (combinational ipc uses p_ip_total/p_ip_id). Computed here
-    // from the freshly-registered p_* values during the first F_EMIT cycle.
-    always @(posedge clk) begin
-        if (fstate == F_INIT) begin
-            // udp data = RTP(12)+JHDR(8) + [QT(4)+128] + chunk
-            p_udp_total <= 16'd8 + 16'd20
-                         + ((frag_off == 24'd0) ? 16'd132 : 16'd0)
-                         + ({5'd0, ((scan_remaining > {8'd0, SCAN_CHUNK})
-                                    ? SCAN_CHUNK : scan_remaining[10:0])});
-        end
-    end
-
-    // p_ip_total / p_ip_csum follow p_udp_total one cycle later; recompute
-    // continuously so the checksum tracks p_ip_total/p_ip_id while emitting.
-    always @(posedge clk) begin
-        p_ip_total <= 16'd20 + p_udp_total;
-        p_ip_csum  <= ip_csum_calc;
     end
 
 endmodule
