@@ -221,8 +221,19 @@ L3: `net/net_rx`. Arty helpers: `arp_responder`, `arty_tx_arbiter` (from
    (XILINX_7SERIES), and the IP checksum on the critical path — pipelined into 2
    register stages (−1.27 → −0.46 → +0.255 ns). Verifier G3 now validates the IP
    header checksum so the field is covered in sim.
-5. **M5 — Hardware bring-up.** Program, `ffplay stream.sdp`, run `eth_trigger.py`,
-   watch the frame; verify vs sim / JTAG read-back.
+5. **M5 — Hardware bring-up. ✅ DONE — works on the Arty A7-100T.** Program; PHY
+   links 100M full-duplex; ARP resolves `192.168.237.50`→`02:00:00:00:00:01`;
+   JTAG-encode a frame (`hw_encode.py`); trigger (`eth_trigger.py`); the host
+   receives the RTP/JPEG stream (`rtp_jpeg_recv.py`) and decodes it **pixel-identical
+   (max abs diff = 0) to the JTAG read-back**. NIC RX +248 KB per trigger.
+   **Root-cause fix found on HW:** emacZero's `eth_mac_tx` is cut-through and corrupts
+   a frame on any mid-frame `tvalid` bubble; `jpeg_rtp_tx` bubbles at every 32-bit
+   BRAM word boundary, so every RTP frame was corrupted (NIC dropped them, CRC). Fixed
+   with a per-frame store-and-forward buffer
+   [rtl/eth/axis_frame_buffer.v](../rtl/eth/axis_frame_buffer.v) that streams each
+   frame gap-free. JTAG-readable debug status (dbg flags, captured dst, MAC frame
+   count) added to `demo_top_eth` + `hw_status.py` made the diagnosis possible.
+   Host IP subnet is `192.168.237.0/24` (PC `.1`, FPGA `.50`).
 6. **M6 — Docs + README. ✅ example README done** at
    [example_proj/arty_a7_100t_eth/README.md](../example_proj/arty_a7_100t_eth/README.md).
 

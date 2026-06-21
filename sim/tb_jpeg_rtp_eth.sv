@@ -131,8 +131,17 @@ module tb_jpeg_rtp_eth #(
     );
 
     // ====================================================================
-    // TX arbiter (jpeg_rtp_tx on the udp input; others tied off)
+    // Per-frame store-and-forward buffer (absorbs jpeg_rtp_tx mid-frame
+    // bubbles so the cut-through MAC sees gap-free frames) then TX arbiter.
     // ====================================================================
+    wire [7:0] fb_data;  wire fb_valid, fb_last, fb_ready;
+
+    axis_frame_buffer #(.AW(11)) u_fb (
+        .clk(clk), .rst_n(rst_n),
+        .s_tdata(tx_data), .s_tvalid(tx_valid), .s_tlast(tx_last), .s_tready(tx_ready),
+        .m_tdata(fb_data), .m_tvalid(fb_valid), .m_tlast(fb_last), .m_tready(fb_ready)
+    );
+
     wire [7:0] m_tdata;  wire m_tvalid, m_tlast;
     reg        m_tready;
 
@@ -142,11 +151,22 @@ module tb_jpeg_rtp_eth #(
         .arp_tdata(8'd0),   .arp_tvalid(1'b0),   .arp_tready(),   .arp_tlast(1'b0),
         .icmp_tdata(8'd0),  .icmp_tvalid(1'b0),  .icmp_tready(),  .icmp_tlast(1'b0),
         .stats_tdata(8'd0), .stats_tvalid(1'b0), .stats_tready(), .stats_tlast(1'b0),
-        .udp_tdata(tx_data), .udp_tvalid(tx_valid), .udp_tready(tx_ready), .udp_tlast(tx_last),
+        .udp_tdata(fb_data), .udp_tvalid(fb_valid), .udp_tready(fb_ready), .udp_tlast(fb_last),
         .blast_tdata(8'd0), .blast_tvalid(1'b0), .blast_tready(), .blast_tlast(1'b0),
         .m_axis_tdata(m_tdata), .m_axis_tvalid(m_tvalid),
         .m_axis_tready(m_tready), .m_axis_tlast(m_tlast)
     );
+
+    // gap-free monitor on the frame-buffer output: once a frame starts,
+    // m_tvalid must stay high until tlast (else the cut-through MAC underruns).
+    reg fb_inframe = 1'b0;
+    integer fb_gap_errors = 0;
+    always @(posedge clk) begin
+        if (rst_n) begin
+            if (fb_inframe && !fb_valid) fb_gap_errors = fb_gap_errors + 1;
+            if (fb_valid && fb_ready) fb_inframe <= !fb_last;
+        end
+    end
 
     // downstream "MAC" backpressure: ready 7 of every 8 cycles
     reg [2:0] sc = 3'd0;
@@ -223,12 +243,17 @@ module tb_jpeg_rtp_eth #(
         rx_tvalid = 1'b0; rx_tsof = 1'b0; rx_tlast = 1'b0;
 
         wait (done_pulse === 1'b1);
+        // The frame buffer still has the last frame to emit after jpeg_rtp_tx
+        // finishes feeding it; wait until the arbiter output is idle.
         drain = 0;
-        while (drain < 32) begin @(posedge clk); drain = drain + 1; end
+        while (drain < 64) begin
+            @(posedge clk);
+            if (m_tvalid) drain = 0; else drain = drain + 1;
+        end
 
         $fclose(fd);
-        $display("[tb] done: %0d packets, %0d bytes (jpeg_bytes=%0d, start seen)",
-                 pkt_cnt, byte_cnt, jpeg_bytes);
+        $display("[tb] done: %0d packets, %0d bytes (jpeg_bytes=%0d), fb_gap_errors=%0d",
+                 pkt_cnt, byte_cnt, jpeg_bytes, fb_gap_errors);
         $finish;
     end
 
