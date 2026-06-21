@@ -109,6 +109,14 @@ module jpeg_rtp_tx #(
     wire [15:0] p_udp_total = 16'd28 + (p_first ? 16'd132 : 16'd0) + {5'd0, p_chunk};
     wire [15:0] p_ip_total  = 16'd20 + p_udp_total;
 
+    // IP header checksum, pipelined over 2 register stages so neither the sum
+    // nor the fold is on the out_byte -> r_data path (and each stage's adder is
+    // shallow enough for 100 MHz). The packet state it depends on is stable from
+    // F_INIT, long before the IP header is emitted, so the latency is harmless.
+    // Constant header words 0x4500 + 0x4000 + 0x4011 fold to 0xC511.
+    reg [15:0] p_ip_csum;
+    reg [31:0] psum_a, psum_b;
+
     // ---- Emission pointers ----
     reg [2:0]  sec;
     reg [10:0] idx;             // byte index within the current section
@@ -127,21 +135,14 @@ module jpeg_rtp_tx #(
     reg [1:0]  fstate;
 
     // ========================================================================
-    // IP header checksum (combinational over the fields that vary per packet).
-    // Fixed bytes: 45 00 | tot | id | 40 00 | 40 11 | 0000 | our_ip | dst_ip
+    // IP header checksum stage 2: combinational fold of the two registered
+    // partial sums (psum_a + psum_b), then one's-complement. Header layout:
+    //   45 00 | tot | id | 40 00 | 40 11 | 0000(csum) | our_ip | dst_ip
     // ========================================================================
-    wire [31:0] ipc_sum = 32'h00004500
-                        + {16'd0, p_ip_total}
-                        + {16'd0, p_ip_id}
-                        + 32'h00004000
-                        + 32'h00004011
-                        + {16'd0, our_ip[31:16]}
-                        + {16'd0, our_ip[15:0]}
-                        + {16'd0, dst_ip[31:16]}
-                        + {16'd0, dst_ip[15:0]};
-    wire [16:0] ipc_f1  = ipc_sum[15:0] + ipc_sum[31:16];
-    wire [15:0] ipc_f2  = ipc_f1[15:0] + {15'd0, ipc_f1[16]};
-    wire [15:0] ip_csum_calc = ~ipc_f2;
+    wire [31:0] ip_acc2     = psum_a + psum_b;
+    wire [16:0] ip_f1       = ip_acc2[15:0] + ip_acc2[31:16];
+    wire [15:0] ip_f2       = ip_f1[15:0] + {15'd0, ip_f1[16]};
+    wire [15:0] ip_fold_fin = ~ip_f2;
 
     // ========================================================================
     // BRAM byte fetch. base byte address for the current memory byte.
@@ -215,8 +216,8 @@ module jpeg_rtp_tx #(
                     5'd7:  out_byte = 8'h00;
                     5'd8:  out_byte = 8'h40;        // TTL = 64
                     5'd9:  out_byte = 8'h11;        // proto = UDP
-                    5'd10: out_byte = ip_csum_calc[15:8];
-                    5'd11: out_byte = ip_csum_calc[7:0];
+                    5'd10: out_byte = p_ip_csum[15:8];
+                    5'd11: out_byte = p_ip_csum[7:0];
                     5'd12: out_byte = our_ip[31:24];
                     5'd13: out_byte = our_ip[23:16];
                     5'd14: out_byte = our_ip[15:8];
@@ -307,11 +308,21 @@ module jpeg_rtp_tx #(
             p_last         <= 1'b0;
             p_ip_id        <= 16'd0;
             p_frag         <= 24'd0;
+            p_ip_csum      <= 16'd0;
+            psum_a         <= 32'd0;
+            psum_b         <= 32'd0;
             r_data         <= 8'd0;
             r_valid        <= 1'b0;
             r_last         <= 1'b0;
         end else begin
             done_pulse <= 1'b0;
+            // IP checksum pipeline (single driver). Stage 1: two shallow partial
+            // sums; stage 2: fold (ip_fold_fin). 0xC511 = 0x4500+0x4000+0x4011.
+            psum_a <= 32'h0000_C511 + {16'd0, p_ip_total}
+                    + {16'd0, p_ip_id} + {16'd0, our_ip[31:16]};
+            psum_b <= {16'd0, our_ip[15:0]}
+                    + {16'd0, dst_ip[31:16]} + {16'd0, dst_ip[15:0]};
+            p_ip_csum <= ip_fold_fin;
 
             // ---- AXIS skid update ----
             if (src_ready) begin
