@@ -211,15 +211,16 @@ L3: `net/net_rx`. Arty helpers: `arp_responder`, `arty_tx_arbiter` (from
    [jpeg_buffer_dc.v](../example_proj/arty_a7_100t_eth/rtl/jpeg_buffer_dc.v) unit-tested
    ([tb_mac_csr_init.sv](../sim/tb_mac_csr_init.sv), [tb_jpeg_buffer_dc.sv](../sim/tb_jpeg_buffer_dc.sv)).
    [clk_gen_eth.v](../example_proj/arty_a7_100t_eth/rtl/clk_gen_eth.v) makes 150/100/25.
-4. **M4 — XDC + Vivado build. ◑ synth clean; impl/timing + bitstream pending.**
+4. **M4 — XDC + Vivado build. ✅ DONE — timing closed, bitstream written.**
    [constraints/arty_a7_100t_eth.xdc](../example_proj/arty_a7_100t_eth/constraints/arty_a7_100t_eth.xdc),
    [scripts/create_project.tcl](../example_proj/arty_a7_100t_eth/scripts/create_project.tcl)
-   (`-verilog_define XILINX_7SERIES`). **Synthesis: 0 errors, 0 critical warnings**;
-   5,985 LUT / 5,889 FF / 80 RAMB36 + 4 RAMB18 / 21 DSP on XC7A100T. Two synth bugs
-   found+fixed: multi-driver on `jpeg_rtp_tx` IP length/checksum (made combinational;
-   verifier G3 now checks the IP checksum) and the `ddr_output` black box (needs
-   XILINX_7SERIES). Remaining: full `opt/place/route`, timing closure (150+100,
-   MII async groups), bitstream.
+   (`-verilog_define XILINX_7SERIES`). On XC7A100T: **WNS = +0.255 ns** (0 failing
+   setup/hold endpoints), `build/arty_a7_eth_demo.bit`. Impl: 5,696 LUT / 5,742 FF /
+   80 RAMB36 + 4 RAMB18 / 21 DSP / 21 IOB. Three synth/timing bugs found+fixed:
+   multi-driver on `jpeg_rtp_tx` IP length/checksum, `ddr_output` black box
+   (XILINX_7SERIES), and the IP checksum on the critical path — pipelined into 2
+   register stages (−1.27 → −0.46 → +0.255 ns). Verifier G3 now validates the IP
+   header checksum so the field is covered in sim.
 5. **M5 — Hardware bring-up.** Program, `ffplay stream.sdp`, run `eth_trigger.py`,
    watch the frame; verify vs sim / JTAG read-back.
 6. **M6 — Docs + README. ✅ example README done** at
