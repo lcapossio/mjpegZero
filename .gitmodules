@@ -1,3 +1,6 @@
 [submodule "fcapz"]
 	path = fcapz
 	url = https://github.com/lcapossio/fpgacapZero
+[submodule "emaczero"]
+	path = emaczero
+	url = https://github.com/lcapossio/emacZero

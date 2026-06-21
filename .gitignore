@@ -38,6 +38,9 @@ xsim.dir/
 sim/test_vectors/*.hex
 sim/test_vectors/*.jpg
 
+# RTP packetizer sim artifacts (produced by scripts/run_rtp_sim.py)
+sim/rtp_test/
+
 # Claude settings
 .claude/
 
