@@ -21,7 +21,7 @@
 module demo_top_eth #(
     parameter JPEG_WORDS = 65536,        // 256 KB (64 RAMB36) - fits A7-100T
     parameter [47:0] OUR_MAC = 48'h02_00_00_00_00_01,
-    parameter [31:0] OUR_IP  = 32'hC0_A8_01_32,   // 192.168.1.50
+    parameter [31:0] OUR_IP  = 32'hC0_A8_ED_32,   // 192.168.237.50
     parameter [15:0] TRIGGER_PORT = 16'd9999,
     parameter [15:0] RTP_PORT     = 16'd5004
 ) (
@@ -390,11 +390,16 @@ module demo_top_eth #(
                 AR_DATA: begin
                     if (ar_bad) begin m_rdata<=32'd0; axi_rd_error_pulse<=1'b1; end
                     else if (ar_to_jpeg) m_rdata<=jpeg_rd_data;
-                    else case (ar_addr[3:2])
-                        2'd0: m_rdata<={27'd0,start_armed,enc_running,axi_error,jpeg_overflow,enc_done};
-                        2'd1: m_rdata<={13'd0,jpeg_byte_cnt};
-                        2'd2: m_rdata<=JPEG_BYTES[31:0];
-                        default: m_rdata<=32'd0;
+                    else case (ar_addr[4:2])
+                        // [4:0] existing; [11:5]={macbp,arp,mactx,rtpdone,rtprun,trg,udp} debug
+                        3'd0: m_rdata<={20'd0,dbg_s2,start_armed,enc_running,axi_error,jpeg_overflow,enc_done};
+                        3'd1: m_rdata<={13'd0,jpeg_byte_cnt};
+                        3'd2: m_rdata<=JPEG_BYTES[31:0];
+                        3'd3: m_rdata<=dstip_s2;                  // 0x0C: captured dst IP
+                        3'd4: m_rdata<=dstmac_s2[31:0];           // 0x10: dst MAC[31:0]
+                        3'd5: m_rdata<={16'd0,dstmac_s2[47:32]};  // 0x14: dst MAC[47:32]
+                        3'd6: m_rdata<={16'd0,dstport_s2};        // 0x18: dst port
+                        3'd7: m_rdata<={16'd0,frames_s2};         // 0x1C: MAC frame count
                     endcase
                     m_rvalid<=1'b1; m_rlast<=(ar_rem==8'd0);
                     m_rresp<=ar_bad?2'b10:2'b00;
@@ -502,13 +507,14 @@ module demo_top_eth #(
 
     // --- ARP responder (so the host can resolve the FPGA's IP) ---
     wire [7:0] arp_tx_tdata;  wire arp_tx_tvalid, arp_tx_tready, arp_tx_tlast;
+    wire       arp_reply_sent;
     arp_responder u_arp (
         .clk(clk100), .rst_n(eth_rst_n), .enable(1'b1),
         .rx_tdata(mac_rx_tdata), .rx_tvalid(mac_rx_tvalid), .rx_tlast(mac_rx_tlast),
         .rx_terror(mac_rx_terror), .rx_tsof(mac_rx_tsof),
         .tx_tdata(arp_tx_tdata), .tx_tvalid(arp_tx_tvalid),
         .tx_tready(arp_tx_tready), .tx_tlast(arp_tx_tlast),
-        .our_mac(OUR_MAC), .our_ip(OUR_IP), .arp_reply_sent()
+        .our_mac(OUR_MAC), .our_ip(OUR_IP), .arp_reply_sent(arp_reply_sent)
     );
 
     // --- trigger capture ---
@@ -548,6 +554,16 @@ module demo_top_eth #(
         .tx_last(rtp_tx_tlast), .tx_ready(rtp_tx_tready)
     );
 
+    // --- per-frame store-and-forward (gap-free frames for the cut-through MAC) ---
+    wire [7:0] rtpfb_tdata; wire rtpfb_tvalid, rtpfb_tlast, rtpfb_tready;
+    axis_frame_buffer #(.AW(11)) u_fb (
+        .clk(clk100), .rst_n(eth_rst_n),
+        .s_tdata(rtp_tx_tdata), .s_tvalid(rtp_tx_tvalid),
+        .s_tlast(rtp_tx_tlast), .s_tready(rtp_tx_tready),
+        .m_tdata(rtpfb_tdata), .m_tvalid(rtpfb_tvalid),
+        .m_tlast(rtpfb_tlast), .m_tready(rtpfb_tready)
+    );
+
     // --- TX arbiter (ARP + RTP) ---
     arty_tx_arbiter u_arb (
         .clk(clk100), .rst_n(eth_rst_n), .arp_tx_active(1'b0),
@@ -556,12 +572,53 @@ module demo_top_eth #(
         .arp_tready(arp_tx_tready), .arp_tlast(arp_tx_tlast),
         .icmp_tdata(8'd0), .icmp_tvalid(1'b0), .icmp_tready(), .icmp_tlast(1'b0),
         .stats_tdata(8'd0),.stats_tvalid(1'b0),.stats_tready(),.stats_tlast(1'b0),
-        .udp_tdata(rtp_tx_tdata), .udp_tvalid(rtp_tx_tvalid),
-        .udp_tready(rtp_tx_tready), .udp_tlast(rtp_tx_tlast),
+        .udp_tdata(rtpfb_tdata), .udp_tvalid(rtpfb_tvalid),
+        .udp_tready(rtpfb_tready), .udp_tlast(rtpfb_tlast),
         .blast_tdata(8'd0),.blast_tvalid(1'b0),.blast_tready(),.blast_tlast(1'b0),
         .m_axis_tdata(mac_tx_tdata), .m_axis_tvalid(mac_tx_tvalid),
         .m_axis_tready(mac_tx_tready), .m_axis_tlast(mac_tx_tlast)
     );
+
+    // =======================================================================
+    // Debug: sticky flags (clk100) for each Ethernet-island stage, synced to
+    // clk150 and exposed in DEMO_STATUS. arp_reply is a known-good control
+    // (ARP works), so it must read 1 and validates the sticky+CDC+read path.
+    // =======================================================================
+    reg dbg_udp, dbg_trg, dbg_rtprun, dbg_rtpdone, dbg_mactx, dbg_arp, dbg_macbp;
+    reg [15:0] mactx_frames;   // count of complete frames handed to the MAC
+    always @(posedge clk100) begin
+        if (!eth_rst_n) begin
+            dbg_udp<=1'b0; dbg_trg<=1'b0; dbg_rtprun<=1'b0;
+            dbg_rtpdone<=1'b0; dbg_mactx<=1'b0; dbg_arp<=1'b0; dbg_macbp<=1'b0;
+            mactx_frames<=16'd0;
+        end else begin
+            if (ud_valid && ud_last) dbg_udp    <= 1'b1;
+            if (trg_start)           dbg_trg    <= 1'b1;
+            if (rtp_busy)            dbg_rtprun <= 1'b1;
+            if (rtp_done)            dbg_rtpdone<= 1'b1;
+            if (mac_tx_tvalid)       dbg_mactx  <= 1'b1;
+            if (arp_reply_sent)      dbg_arp    <= 1'b1;
+            // MAC asserted valid but not ready -> it IS draining to MII (backpressure)
+            if (mac_tx_tvalid && !mac_tx_tready) dbg_macbp <= 1'b1;
+            // complete frame accepted by the MAC
+            if (mac_tx_tvalid && mac_tx_tready && mac_tx_tlast)
+                mactx_frames <= mactx_frames + 16'd1;
+        end
+    end
+    wire [6:0] dbg_100 = {dbg_macbp, dbg_arp, dbg_mactx, dbg_rtpdone, dbg_rtprun, dbg_trg, dbg_udp};
+    reg  [6:0] dbg_s1, dbg_s2;
+    // Captured RTP destination + MAC frame count (clk100) synced to clk150.
+    reg [47:0] dstmac_s1, dstmac_s2;
+    reg [31:0] dstip_s1, dstip_s2;
+    reg [15:0] dstport_s1, dstport_s2;
+    reg [15:0] frames_s1, frames_s2;
+    always @(posedge clk) begin
+        dbg_s1 <= dbg_100;          dbg_s2 <= dbg_s1;
+        dstmac_s1 <= trg_dst_mac;   dstmac_s2 <= dstmac_s1;
+        dstip_s1  <= trg_dst_ip;    dstip_s2  <= dstip_s1;
+        dstport_s1<= trg_dst_port;  dstport_s2<= dstport_s1;
+        frames_s1 <= mactx_frames;  frames_s2 <= frames_s1;
+    end
 
     // =======================================================================
     // LEDs

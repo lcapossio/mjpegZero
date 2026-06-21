@@ -15,7 +15,7 @@
 import socket
 import sys
 
-fpga_ip      = sys.argv[1] if len(sys.argv) > 1 else "192.168.1.50"
+fpga_ip      = sys.argv[1] if len(sys.argv) > 1 else "192.168.237.50"
 trigger_port = int(sys.argv[2]) if len(sys.argv) > 2 else 9999
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

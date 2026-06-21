@@ -31,11 +31,12 @@ new bit is the Ethernet egress through the [emacZero](../../emaczero) MAC.
 
 | Role | MAC | IP | Notes |
 |------|-----|----|-------|
-| FPGA | `02:00:00:00:00:01` | `192.168.1.50` | `OUR_MAC`/`OUR_IP` params in `demo_top_eth.v` |
-| Host | — | `192.168.1.77` | edit `stream.sdp` / `eth_trigger.py` |
+| FPGA | `02:00:00:00:00:01` | `192.168.237.50` | `OUR_MAC`/`OUR_IP` params in `demo_top_eth.v` |
+| Host | — | `192.168.237.1` | edit `stream.sdp` / `eth_trigger.py` |
 
 Trigger UDP port `9999`; RTP stream UDP port `5004` (in the SDP). Direct cable or
-a switch both work; set the host NIC to `192.168.1.77/24`.
+a switch both work; set the host NIC to `192.168.237.1/24` (admin):
+`netsh interface ip set address name="Ethernet 2" static 192.168.237.1 255.255.255.0`.
 
 ## Build
 
@@ -64,7 +65,7 @@ emacZero's DDR/ODDR/IDDR primitives are instantiated.
    ```
 4. **Trigger the send**:
    ```sh
-   python example_proj/arty_a7_100t_eth/python/eth_trigger.py 192.168.1.50 9999
+   python example_proj/arty_a7_100t_eth/python/eth_trigger.py 192.168.237.50 9999
    ```
    The FPGA captures the host's address from the trigger and streams the JPEG in
    its buffer to `host:5004`. `led3` blinks on Ethernet TX activity. Re-trigger to

@@ -52,6 +52,7 @@ set rtl_files [list \
     $ex_dir/rtl/demo_top_eth.v \
     $repo_root/rtl/eth/jpeg_rtp_tx.v \
     $repo_root/rtl/eth/jpeg_rtp_trigger.v \
+    $repo_root/rtl/eth/axis_frame_buffer.v \
     $repo_root/rtl/eth/mac_csr_init.v \
     $fcapz_rtl/dpram.v \
     $fcapz_rtl/reset_sync.v \

@@ -27,6 +27,7 @@ SOURCES = [
     os.path.join(PROJ_DIR, 'sim', 'tb_jpeg_rtp_eth.sv'),
     os.path.join(PROJ_DIR, 'rtl', 'eth', 'jpeg_rtp_tx.v'),
     os.path.join(PROJ_DIR, 'rtl', 'eth', 'jpeg_rtp_trigger.v'),
+    os.path.join(PROJ_DIR, 'rtl', 'eth', 'axis_frame_buffer.v'),
     os.path.join(PROJ_DIR, 'emaczero', 'rtl', 'net', 'net_rx.v'),
     os.path.join(PROJ_DIR, 'emaczero', 'fpga', 'arty_a7', 'rtl', 'arty_tx_arbiter.v'),
 ]

@@ -75,6 +75,8 @@ def build_jfif(width, height, lqt, cqt, scan):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5004
     out  = sys.argv[2] if len(sys.argv) > 2 else "out.jpg"
+    max_frames = int(sys.argv[3]) if len(sys.argv) > 3 else 0  # 0 = run forever
+    frames = 0
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(("0.0.0.0", port))
@@ -116,6 +118,9 @@ def main():
                     f.write(jpg)
                 print("  wrote %s (%dx%d, %d bytes, scan %d)"
                       % (out, width, height, len(jpg), len(scan)))
+                frames += 1
+                if max_frames and frames >= max_frames:
+                    break
             frags = {}
             lqt = cqt = None
 
