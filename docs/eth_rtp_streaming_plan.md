@@ -204,13 +204,26 @@ L3: `net/net_rx`. Arty helpers: `arp_responder`, `arty_tx_arbiter` (from
    passes G1-G4 plus **G5** (emitted dst MAC/IP/port == trigger sender) under
    backpressure. The full MAC (`eth_mac_sys`) + MII loopback BFM is deferred — the
    MAC is already emacZero-HW-validated; it gets elaborated/closed in M4.
-3. **M3 — `demo_top_eth.v` + dual-clock JPEG buffer + `mac_csr_init`.** Full top
-   integration sim: JTAG-style pixel load → encode → trigger → RTP egress.
-4. **M4 — XDC + Vivado build.** New `create_project_eth.tcl`, merged XDC (demo pins +
-   emacZero MII). Close timing (two clocks: 150 + 100; MII async groups).
+3. **M3 — `demo_top_eth.v` + dual-clock buffer + `mac_csr_init`. ✅ DONE.**
+   [example_proj/arty_a7_100t_eth/rtl/demo_top_eth.v](../example_proj/arty_a7_100t_eth/rtl/demo_top_eth.v)
+   integrates the 150 MHz datapath + 100 MHz Ethernet island.
+   [mac_csr_init.v](../rtl/eth/mac_csr_init.v) and
+   [jpeg_buffer_dc.v](../example_proj/arty_a7_100t_eth/rtl/jpeg_buffer_dc.v) unit-tested
+   ([tb_mac_csr_init.sv](../sim/tb_mac_csr_init.sv), [tb_jpeg_buffer_dc.sv](../sim/tb_jpeg_buffer_dc.sv)).
+   [clk_gen_eth.v](../example_proj/arty_a7_100t_eth/rtl/clk_gen_eth.v) makes 150/100/25.
+4. **M4 — XDC + Vivado build. ◑ synth clean; impl/timing + bitstream pending.**
+   [constraints/arty_a7_100t_eth.xdc](../example_proj/arty_a7_100t_eth/constraints/arty_a7_100t_eth.xdc),
+   [scripts/create_project.tcl](../example_proj/arty_a7_100t_eth/scripts/create_project.tcl)
+   (`-verilog_define XILINX_7SERIES`). **Synthesis: 0 errors, 0 critical warnings**;
+   5,985 LUT / 5,889 FF / 80 RAMB36 + 4 RAMB18 / 21 DSP on XC7A100T. Two synth bugs
+   found+fixed: multi-driver on `jpeg_rtp_tx` IP length/checksum (made combinational;
+   verifier G3 now checks the IP checksum) and the `ddr_output` black box (needs
+   XILINX_7SERIES). Remaining: full `opt/place/route`, timing closure (150+100,
+   MII async groups), bitstream.
 5. **M5 — Hardware bring-up.** Program, `ffplay stream.sdp`, run `eth_trigger.py`,
-   watch the frame; verify byte-exact vs sim / JTAG read-back.
-6. **M6 — Docs + README.** Update A7 README with the Ethernet test flow.
+   watch the frame; verify vs sim / JTAG read-back.
+6. **M6 — Docs + README. ✅ example README done** at
+   [example_proj/arty_a7_100t_eth/README.md](../example_proj/arty_a7_100t_eth/README.md).
 
 ### Extensions (not in first pass)
 - Continuous/looping resend (re-stream current buffer at an interval) for "video".

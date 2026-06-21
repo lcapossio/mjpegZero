@@ -163,6 +163,18 @@ def cmd_check(outdir, captured, inp, expect=None):
             rx_dst_mac  = p[0:6]
             rx_dst_ip   = p[14 + 16:14 + 20]
             rx_dst_port = be16(p, o + 2)
+        # IP total length / UDP length consistency + IP header checksum
+        ip_total = be16(p, 16)
+        if ip_total != ihl + udp_len:
+            g3 = _err("pkt %d ip_total %d != ihl(%d)+udp_len(%d)"
+                      % (i, ip_total, ihl, udp_len)) and g3
+        ipsum = 0
+        for j in range(14, 14 + ihl, 2):
+            ipsum += (p[j] << 8) | p[j + 1]
+        ipsum = (ipsum & 0xFFFF) + (ipsum >> 16)
+        ipsum = (ipsum & 0xFFFF) + (ipsum >> 16)
+        if ipsum != 0xFFFF:
+            g3 = _err("pkt %d bad IP header checksum (fold=0x%04x)" % (i, ipsum)) and g3
         o += 8                            # RTP start
         # ---- RTP ----
         v = (p[o] >> 6) & 0x3
