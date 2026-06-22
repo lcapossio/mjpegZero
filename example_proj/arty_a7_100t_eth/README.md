@@ -49,6 +49,39 @@ vivado -mode batch -source example_proj/arty_a7_100t_eth/scripts/create_project.
 Bitstream → `build/arty_a7_eth_demo.bit`. The build defines `XILINX_7SERIES` so
 emacZero's DDR/ODDR/IDDR primitives are instantiated.
 
+### Two demo tops
+
+| Top | Build script | What it streams |
+|-----|--------------|-----------------|
+| `demo_top_eth` | `create_project.tcl` | a **still** JPEG uploaded over JTAG, re-streamed as RTP/JPEG |
+| `demo_top_vtpg_eth` | `create_project_vtpg.tcl` | a **moving** pattern (vtpgZero colorbars + bouncing box), encoded + streamed live, autonomously |
+
+```sh
+# moving-pattern (live motion) build:
+vivado -mode batch -source example_proj/arty_a7_100t_eth/scripts/create_project_vtpg.tcl
+```
+Bitstream -> `build/arty_a7_vtpg_demo.bit`.
+
+## Moving pattern - live motion (`demo_top_vtpg_eth`)
+
+vtpgZero generates colorbars + a bouncing box (YUV 4:2:2, fed straight into the
+encoder); an on-chip control FSM loops *generate -> encode -> stream*
+autonomously so the host just watches. The box advances one step per frame ->
+real motion. No JTAG pixel upload needed.
+
+1. Program `build/arty_a7_vtpg_demo.bit`.
+2. Host NIC at `192.168.237.1/24`; allow inbound UDP 5004 (admin):
+   `New-NetFirewallRule -DisplayName "RTP-JPEG 5004" -Direction Inbound -Protocol UDP -LocalPort 5004 -Action Allow -Profile Any`
+3. Start a player on UDP 5004:
+   ```sh
+   ffplay -use_wallclock_as_timestamps 1 -protocol_whitelist file,udp,rtp -fflags nobuffer -i python/stream.sdp
+   ```
+4. Send **one** trigger to capture the destination and start the loop:
+   `python python/eth_trigger.py 192.168.237.50 9999`
+
+   The FPGA then streams continuous moving frames (~30-40 fps). `python/hw_status_vtpg.py`
+   reads the loop state over JTAG.
+
 ## Hardware test flow
 
 1. **Program** `build/arty_a7_eth_demo.bit` over JTAG (reprogram after any power
