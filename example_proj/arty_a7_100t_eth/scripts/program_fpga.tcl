@@ -7,7 +7,12 @@
 
 set script_dir [file normalize [file dirname [info script]]]
 set ex_dir     [file normalize [file join $script_dir ..]]
-set bit        [file normalize [file join $ex_dir build arty_a7_eth_demo.bit]]
+# optional: -tclargs <bitfile>  (default: the still-image demo bitstream)
+if {$argc >= 1} {
+    set bit [file normalize [lindex $argv 0]]
+} else {
+    set bit [file normalize [file join $ex_dir build arty_a7_eth_demo.bit]]
+}
 
 if {![file exists $bit]} { puts "ERROR: bitstream not found: $bit"; exit 1 }
 

@@ -379,7 +379,8 @@ module demo_top_vtpg_eth #(
                     vstate     <= V_ENC;
                 end
                 V_ENC:    if (cap_done) vstate<=V_STREAM;   // full JPEG captured (EOI)
-                V_STREAM: begin rtp_start<=1'b1; vstate<=V_WAIT; end
+                V_STREAM: begin rtp_start<=1'b1;            // hold start until tx accepts
+                              if (rtp_busy) vstate<=V_WAIT; end
                 V_WAIT:   if (rtp_done) begin
                               frame_cnt <= frame_cnt + 32'd1;
                               vstate    <= loop_en ? V_KICK : V_IDLE;
@@ -393,10 +394,13 @@ module demo_top_vtpg_eth #(
     // Debug sticky flags (for JTAG status), all single-domain
     // =======================================================================
     reg dbg_udp, dbg_trg, dbg_mactx, dbg_arp, dbg_macbp;
-    reg [15:0] mactx_frames;
+    reg [15:0] mactx_frames;     // packets the MAC accepted (arbiter out)
+    reg [15:0] rtp_pkts;         // packets jpeg_rtp_tx produced
+    reg [15:0] fb_pkts;          // packets the frame buffer emitted
     always @(posedge clk) begin
         if (!eth_rst_n || sw_reset) begin
-            dbg_udp<=0; dbg_trg<=0; dbg_mactx<=0; dbg_arp<=0; dbg_macbp<=0; mactx_frames<=0;
+            dbg_udp<=0; dbg_trg<=0; dbg_mactx<=0; dbg_arp<=0; dbg_macbp<=0;
+            mactx_frames<=0; rtp_pkts<=0; fb_pkts<=0;
         end else begin
             if (ud_valid && ud_last) dbg_udp<=1'b1;
             if (trg_start)           dbg_trg<=1'b1;
@@ -404,6 +408,8 @@ module demo_top_vtpg_eth #(
             if (arp_reply_sent)      dbg_arp<=1'b1;
             if (mac_tx_tvalid && !mac_tx_tready) dbg_macbp<=1'b1;
             if (mac_tx_tvalid && mac_tx_tready && mac_tx_tlast) mactx_frames<=mactx_frames+16'd1;
+            if (rtp_tx_tvalid && rtp_tx_tready && rtp_tx_tlast) rtp_pkts<=rtp_pkts+16'd1;
+            if (rtpfb_tvalid && rtpfb_tready && rtpfb_tlast)    fb_pkts<=fb_pkts+16'd1;
         end
     end
 
@@ -465,8 +471,8 @@ module demo_top_vtpg_eth #(
     end
 
     // AR: read-only debug status (ctrl region 0x0200_00xx). word index ar_addr[4:2].
-    wire [11:0] dbg_word = {dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
-                            loop_en, cap_done, vstate};   // [2:0]=vstate
+    wire [11:0] dbg_word = {rtp_busy, dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
+                            loop_en, cap_done, vstate};   // [2:0]=vstate, [10]=rtp_busy
     localparam [2:0] AR_IDLE=3'd0, AR_PRE=3'd1, AR_DATA=3'd2;
     reg [2:0] ar_state; reg [31:0] ar_addr; reg [7:0] ar_rem; reg ar_bad;
     always @(posedge clk) begin
@@ -486,15 +492,17 @@ module demo_top_vtpg_eth #(
                 end
                 AR_PRE: ar_state<=AR_DATA;
                 AR_DATA: begin
-                    case (ar_addr[4:2])
-                        3'd0: m_rdata<={20'd0, dbg_word};         // status
-                        3'd1: m_rdata<={13'd0, jpeg_byte_cnt};    // current frame size
-                        3'd2: m_rdata<=frame_cnt;                 // frames streamed
-                        3'd3: m_rdata<=trg_dst_ip;
-                        3'd4: m_rdata<=trg_dst_mac[31:0];
-                        3'd5: m_rdata<={16'd0, trg_dst_mac[47:32]};
-                        3'd6: m_rdata<={16'd0, trg_dst_port};
-                        3'd7: m_rdata<={16'd0, mactx_frames};
+                    case (ar_addr[5:2])
+                        4'd0: m_rdata<={20'd0, dbg_word};         // status
+                        4'd1: m_rdata<={13'd0, jpeg_byte_cnt};    // current frame size
+                        4'd2: m_rdata<=frame_cnt;                 // frames streamed
+                        4'd3: m_rdata<=trg_dst_ip;
+                        4'd4: m_rdata<=trg_dst_mac[31:0];
+                        4'd5: m_rdata<={16'd0, trg_dst_mac[47:32]};
+                        4'd6: m_rdata<={16'd0, trg_dst_port};
+                        4'd7: m_rdata<={16'd0, mactx_frames};
+                        4'd8: m_rdata<={rtp_pkts, fb_pkts};       // jpeg_rtp_tx / frame-buf pkts
+                        default: m_rdata<=32'd0;
                     endcase
                     m_rvalid<=1'b1; m_rlast<=(ar_rem==8'd0); m_rresp<=ar_bad?2'b10:2'b00;
                     if (m_rvalid && m_rready) begin
