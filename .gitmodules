@@ -4,3 +4,6 @@
 [submodule "emaczero"]
 	path = emaczero
 	url = https://github.com/lcapossio/emacZero
+[submodule "vtpgzero"]
+	path = vtpgzero
+	url = https://github.com/lcapossio/vtpgZero
