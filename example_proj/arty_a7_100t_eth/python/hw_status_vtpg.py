@@ -25,6 +25,7 @@ def main():
         dmh = hw._axi.axi_read(0x02000014) & 0xFFFF
         dpt = hw._axi.axi_read(0x02000018) & 0xFFFF
         nfr = hw._axi.axi_read(0x0200001C) & 0xFFFF
+        pk  = hw._axi.axi_read(0x02000020)
     finally:
         hw.close()
     print("raw status   = 0x%08x" % st)
@@ -36,9 +37,12 @@ def main():
     print("  dbg_mactx   = %d  (MAC TX active)" % ((st >> 7) & 1))
     print("  dbg_arp     = %d  (ARP reply sent)" % ((st >> 8) & 1))
     print("  dbg_macbp   = %d  (MAC TX backpressure seen)" % ((st >> 9) & 1))
+    print("  rtp_busy    = %d  (jpeg_rtp_tx streaming)" % ((st >> 10) & 1))
     print("cur frame size = %d bytes" % sz)
     print("frames streamed= %d" % fc)
-    print("MAC frames sent= %d" % nfr)
+    print("rtp_tx packets = %d  (jpeg_rtp_tx produced)" % ((pk >> 16) & 0xFFFF))
+    print("frame-buf pkts = %d  (frame buffer emitted)" % (pk & 0xFFFF))
+    print("MAC frames sent= %d  (arbiter -> MAC)" % nfr)
     print("captured dst   = %012x  %d.%d.%d.%d : %d"
           % ((dmh << 32) | dml,
              (dip >> 24) & 255, (dip >> 16) & 255, (dip >> 8) & 255, dip & 255, dpt))
