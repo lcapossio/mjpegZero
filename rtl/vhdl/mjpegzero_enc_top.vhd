@@ -496,13 +496,17 @@ begin
             out_sob => zz_out_sob
         );
 
-    -- DC predictors must reset at every start-of-scan (= each frame) as well as
-    -- at RST markers (JPEG spec). Without frame_start_pulse the predictor carries
-    -- the previous frame's last DC into the next frame, washing out luma contrast
-    -- on every frame after the first. VHDL-93 forbids an expression in a port-map
-    -- actual, so combine via a named signal; the packer RST path (in_restart)
-    -- stays restart_trigger only, so no spurious RST marker is emitted.
-    huff_restart <= restart_trigger or frame_start_pulse;
+    -- DC predictors must reset at every start-of-scan (= each frame) as well as at
+    -- RST markers (JPEG spec). Without a per-frame reset the predictor carries the
+    -- previous frame's last DC into the next, washing out luma on every frame after
+    -- the first. We use frame_done_pulse (not frame_start_pulse) so the reset is
+    -- aligned to the Huffman's own last-block EOB - it always lands after this
+    -- frame's last block and before the next frame's first block, regardless of how
+    -- the pixel source pipelines frames upstream. Frame 0 is covered by reset; frames
+    -- 1+ by the preceding frame_done. VHDL-93 forbids an expression in a port-map
+    -- actual, so combine via a named signal; the packer RST path (in_restart) stays
+    -- restart_trigger only, so no spurious RST marker is emitted.
+    huff_restart <= restart_trigger or frame_done_pulse;
 
     u_huffman : huffman_encoder
         generic map (LITE_MODE => LITE_MODE)
