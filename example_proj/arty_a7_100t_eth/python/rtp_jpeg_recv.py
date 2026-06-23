@@ -57,7 +57,7 @@ def dht_segment():
     return bytes(out)
 
 
-def build_jfif(width, height, lqt, cqt, scan):
+def build_jfif(width, height, lqt, cqt, scan, dri=0):
     j = bytearray(b"\xff\xd8")                                    # SOI
     j += b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"  # APP0
     j += b"\xff\xdb\x00\x43\x00" + lqt                            # DQT luma
@@ -65,6 +65,8 @@ def build_jfif(width, height, lqt, cqt, scan):
     # SOF0: 8-bit, 3 components, Y=2x1 (4:2:2) qt0, Cb/Cr 1x1 qt1
     j += b"\xff\xc0\x00\x11\x08" + struct.pack(">HH", height, width)
     j += bytes([0x03, 0x01, 0x21, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01])
+    if dri:                                                       # DRI (restart interval)
+        j += b"\xff\xdd\x00\x04" + struct.pack(">H", dri)
     j += dht_segment()
     j += bytes([0xff, 0xda, 0x00, 0x0c, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3f, 0x00])
     j += scan
