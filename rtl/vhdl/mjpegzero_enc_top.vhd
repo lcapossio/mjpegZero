@@ -261,6 +261,7 @@ architecture rtl of mjpegzero_enc_top is
     signal mcu_count : unsigned(16 downto 0) := (others => '0');
     signal mcu_in_segment : unsigned(15 downto 0) := (others => '0');
     signal restart_trigger : std_logic := '0';
+    signal huff_restart    : std_logic := '0';
     signal frame_hdr_started : std_logic := '0';
     signal pipeline_depth : unsigned(2 downto 0) := (others => '0');
 
@@ -495,11 +496,19 @@ begin
             out_sob => zz_out_sob
         );
 
+    -- DC predictors must reset at every start-of-scan (= each frame) as well as
+    -- at RST markers (JPEG spec). Without frame_start_pulse the predictor carries
+    -- the previous frame's last DC into the next frame, washing out luma contrast
+    -- on every frame after the first. VHDL-93 forbids an expression in a port-map
+    -- actual, so combine via a named signal; the packer RST path (in_restart)
+    -- stays restart_trigger only, so no spurious RST marker is emitted.
+    huff_restart <= restart_trigger or frame_start_pulse;
+
     u_huffman : huffman_encoder
         generic map (LITE_MODE => LITE_MODE)
         port map (
             clk => clk, rst_n => rst_int_n, comp_id => huff_comp_id,
-            restart => restart_trigger, in_valid => zz_out_valid,
+            restart => huff_restart, in_valid => zz_out_valid,
             in_data => zz_out_data, in_sob => zz_out_sob,
             out_valid => huff_out_valid, out_bits => huff_out_bits,
             out_len => huff_out_len, out_sob => huff_out_sob_unused,

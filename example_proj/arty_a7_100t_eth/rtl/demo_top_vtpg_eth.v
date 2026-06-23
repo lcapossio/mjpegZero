@@ -130,7 +130,7 @@ module demo_top_vtpg_eth #(
         .cfg_grid_spacing(16'd0), .cfg_grid_color(24'd0), .cfg_checker_size(16'd0),
         .cfg_frame_rate_div(32'd2), .cfg_bar_width(16'd160),  // bar = 1280/8
         .cfg_hg_step(16'd0), .cfg_vg_step(16'd0),
-        .cfg_box_border_color(24'd0), .cfg_box_border_width(8'd0),
+        .cfg_box_border_color(24'h00_80_80), .cfg_box_border_width(8'd2),  // black ring ({Y,Cb,Cr}), 2px
         .sts_busy(), .sts_frame_count(),
         .m_axis_tdata(vid_tdata), .m_axis_tvalid(vid_tvalid),
         .m_axis_tready(vid_tready), .m_axis_tlast(vid_tlast), .m_axis_tuser(vid_tuser),
@@ -327,7 +327,7 @@ module demo_top_vtpg_eth #(
         .clk(clk), .rst_n(eth_rst_n),
         .our_mac(OUR_MAC), .our_ip(OUR_IP), .src_port(trg_src_port),
         .dst_mac(trg_dst_mac), .dst_ip(trg_dst_ip), .dst_port(trg_dst_port),
-        .ssrc(32'h0A0B0C0D), .rtp_timestamp(32'd0),
+        .ssrc(32'h0A0B0C0D), .rtp_timestamp({frame_cnt[19:0], 12'd0}),  // distinct per frame so ffmpeg separates frames
         .start(rtp_start), .jpeg_size(jpeg_byte_cnt),
         .busy(rtp_busy), .done_pulse(rtp_done),
         .mem_raddr(rtp_mem_raddr), .mem_rdata(rtp_mem_rdata),
@@ -362,7 +362,7 @@ module demo_top_vtpg_eth #(
     // =======================================================================
     // Autonomous control FSM: kick a frame -> encode -> stream -> repeat
     // =======================================================================
-    localparam [2:0] V_IDLE=3'd0, V_KICK=3'd1, V_ENC=3'd2, V_STREAM=3'd3, V_WAIT=3'd4;
+    localparam [2:0] V_IDLE=3'd0, V_KICK=3'd1, V_ENC=3'd2, V_STREAM=3'd3, V_WAIT=3'd4, V_KWAIT=3'd5;
     reg [2:0]  vstate;
     reg [31:0] frame_cnt;
     always @(posedge clk) begin
@@ -376,8 +376,13 @@ module demo_top_vtpg_eth #(
                 V_KICK: begin
                     cap_reset  <= 1'b1;   // clear capture for the new frame
                     frame_kick <= 1'b1;   // emit one VTPG frame
-                    vstate     <= V_ENC;
+                    vstate     <= V_KWAIT;
                 end
+                // One cycle for cap_reset to clear the previous frame's sticky
+                // cap_done before V_ENC samples it. Without this, V_ENC sees the
+                // stale cap_done=1 and exits immediately -> blank/duplicate frame
+                // and a desynced capture->buffer->RTP stream (garbage QT + scan).
+                V_KWAIT:  vstate <= V_ENC;
                 V_ENC:    if (cap_done) vstate<=V_STREAM;   // full JPEG captured (EOI)
                 V_STREAM: begin rtp_start<=1'b1;            // hold start until tx accepts
                               if (rtp_busy) vstate<=V_WAIT; end
@@ -412,6 +417,111 @@ module demo_top_vtpg_eth #(
             if (rtpfb_tvalid && rtpfb_tready && rtpfb_tlast)    fb_pkts<=fb_pkts+16'd1;
         end
     end
+
+    // =======================================================================
+    // Debug probe: capture raw VTPG output {C,Y} at the 8 colorbar centers on
+    // line 0 (x = 80,240,...,1200). Read via JTAG words 9..12 to compare the
+    // silicon's emitted pixels against the known palette (sim-vs-synth wash).
+    // =======================================================================
+    reg [10:0] dbg_vx;
+    reg        dbg_vl0;
+    reg [15:0] dbg_cy0, dbg_cy1, dbg_cy2, dbg_cy3, dbg_cy4, dbg_cy5, dbg_cy6, dbg_cy7;
+    wire [10:0] dbg_curx = vid_tuser ? 11'd0 : dbg_vx;
+    always @(posedge clk) begin
+        if (!eth_rst_n || sw_reset) begin
+            dbg_vx<=11'd0; dbg_vl0<=1'b0;
+            dbg_cy0<=16'd0; dbg_cy1<=16'd0; dbg_cy2<=16'd0; dbg_cy3<=16'd0;
+            dbg_cy4<=16'd0; dbg_cy5<=16'd0; dbg_cy6<=16'd0; dbg_cy7<=16'd0;
+        end else if (vid_tvalid && vid_tready) begin
+            if (vid_tuser) dbg_vl0 <= 1'b1;
+            dbg_vx <= dbg_curx + 11'd1;
+            if (vid_tuser || dbg_vl0) begin
+                case (dbg_curx)
+                    11'd80:   dbg_cy0 <= vid_tdata;
+                    11'd240:  dbg_cy1 <= vid_tdata;
+                    11'd400:  dbg_cy2 <= vid_tdata;
+                    11'd560:  dbg_cy3 <= vid_tdata;
+                    11'd720:  dbg_cy4 <= vid_tdata;
+                    11'd880:  dbg_cy5 <= vid_tdata;
+                    11'd1040: dbg_cy6 <= vid_tdata;
+                    11'd1200: dbg_cy7 <= vid_tdata;
+                    default: ;
+                endcase
+            end
+            if (vid_tlast) dbg_vl0 <= 1'b0;
+        end
+    end
+
+    // =======================================================================
+    // Debug probe: DCT and quantizer DC extremes (hierarchical refs into u_enc).
+    // Tracks most-negative (black block) and most-positive (white block) DC at
+    // the DCT output and the quantizer output, over the whole frame. Read via
+    // JTAG words 13/14. If DCT |min| ~= max (symmetric) but quant is asymmetric
+    // -> quantizer sign bug; if DCT min is already washed/small -> DCT signed-
+    // multiply bug.
+    // =======================================================================
+    reg signed [15:0] dct_dc_min, dct_dc_max, q_dc_min, q_dc_max;
+    always @(posedge clk) begin
+        if (!eth_rst_n || sw_reset) begin
+            dct_dc_min<=16'sd0; dct_dc_max<=16'sd0; q_dc_min<=16'sd0; q_dc_max<=16'sd0;
+        end else begin
+            if (u_enc.dct_out_valid && u_enc.dct_out_sof) begin
+                if ($signed(u_enc.dct_out_data) < dct_dc_min) dct_dc_min <= u_enc.dct_out_data;
+                if ($signed(u_enc.dct_out_data) > dct_dc_max) dct_dc_max <= u_enc.dct_out_data;
+            end
+            if (u_enc.quant_out_valid && u_enc.quant_out_sob) begin
+                if ($signed(u_enc.quant_out_data) < q_dc_min) q_dc_min <= u_enc.quant_out_data;
+                if ($signed(u_enc.quant_out_data) > q_dc_max) q_dc_max <= u_enc.quant_out_data;
+            end
+        end
+    end
+
+    // =======================================================================
+    // Debug probe: LUMA-ONLY quant DC extremes (split Y vs chroma by MCU block
+    // position Y0,Y1,Cb,Cr). The frame-wide min/max masked the black bar's luma
+    // because saturated chroma hits the same +-128 extremes. q_luma_min is the
+    // black bar's luma DC: -128 => encoder luma correct on silicon; washed => not.
+    // Read via JTAG word 15.
+    // =======================================================================
+    reg [1:0]  q_blk;
+    reg signed [15:0] q_luma_min, q_luma_max;
+    always @(posedge clk) begin
+        if (!eth_rst_n || sw_reset) begin
+            q_blk<=2'd0; q_luma_min<=16'sd0; q_luma_max<=16'sd0;
+        end else if (u_enc.quant_out_valid && u_enc.quant_out_sob) begin
+            if (q_blk < 2'd2) begin   // Y0/Y1 luma blocks
+                if ($signed(u_enc.quant_out_data) < q_luma_min) q_luma_min <= u_enc.quant_out_data;
+                if ($signed(u_enc.quant_out_data) > q_luma_max) q_luma_max <= u_enc.quant_out_data;
+            end
+            q_blk <= (q_blk==2'd3) ? 2'd0 : q_blk + 2'd1;
+        end
+    end
+
+    // =======================================================================
+    // ENCODER-OUTPUT CAPTURE: record the raw jpg_tdata bytes of one frame (from
+    // frame start) into a dedicated BRAM, read via JTAG at 0x0200_4000+ through a
+    // SEPARATE path that bypasses jp_phase / demo_jpeg_buffer / jpeg_rtp_tx.
+    // Decode offline: washed => the ENCODER output is bad; correct => the
+    // capture/buffer/RTP path is bad. Direct measurement, no inference.
+    // Arm on the first frame after sw_reset; capture 4096 bytes; hold.
+    // =======================================================================
+    (* ram_style = "block" *) reg [7:0] jcap_mem [0:4095];
+    reg [11:0] jcap_wp;
+    reg        jcap_arm, jcap_done;
+    always @(posedge clk) begin
+        if (!eth_rst_n || sw_reset) begin
+            jcap_wp <= 12'd0; jcap_arm <= 1'b0; jcap_done <= 1'b0;
+        end else begin
+            if (cap_reset && !jcap_done && !jcap_arm && frame_cnt >= 32'd2) jcap_arm <= 1'b1;
+            else if (jcap_arm && !jcap_done && jpg_tvalid) begin
+                jcap_mem[jcap_wp] <= jpg_tdata;
+                if (jcap_wp == 12'd4095) jcap_done <= 1'b1;
+                else                     jcap_wp   <= jcap_wp + 12'd1;
+            end
+        end
+    end
+    reg [7:0] jcap_rd;
+    always @(posedge clk) jcap_rd <= jcap_mem[ar_addr[13:2]];
 
     // =======================================================================
     // fcapz EJTAG-AXI on USER4: read-only debug status + soft-reset write
@@ -492,6 +602,8 @@ module demo_top_vtpg_eth #(
                 end
                 AR_PRE: ar_state<=AR_DATA;
                 AR_DATA: begin
+                    if (ar_addr[14]) m_rdata <= {24'd0, jcap_rd}; // encoder-output capture (0x0200_4000+)
+                    else
                     case (ar_addr[5:2])
                         4'd0: m_rdata<={20'd0, dbg_word};         // status
                         4'd1: m_rdata<={13'd0, jpeg_byte_cnt};    // current frame size
@@ -502,6 +614,13 @@ module demo_top_vtpg_eth #(
                         4'd6: m_rdata<={16'd0, trg_dst_port};
                         4'd7: m_rdata<={16'd0, mactx_frames};
                         4'd8: m_rdata<={rtp_pkts, fb_pkts};       // jpeg_rtp_tx / frame-buf pkts
+                        4'd9:  m_rdata<={dbg_cy1, dbg_cy0};       // VTPG {C,Y} bars 0,1
+                        4'd10: m_rdata<={dbg_cy3, dbg_cy2};       // bars 2,3
+                        4'd11: m_rdata<={dbg_cy5, dbg_cy4};       // bars 4,5
+                        4'd12: m_rdata<={dbg_cy7, dbg_cy6};       // bars 6,7
+                        4'd13: m_rdata<={dct_dc_max, dct_dc_min}; // DCT DC extremes
+                        4'd14: m_rdata<={q_dc_max,   q_dc_min};   // quant DC extremes
+                        4'd15: m_rdata<={q_luma_max, q_luma_min}; // LUMA-only quant DC extremes
                         default: m_rdata<=32'd0;
                     endcase
                     m_rvalid<=1'b1; m_rlast<=(ar_rem==8'd0); m_rresp<=ar_bad?2'b10:2'b00;
