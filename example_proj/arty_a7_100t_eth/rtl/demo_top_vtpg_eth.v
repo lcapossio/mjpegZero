@@ -311,10 +311,33 @@ module demo_top_vtpg_eth #(
         .dst_port(trg_dst_port), .src_port(trg_src_port)
     );
 
-    reg loop_en;
-    always @(posedge clk)
-        if (!eth_rst_n || sw_reset) loop_en <= 1'b0;
-        else if (trg_start)         loop_en <= 1'b1;
+    // -- host control plane: capture the first UDP payload byte of a TRIGGER_PORT
+    //    packet as an opcode, committed at end-of-packet (the same instant u_trig
+    //    latches the destination). The destination still latches on every trigger
+    //    packet regardless of opcode (u_trig.busy is tied 0). --
+    reg        ud_in_pkt;
+    reg [7:0]  trg_opcode;
+    reg        trg_op_valid;
+    always @(posedge clk) begin
+        if (!eth_rst_n) begin
+            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; trg_opcode <= 8'd0;
+        end else begin
+            trg_op_valid <= 1'b0;
+            if (ud_valid) begin
+                if (!ud_in_pkt) begin
+                    ud_in_pkt  <= 1'b1;
+                    trg_opcode <= ud_data;        // first payload byte = opcode
+                end
+                if (ud_last) begin
+                    ud_in_pkt <= 1'b0;
+                    if (ud_dst_port == TRIGGER_PORT)
+                        trg_op_valid <= 1'b1;     // commit (TRIGGER_PORT packets only)
+                end
+            end
+        end
+    end
+    reg loop_en;       // continuous-stream enable (set by 'G'/default, cleared by 'S')
+    reg single_pend;   // one-shot: stream exactly one frame ('1')
 
     // -- RTP/JPEG packetizer (started by the control FSM) --
     reg         rtp_start;
@@ -363,16 +386,35 @@ module demo_top_vtpg_eth #(
     // Autonomous control FSM: kick a frame -> encode -> stream -> repeat
     // =======================================================================
     localparam [2:0] V_IDLE=3'd0, V_KICK=3'd1, V_ENC=3'd2, V_STREAM=3'd3, V_WAIT=3'd4, V_KWAIT=3'd5;
+    // Host control opcodes (first UDP payload byte of a TRIGGER_PORT packet):
+    //   'G' (0x47) or anything else -> start continuous (back-compat: "GO" streams)
+    //   'S'/'s'    or 0x00          -> stop after the current frame finishes
+    //   '1'        or 0x02          -> stream exactly one frame
+    localparam [7:0] OP_STOP_0=8'h00, OP_STOP_S=8'h53, OP_STOP_s=8'h73,
+                     OP_ONE_0 =8'h02, OP_ONE_1 =8'h31;
     reg [2:0]  vstate;
     reg [31:0] frame_cnt;
     always @(posedge clk) begin
         if (!rst_n || sw_reset) begin
             vstate<=V_IDLE; frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
-            frame_cnt<=32'd0;
+            frame_cnt<=32'd0; loop_en<=1'b0; single_pend<=1'b0;
         end else begin
             frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
+
+            // -- host control plane: opcode carried in the trigger packet --
+            if (trg_op_valid) begin
+                case (trg_opcode)
+                    OP_STOP_0, OP_STOP_S, OP_STOP_s: begin loop_en<=1'b0; single_pend<=1'b0; end
+                    OP_ONE_0,  OP_ONE_1:             single_pend <= 1'b1;   // arm one frame
+                    default:                         loop_en     <= 1'b1;   // start continuous
+                endcase
+            end
+
             case (vstate)
-                V_IDLE:   if (loop_en && init_done) vstate<=V_KICK;
+                V_IDLE:   if ((loop_en || single_pend) && init_done) begin
+                              single_pend <= 1'b0;        // consume the one-shot arm
+                              vstate      <= V_KICK;
+                          end
                 V_KICK: begin
                     cap_reset  <= 1'b1;   // clear capture for the new frame
                     frame_kick <= 1'b1;   // emit one VTPG frame
