@@ -199,6 +199,16 @@ jobs:
       - name: RTL simulation + golden verification (lite mode, Q=50/75/95)
         run: python python/verify_rtl_sim.py --lite
 
+      # Multi-frame regression: encode 2 frames of identical input and compare the
+      # SECOND frame to golden. Catches per-frame state that is not reset at
+      # start-of-scan (e.g. the Huffman DC predictor carrying over between frames,
+      # which washed out luma contrast on every frame after the first).
+      - name: RTL simulation — multi-frame DC-predictor regression (full mode, 2 frames)
+        run: python python/verify_rtl_sim.py --frames 2
+
+      - name: RTL simulation — multi-frame DC-predictor regression (lite mode, 2 frames)
+        run: python python/verify_rtl_sim.py --lite --frames 2
+
       - name: RTL simulation — RGB_INPUT=1 (full mode, Q=95)
         run: python python/verify_rtl_sim.py --rgb
 
