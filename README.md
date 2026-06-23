@@ -43,6 +43,7 @@ A Python reference encoder is included for validation and test vector generation
   - [Run Implementation (Place & Route)](#run-implementation-place-route)
   - [Utility Scripts](#utility-scripts)
 - [Integration Example](#integration-example)
+- [Example Projects](#example-projects)
 - [Tested Hardware](#tested-hardware)
 - [Applications](#applications)
 - [Directory Structure](#directory-structure)
@@ -533,6 +534,25 @@ mjpegzero_enc_top #(
 );
 ```
 
+<a id="example-projects"></a>
+## Example Projects <sub>[↑ Top](#top)</sub>
+
+
+Ready-to-build board demos under [`example_proj/`](example_proj/) — each wraps the
+encoder in the shared [`common/`](example_proj/common/) demo top plus a board XDC:
+
+- **[`arty_a7_100t/`](example_proj/arty_a7_100t/)** — reference demo on the Arty
+  A7-100T: a host uploads a frame over JTAG (fpgacapZero EJTAG-AXI), the FPGA
+  encodes it on-chip, and the JPEG is read back over JTAG — verified byte-exact on
+  hardware, with both Verilog and native-VHDL builds.
+- **[`arty_a7_100t_eth/`](example_proj/arty_a7_100t_eth/)** — streams the encoded
+  JPEG to a PC over Ethernet as RTP/JPEG (RFC 2435 over UDP, via the emacZero MAC),
+  playable live in ffplay/VLC; includes a self-running vtpgZero colorbars + moving-box
+  pattern (`demo_top_vtpg_eth`) you control from the host (`start`/`stop`/`single`).
+- **[`arty_s7_50/`](example_proj/arty_s7_50/)** — the reference demo ported to the
+  Spartan-7 Arty S7-50 (smaller on-chip JPEG buffer); build scaffolded, hardware
+  re-verification pending.
+
 <a id="tested-hardware"></a>
 ## Tested Hardware <sub>[↑ Top](#top)</sub>
 
@@ -540,6 +560,7 @@ mjpegzero_enc_top #(
 | Board | Part | Example project | Status |
 |-------|------|-----------------|--------|
 | Digilent Arty A7-100T | XC7A100TCSG324-1 | [`example_proj/arty_a7_100t/`](example_proj/arty_a7_100t/) | Verilog and VHDL post-fcapz bitstreams close timing and pass Mandrill 720p HW test byte-exact |
+| Digilent Arty A7-100T (+ Ethernet) | XC7A100TCSG324-1 | [`example_proj/arty_a7_100t_eth/`](example_proj/arty_a7_100t_eth/) | RTP/JPEG-over-UDP streaming verified live on hardware (still + moving-pattern tops) |
 | Digilent Arty S7-50   | XC7S50CSGA324-1  | [`example_proj/arty_s7_50/`](example_proj/arty_s7_50/)     | Build scaffolded; rebuild + HW verification pending |
 
 Any AMD/Xilinx 7-Series device is a straightforward port — swap the XDC and adjust `JPEG_WORDS`
@@ -573,8 +594,11 @@ mjpegZero/
   example_proj/     Ready-to-build board examples
     common/         Shared demo top-level + Python host (used by every board)
     arty_a7_100t/   Digilent Arty A7-100T (verified reference)
+    arty_a7_100t_eth/  Arty A7-100T + Ethernet RTP/JPEG streaming
     arty_s7_50/     Digilent Arty S7-50 (rebuild + HW test pending)
   fcapz/            Git submodule: fpgacapZero EJTAG-AXI bridge + ELA + host
+  emaczero/         Git submodule: emacZero Ethernet MAC (used by arty_a7_100t_eth)
+  vtpgzero/         Git submodule: vtpgZero video test pattern generator
   build/            Synthesis/implementation output (generated)
 ```
 

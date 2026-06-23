@@ -74,13 +74,19 @@ real motion. No JTAG pixel upload needed.
    `New-NetFirewallRule -DisplayName "RTP-JPEG 5004" -Direction Inbound -Protocol UDP -LocalPort 5004 -Action Allow -Profile Any`
 3. Start a player on UDP 5004:
    ```sh
-   ffplay -use_wallclock_as_timestamps 1 -protocol_whitelist file,udp,rtp -fflags nobuffer -i python/stream.sdp
+   ffplay -protocol_whitelist file,udp,rtp -fflags nobuffer -i python/stream_vtpg.sdp
    ```
-4. Send **one** trigger to capture the destination and start the loop:
-   `python python/eth_trigger.py 192.168.237.50 9999`
-
-   The FPGA then streams continuous moving frames (~30-40 fps). `python/hw_status_vtpg.py`
-   reads the loop state over JTAG.
+4. Control the stream from the host. The opcode is the **first payload byte** of a
+   UDP packet to the trigger port (9999); the same packet (re)latches this host as
+   the RTP destination:
+   ```sh
+   python python/eth_control.py start    # stream continuously (autonomous loop)
+   python python/eth_control.py stop      # stop after the current frame finishes
+   python python/eth_control.py single    # encode + stream exactly one frame
+   ```
+   `start` runs the autonomous generate→encode→stream loop; the box advances one
+   step per frame (real motion). `eth_trigger.py`'s "GO" still works (= start).
+   `python/hw_status_vtpg.py` reads the loop state over JTAG.
 
 ## Hardware test flow
 
@@ -117,7 +123,12 @@ tables + RTP/IP structure + pixel-identical decode (see
 
 ## Limitations / notes
 
-- One still JPEG per trigger (re-trigger to resend; continuous MJPEG is a future
-  extension). `restart_interval` must stay 0 (type 0, no restart markers).
-- Host address is learned from the trigger packet (no static-IP mode yet).
+- `demo_top_eth` (still demo): one JPEG per trigger — re-trigger to resend.
+  `demo_top_vtpg_eth` streams **continuous** moving frames under host opcode
+  control (`eth_control.py start|stop|single`).
+- `restart_interval` stays 0 (RFC 2435 type 0, no restart markers). The Huffman
+  DC predictors are reset at every start-of-scan (i.e. each frame), which is
+  required for correct **multi-frame** streaming — without it every frame after
+  the first decodes with washed-out luma contrast.
+- Host address is learned from the trigger/control packet (no static-IP mode yet).
 - 100 Mbps MII; the MAC pads short frames and adds preamble/FCS/IFG.
