@@ -341,15 +341,20 @@ def compare_jpegs(ref_path, rtl_path, num_mcus_override=None):
 # ---------------------------------------------------------------------------
 def run_one(iverilog, vvp, build_dir, lite_mode, quality,
             dump_vcd=False, unisims_dir=None, rgb_input=False,
-            random_gaps=False, img_width=64, num_mcus=None):
+            random_gaps=False, img_width=64, num_mcus=None, num_frames=1):
     """
     Compile + simulate + compare for one (mode, quality) combination.
+    With num_frames > 1 the testbench encodes the same input num_frames times,
+    overwriting sim_output.jpg each frame, so the golden compare runs against
+    the LAST frame. This catches per-frame state bugs (e.g. a DC predictor that
+    is not reset at start-of-scan, which washes every frame after the first).
     Returns True if PASS.
     """
     suffixes = []
     if rgb_input:    suffixes.append('rgb')
     if random_gaps:  suffixes.append('gaps')
     if img_width != 64: suffixes.append(f'w{img_width}')
+    if num_frames != 1: suffixes.append(f'f{num_frames}')
     sfx = ('_' + '_'.join(suffixes)) if suffixes else ''
     tag = f'lite_q{quality}{sfx}' if lite_mode else f'full_q{quality}{sfx}'
     vvp_out    = os.path.join(build_dir, f'sim_{tag}.vvp')
@@ -368,6 +373,8 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
         defines['TB_IMG_WIDTH'] = img_width
         tv_hex = f'yuyv_{img_width}x8.hex'
         defines['TV_HEX_FILE'] = f'"test_vectors/{tv_hex}"'
+    if num_frames != 1:
+        defines['NUM_FRAMES'] = num_frames
     if dump_vcd:
         defines['DUMP_VCD'] = 1
         defines['VCD_FILE'] = f'"tb_iverilog_{tag}.vcd"'
@@ -443,6 +450,10 @@ def main():
                         help='Test minimum 16x8 (1 MCU) frame')
     parser.add_argument('--dump-vcd', action='store_true',
                         help='Enable VCD dump (build/sim_iverilog/tb_iverilog_<tag>.vcd)')
+    parser.add_argument('--frames', type=int, default=1,
+                        help='Encode N frames of identical input and compare the LAST '
+                             'frame to golden (multi-frame regression: catches a DC '
+                             'predictor not reset per start-of-scan). Default 1.')
     args = parser.parse_args()
     unisims_dir = None
 
@@ -505,7 +516,7 @@ def main():
         print(f'{"-" * 65}')
         passed = run_one(iverilog, vvp, BUILD_DIR, args.lite, q,
                          dump_vcd=args.dump_vcd, unisims_dir=unisims_dir,
-                         img_width=16, num_mcus=1)
+                         img_width=16, num_mcus=1, num_frames=args.frames)
         results[label] = passed
         print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
     else:
@@ -523,7 +534,8 @@ def main():
             print(f'{"-" * 65}')
             passed = run_one(iverilog, vvp, BUILD_DIR, args.lite, q,
                              dump_vcd=args.dump_vcd, unisims_dir=unisims_dir,
-                             rgb_input=args.rgb, random_gaps=args.gaps)
+                             rgb_input=args.rgb, random_gaps=args.gaps,
+                             num_frames=args.frames)
             results[label] = passed
             print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
 

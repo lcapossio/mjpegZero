@@ -1,0 +1,7 @@
+# cocotb runner output (generated per (lang, mode, quality, frames) combo)
+build_*/
+sim_build*/
+__pycache__/
+*.jpg
+*.vcd
+results.xml

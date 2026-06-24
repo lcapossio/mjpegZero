@@ -170,10 +170,11 @@ jobs:
         run: verilator --lint-only -Wall --bbox-unsup rtl/bram_sdp.v
 
   # ---------------------------------------------------------------------------
-  # RTL simulation — iverilog + golden coefficient comparison
+  # RTL variant tests — iverilog (multi-frame + RGB / gaps / min-width / EXIF /
+  # AXI regs). Core golden full/lite is owned by the Verilator + cocotb jobs.
   # ---------------------------------------------------------------------------
   rtl-sim:
-    name: RTL simulation (iverilog)
+    name: RTL variant tests (iverilog)
     runs-on: ubuntu-latest
 
     steps:
@@ -193,11 +194,20 @@ jobs:
       - name: Generate test image (download mandrill or synthetic fallback)
         run: python python/test_encoder.py
 
-      - name: RTL simulation + golden verification (full mode, Q=50/75/95)
-        run: python python/verify_rtl_sim.py
+      # NOTE: the core golden (full/lite, single frame) is owned by the Verilator
+      # job (rtl-verilator-sim) and the cocotb-dual job. This iverilog job runs
+      # only what those don't: the multi-frame regression and the RGB / gaps /
+      # min-width / EXIF / AXI-register variants.
+      #
+      # Multi-frame regression: encode 2 frames of identical input and compare the
+      # SECOND frame to golden. Catches per-frame state that is not reset at
+      # start-of-scan (e.g. the Huffman DC predictor carrying over between frames,
+      # which washed out luma contrast on every frame after the first).
+      - name: RTL simulation — multi-frame DC-predictor regression (full mode, 2 frames)
+        run: python python/verify_rtl_sim.py --frames 2
 
-      - name: RTL simulation + golden verification (lite mode, Q=50/75/95)
-        run: python python/verify_rtl_sim.py --lite
+      - name: RTL simulation — multi-frame DC-predictor regression (lite mode, 2 frames)
+        run: python python/verify_rtl_sim.py --lite --frames 2
 
       - name: RTL simulation — RGB_INPUT=1 (full mode, Q=95)
         run: python python/verify_rtl_sim.py --rgb
@@ -350,3 +360,59 @@ jobs:
 
       - name: Lint via FuseSoC (Verilator, LITE_MODE=0)
         run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
+
+  # ---------------------------------------------------------------------------
+  # cocotb dual-language sim - ONE testbench, both ports: Verilog (Icarus) and
+  # VHDL (GHDL), each golden-checked. Gives the VHDL port real CI coverage.
+  # ---------------------------------------------------------------------------
+  cocotb-dual:
+    name: cocotb (Verilog + VHDL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install simulators (Icarus + GHDL) and cocotb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
+          # Use GHDL's GCC backend (compiled, fast). NOT ghdl-llvm: on Ubuntu 24.04
+          # ghdl-llvm 4.1.0 links the soname "libLLVM-18.so.18.1", but the distro's
+          # libllvm18 only ships "libLLVM.so.18.1" -> the LLVM backend dies at
+          # analyze time with "libLLVM-18.so.18.1: cannot open shared object file"
+          # (a packaging bug no install flag fixes). The GCC backend has no libLLVM
+          # dependency. Fall back to mcode only if ghdl-gcc is unavailable.
+          sudo apt-get install -y --no-install-recommends ghdl-gcc \
+            || sudo apt-get install -y --no-install-recommends ghdl-mcode \
+            || sudo apt-get install -y --no-install-recommends ghdl
+          ghdl --version
+          pip install cocotb
+          pip install -r python/requirements.txt
+
+      - name: Generate test image, vectors + golden references
+        run: |
+          python python/test_encoder.py          # downloads mandrill (or synthetic fallback)
+          python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
+
+      - name: cocotb - Verilog/Icarus (full Q95)
+        run: python sim/cocotb/test_runner.py verilog full 95 1
+
+      - name: cocotb - Verilog/Icarus (lite Q75)
+        run: python sim/cocotb/test_runner.py verilog lite 75 1
+
+      - name: cocotb - Verilog/Icarus (multi-frame, full Q95 x2)
+        run: python sim/cocotb/test_runner.py verilog full 95 2
+
+      - name: cocotb - VHDL/GHDL (full Q95)
+        run: python sim/cocotb/test_runner.py vhdl full 95 1
+
+      - name: cocotb - VHDL/GHDL (lite Q75)
+        run: python sim/cocotb/test_runner.py vhdl lite 75 1
+
+      - name: cocotb - VHDL/GHDL (multi-frame, full Q95 x2)
+        run: python sim/cocotb/test_runner.py vhdl full 95 2
