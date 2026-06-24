@@ -170,10 +170,11 @@ jobs:
         run: verilator --lint-only -Wall --bbox-unsup rtl/bram_sdp.v
 
   # ---------------------------------------------------------------------------
-  # RTL simulation — iverilog + golden coefficient comparison
+  # RTL variant tests — iverilog (multi-frame + RGB / gaps / min-width / EXIF /
+  # AXI regs). Core golden full/lite is owned by the Verilator + cocotb jobs.
   # ---------------------------------------------------------------------------
   rtl-sim:
-    name: RTL simulation (iverilog)
+    name: RTL variant tests (iverilog)
     runs-on: ubuntu-latest
 
     steps:
@@ -193,12 +194,11 @@ jobs:
       - name: Generate test image (download mandrill or synthetic fallback)
         run: python python/test_encoder.py
 
-      - name: RTL simulation + golden verification (full mode, Q=50/75/95)
-        run: python python/verify_rtl_sim.py
-
-      - name: RTL simulation + golden verification (lite mode, Q=50/75/95)
-        run: python python/verify_rtl_sim.py --lite
-
+      # NOTE: the core golden (full/lite, single frame) is owned by the Verilator
+      # job (rtl-verilator-sim) and the cocotb-dual job. This iverilog job runs
+      # only what those don't: the multi-frame regression and the RGB / gaps /
+      # min-width / EXIF / AXI-register variants.
+      #
       # Multi-frame regression: encode 2 frames of identical input and compare the
       # SECOND frame to golden. Catches per-frame state that is not reset at
       # start-of-scan (e.g. the Huffman DC predictor carrying over between frames,
