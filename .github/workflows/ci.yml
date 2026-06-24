@@ -377,14 +377,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install simulators (Icarus + GHDL/LLVM) and cocotb
+      - name: Install simulators (Icarus + GHDL) and cocotb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog
-          # Prefer GHDL's LLVM backend (compiled, ~10-50x faster than the mcode
-          # interpreter for this arithmetic-heavy encoder); fall back to the
-          # default ghdl package if ghdl-llvm isn't available on the runner.
-          sudo apt-get install -y --no-install-recommends ghdl-llvm \
+          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
+          # Use GHDL's GCC backend (compiled, fast). NOT ghdl-llvm: on Ubuntu 24.04
+          # ghdl-llvm 4.1.0 links the soname "libLLVM-18.so.18.1", but the distro's
+          # libllvm18 only ships "libLLVM.so.18.1" -> the LLVM backend dies at
+          # analyze time with "libLLVM-18.so.18.1: cannot open shared object file"
+          # (a packaging bug no install flag fixes). The GCC backend has no libLLVM
+          # dependency. Fall back to mcode only if ghdl-gcc is unavailable.
+          sudo apt-get install -y --no-install-recommends ghdl-gcc \
+            || sudo apt-get install -y --no-install-recommends ghdl-mcode \
             || sudo apt-get install -y --no-install-recommends ghdl
           ghdl --version
           pip install cocotb
