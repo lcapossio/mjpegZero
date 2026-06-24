@@ -390,8 +390,10 @@ jobs:
           pip install cocotb
           pip install -r python/requirements.txt
 
-      - name: Generate test vectors + golden references
-        run: python python/generate_test_vectors.py
+      - name: Generate test image, vectors + golden references
+        run: |
+          python python/test_encoder.py          # downloads mandrill (or synthetic fallback)
+          python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
 
       - name: cocotb - Verilog/Icarus (full Q95)
         run: python sim/cocotb/test_runner.py verilog full 95 1
