@@ -88,6 +88,21 @@ real motion. No JTAG pixel upload needed.
    step per frame (real motion). `eth_trigger.py`'s "GO" still works (= start).
    `python/hw_status_vtpg.py` reads the loop state over JTAG.
 
+## Stream diagnostics (host)
+
+Measured live on hardware (720p, LITE Q75): ~11 fps, ~22.9 KB/frame,
+**~2.1 Mbps** compressed — about 2% of the 100 Mbps link. The frame rate is
+encoder-bound, not network-bound (the encoder is ~98% of each frame's period).
+
+| Tool | What it does |
+|------|--------------|
+| `python python/stream_view.py` | live viewer with an on-video HUD: bitrate (JPEG + on-wire), resolution, fps, KB/frame. `--console` for a headless readout. |
+| `python python/measure_bitrate.py [seconds]` | one-shot summary: fps, avg frame size, compressed + on-wire bitrate. |
+| `python python/profile_frames.py [seconds]` | splits each frame period into encode vs RTP-stream time. |
+
+All three send the start opcode on launch and stop on exit (trigger port 9999),
+so they run standalone against the `demo_top_vtpg_eth` build.
+
 ## Hardware test flow
 
 1. **Program** `build/arty_a7_eth_demo.bit` over JTAG (reprogram after any power

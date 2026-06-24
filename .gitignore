@@ -46,12 +46,19 @@ sim/rtp_test/
 
 # Board example build artifacts (source is tracked; build output is not)
 example_proj/*/build/
+example_proj/*/build_vhdl/
 
 # FuseSoC local config (machine-specific paths)
 fusesoc.conf
 
 # Local scratch directories
 no_commit/
+
+# Raw YUV422 capture / test data
+*.yuyv
+
+# Vivado timing report scratch
+tight_setup_hold_pins.txt
 
 # OS
 Thumbs.db
