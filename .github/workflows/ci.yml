@@ -377,10 +377,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install simulators (Icarus + GHDL) and cocotb
+      - name: Install simulators (Icarus + GHDL/LLVM) and cocotb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog ghdl
+          sudo apt-get install -y --no-install-recommends iverilog
+          # Prefer GHDL's LLVM backend (compiled, ~10-50x faster than the mcode
+          # interpreter for this arithmetic-heavy encoder); fall back to the
+          # default ghdl package if ghdl-llvm isn't available on the runner.
+          sudo apt-get install -y --no-install-recommends ghdl-llvm \
+            || sudo apt-get install -y --no-install-recommends ghdl
+          ghdl --version
           pip install cocotb
           pip install -r python/requirements.txt
 
