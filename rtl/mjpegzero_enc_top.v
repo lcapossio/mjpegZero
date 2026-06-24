@@ -34,6 +34,7 @@ module mjpegzero_enc_top #(
     parameter EXIF_Y_RES    = 72,                          // Y resolution numerator
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
+    parameter HUFF_BANKS    = 4,                            // Huffman input-ring depth = max blocks in flight; higher = more throughput, more LUTRAM
     parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
@@ -319,22 +320,26 @@ module mjpegzero_enc_top #(
     // in flight to prevent buffer overflow when the Huffman takes many
     // cycles to process complex blocks.
     // ========================================================================
-    reg [2:0] pipeline_depth;
+    reg [3:0] pipeline_depth;
 
     always @(posedge clk) begin
         if (!rst_int_n) begin
-            pipeline_depth <= 3'd0;
+            pipeline_depth <= 4'd0;
         end else begin
             case ({ibuf_blk_valid && ibuf_blk_sob && ibuf_blk_ready,
                    huff_out_eob && huff_out_valid && huff_bp_ready})
-                2'b10: pipeline_depth <= pipeline_depth + 3'd1;
-                2'b01: pipeline_depth <= pipeline_depth - 3'd1;
+                2'b10: pipeline_depth <= pipeline_depth + 4'd1;
+                2'b01: pipeline_depth <= pipeline_depth - 4'd1;
                 default: ; // no change or balanced
             endcase
         end
     end
 
-    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < 3'd2);
+    // Admit blocks until HUFF_BANKS are in flight. This MUST match the Huffman's
+    // input-ring depth so the ring (which zigzag cannot backpressure) never
+    // overflows. Deeper = the DCT/zigzag run ahead and keep the serial Huffman
+    // FSM fed, instead of the pipeline running one block at a time.
+    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < HUFF_BANKS);
 
     // ========================================================================
     // Video input path (YUYV pass-through or RGB→YUYV via rgb_to_ycbcr)
@@ -479,7 +484,8 @@ module mjpegzero_enc_top #(
 
     // --- Huffman Encoder ---
     huffman_encoder #(
-        .LITE_MODE  (LITE_MODE)
+        .LITE_MODE  (LITE_MODE),
+        .HUFF_BANKS (HUFF_BANKS)
     ) u_huffman (
         .clk       (clk),
         .rst_n     (rst_int_n),
