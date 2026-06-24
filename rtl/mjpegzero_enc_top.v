@@ -484,7 +484,19 @@ module mjpegzero_enc_top #(
         .clk       (clk),
         .rst_n     (rst_int_n),
         .comp_id   (huff_comp_id),
-        .restart   (restart_trigger),
+        // DC predictors must reset at every start-of-scan (= each frame) as well
+        // as at RST markers (JPEG spec). Without a per-frame reset the predictor
+        // carries the previous frame's last DC into the next frame, corrupting its
+        // first DC diff and washing out luma contrast (frame 0 OK, frames 1+ washed).
+        // We use frame_done_pulse (not frame_start_pulse) so the reset is aligned to
+        // the Huffman's own last-block EOB: it always lands AFTER this frame's last
+        // block and BEFORE the next frame's first block, regardless of how the pixel
+        // source pipelines frames upstream (frame_start_pulse fires early, when 8
+        // lines are buffered, and could race a not-yet-drained previous frame).
+        // Frame 0 is covered by global reset; frames 1+ by the preceding frame_done.
+        // This only feeds the Huffman predictor reset; the packer's RST-marker path
+        // (in_restart) stays restart_trigger, so no spurious RST marker is emitted.
+        .restart   (restart_trigger || frame_done_pulse),
         .in_valid  (zz_out_valid),
         .in_data   (zz_out_data),
         .in_sob    (zz_out_sob),
