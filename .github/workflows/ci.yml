@@ -360,3 +360,47 @@ jobs:
 
       - name: Lint via FuseSoC (Verilator, LITE_MODE=0)
         run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
+
+  # ---------------------------------------------------------------------------
+  # cocotb dual-language sim - ONE testbench, both ports: Verilog (Icarus) and
+  # VHDL (GHDL), each golden-checked. Gives the VHDL port real CI coverage.
+  # ---------------------------------------------------------------------------
+  cocotb-dual:
+    name: cocotb (Verilog + VHDL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install simulators (Icarus + GHDL) and cocotb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends iverilog ghdl
+          pip install cocotb
+          pip install -r python/requirements.txt
+
+      - name: Generate test vectors + golden references
+        run: python python/generate_test_vectors.py
+
+      - name: cocotb - Verilog/Icarus (full Q95)
+        run: python sim/cocotb/test_runner.py verilog full 95 1
+
+      - name: cocotb - Verilog/Icarus (lite Q75)
+        run: python sim/cocotb/test_runner.py verilog lite 75 1
+
+      - name: cocotb - Verilog/Icarus (multi-frame, full Q95 x2)
+        run: python sim/cocotb/test_runner.py verilog full 95 2
+
+      - name: cocotb - VHDL/GHDL (full Q95)
+        run: python sim/cocotb/test_runner.py vhdl full 95 1
+
+      - name: cocotb - VHDL/GHDL (lite Q75)
+        run: python sim/cocotb/test_runner.py vhdl lite 75 1
+
+      - name: cocotb - VHDL/GHDL (multi-frame, full Q95 x2)
+        run: python sim/cocotb/test_runner.py vhdl full 95 2
