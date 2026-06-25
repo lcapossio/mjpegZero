@@ -176,55 +176,23 @@ module demo_top_vtpg_eth #(
     // =======================================================================
     // JPEG capture -> demo_jpeg_buffer (1W encoder, 1R jpeg_rtp_tx; single clk)
     // =======================================================================
-    reg [18:0] jpeg_byte_cnt;
-    reg [1:0]  jp_phase;
-    reg [23:0] jp_accum;
-    reg [16:0] jp_wptr;
-    reg        flush_pend;
-    reg        jpeg_overflow;
-    reg        cap_done;        // set when a full JPEG (EOI) has been captured
-    reg        cap_reset;       // from control FSM: clear capture for a new frame
-
-    wire jpeg_word_room = (jp_wptr < JPEG_WORDS[16:0]);
-    wire jpeg_byte_room = (jpeg_byte_cnt < JPEG_BYTES[18:0]);
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            jpeg_byte_cnt<=19'd0; jp_phase<=2'd0; jp_accum<=24'd0; jp_wptr<=17'd0;
-            flush_pend<=1'b0; jpeg_overflow<=1'b0; cap_done<=1'b0;
-        end else if (cap_reset) begin
-            jpeg_byte_cnt<=19'd0; jp_phase<=2'd0; jp_wptr<=17'd0;
-            flush_pend<=1'b0; jpeg_overflow<=1'b0; cap_done<=1'b0;
-        end else begin
-            flush_pend <= 1'b0;
-            if (jpg_tvalid) begin
-                if (jpeg_byte_room) begin
-                    jpeg_byte_cnt <= jpeg_byte_cnt + 19'd1;
-                    case (jp_phase)
-                        2'd0: jp_accum[7:0]   <= jpg_tdata;
-                        2'd1: jp_accum[15:8]  <= jpg_tdata;
-                        2'd2: jp_accum[23:16] <= jpg_tdata;
-                        2'd3: if (jpeg_word_room) jp_wptr <= jp_wptr + 17'd1;
-                    endcase
-                    jp_phase <= jp_phase + 2'd1;
-                end else jpeg_overflow <= 1'b1;
-                if (jpg_tlast) begin
-                    cap_done <= 1'b1;
-                    if (jp_phase != 2'd3 && jpeg_word_room && !jpeg_overflow)
-                        flush_pend <= 1'b1;
-                end
-            end
-        end
-    end
+    reg         cap_reset;       // from control FSM: clear capture for a new frame
+    wire        cap_done;        // set when a full JPEG (EOI) has been captured
+    wire        jpeg_overflow;   // frame exceeded the buffer (partial capture)
+    wire [18:0] jpeg_byte_cnt;   // total bytes captured (-> jpeg_rtp_tx .jpeg_size)
 
     wire        jpeg_we;
+    wire [16:0] jp_wptr;
     wire [31:0] jpeg_wdata;
     wire [16:0] rtp_mem_raddr;
     wire [31:0] rtp_mem_rdata;
-    assign jpeg_we    = (jpg_tvalid && jp_phase==2'd3 && jpeg_word_room) ||
-                        (flush_pend && jpeg_word_room);
-    assign jpeg_wdata = (jpg_tvalid && jp_phase==2'd3) ? {jpg_tdata, jp_accum}
-                                                       : {8'd0, jp_accum};
+
+    jpeg_capture #(.JPEG_WORDS(JPEG_WORDS)) u_jpeg_capture (
+        .clk(clk), .rst_n(rst_n), .cap_reset(cap_reset),
+        .jpg_tvalid(jpg_tvalid), .jpg_tdata(jpg_tdata), .jpg_tlast(jpg_tlast),
+        .we(jpeg_we), .waddr(jp_wptr), .wdata(jpeg_wdata),
+        .jpeg_size(jpeg_byte_cnt), .cap_done(cap_done), .overflow(jpeg_overflow)
+    );
 
     demo_jpeg_buffer #(.JPEG_WORDS(JPEG_WORDS), .JPEG_TILE_DEPTH(4096)) u_jpeg_buffer (
         .clk(clk), .we(jpeg_we), .waddr(jp_wptr), .wdata(jpeg_wdata),

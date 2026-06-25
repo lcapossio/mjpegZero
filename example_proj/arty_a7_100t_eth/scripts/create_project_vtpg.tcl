@@ -45,6 +45,7 @@ set rtl_files [list \
     $repo_root/rtl/mjpegzero_enc_top.v \
     $common_dir/rtl/axi_init.v \
     $common_dir/rtl/demo_jpeg_buffer.v \
+    $common_dir/rtl/jpeg_capture.v \
     $ex_dir/rtl/clk_gen_eth.v \
     $ex_dir/rtl/demo_top_vtpg_eth.v \
     $vtpg_rtl/vtpgz_core.v \
