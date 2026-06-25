@@ -34,7 +34,7 @@ module mjpegzero_enc_top #(
     parameter EXIF_Y_RES    = 72,                          // Y resolution numerator
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
-    parameter HUFF_BANKS    = 4,                            // Huffman input-ring depth = max blocks in flight; higher = more throughput, more LUTRAM
+    parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth = max blocks in flight; higher = more throughput, more LUTRAM
     parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,

@@ -97,7 +97,7 @@ set_property top $top [current_fileset]
 
 puts "=== Synthesis (top=$top) ==="
 synth_design -top $top -part $part -flatten_hierarchy rebuilt \
-    -directive PerformanceOptimized -verilog_define XILINX_7SERIES
+    -retiming -verilog_define XILINX_7SERIES
 report_utilization    -file $rpt_dir/synth_utilization.rpt
 report_timing_summary -file $rpt_dir/synth_timing.rpt
 write_checkpoint -force $build_dir/post_synth_vtpg.dcp
