@@ -54,12 +54,17 @@ module demo_top_vtpg_eth #(
     localparam JPEG_BYTES = JPEG_WORDS * 4;
 
     // =======================================================================
-    // Clocks & reset (single 100 MHz functional domain + 25 MHz PHY ref)
+    // Clocks & reset (single 138 MHz functional domain + 25 MHz PHY ref)
+    // The whole datapath (vtpg + encoder + control FSM + MAC AXIS side) runs on
+    // one clock; the MII side is async and bridged inside eth_mac_sys, so we run
+    // that clock at 138 MHz (~1.4x the original 100) for the throughput target.
+    // (150 MHz closes for the encoder but the RTP packetizer has sub-0.15 ns
+    //  paths there; 138 closes with margin and still exceeds 60 fps @ 720p.)
     // =======================================================================
-    wire clk150_unused, clk, clk25, locked;
-    clk_gen_eth u_clkgen (
+    wire clk100_unused, clk, clk25, locked;
+    clk_gen_eth #(.CLKOUT0_DIV(6.500)) u_clkgen (   // 900/6.5 = 138.46 MHz functional clock
         .clk_in (CLK100MHZ), .reset(1'b0),
-        .clk_150(clk150_unused), .clk_100(clk), .clk_25(clk25), .locked(locked)
+        .clk_150(clk), .clk_100(clk100_unused), .clk_25(clk25), .locked(locked)
     );
 
     reg [3:0] rst_sr;

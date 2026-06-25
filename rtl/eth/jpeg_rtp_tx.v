@@ -139,7 +139,11 @@ module jpeg_rtp_tx #(
     // partial sums (psum_a + psum_b), then one's-complement. Header layout:
     //   45 00 | tot | id | 40 00 | 40 11 | 0000(csum) | our_ip | dst_ip
     // ========================================================================
-    wire [31:0] ip_acc2     = psum_a + psum_b;
+    // ip_acc2 registered to break the IP-checksum fold path (psum -> fold ->
+    // p_ip_csum) at 150 MHz. The checksum is precomputed at packet start and not
+    // consumed until the IP header bytes (~24 bytes in), so +1 cycle is harmless.
+    reg  [31:0] ip_acc2;
+    always @(posedge clk) ip_acc2 <= psum_a + psum_b;
     wire [16:0] ip_f1       = ip_acc2[15:0] + ip_acc2[31:16];
     wire [15:0] ip_f2       = ip_f1[15:0] + {15'd0, ip_f1[16]};
     wire [15:0] ip_fold_fin = ~ip_f2;
