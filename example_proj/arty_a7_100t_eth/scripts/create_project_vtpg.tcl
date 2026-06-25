@@ -92,6 +92,11 @@ set xdc_file [file normalize $ex_dir/constraints/arty_a7_100t_eth.xdc]
 
 create_project -force arty_a7_vtpg $proj_dir -part $part
 add_files -norecurse $rtl_files
+# vtpg image memories: YCbCr-converted from the vtpgZero RGB .mem (OUTPUT_MODE=2
+# reads the image triple as {Y,Cb,Cr}). $readmemh resolves them by basename.
+add_files -norecurse [list \
+    $ex_dir/data/mandrill_128x128_ycbcr.mem \
+    $ex_dir/data/mandrill_32x32_ycbcr.mem]
 add_files -fileset constrs_1 -norecurse $xdc_file
 set_property include_dirs [list $vtpg_rtl] [current_fileset]
 set_property top $top [current_fileset]

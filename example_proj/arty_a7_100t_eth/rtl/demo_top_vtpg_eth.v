@@ -117,17 +117,26 @@ module demo_top_vtpg_eth #(
     wire [15:0] vid_tdata;       // {C,Y} 4:2:2
     wire        vid_tvalid, vid_tready, vid_tlast, vid_tuser;
 
-    // Runtime-controllable vtpg config, driven by VTPG_CTRL_PORT keyboard
-    // commands (decoded in the control FSM). Defaults reproduce the original demo.
-    reg [3:0]  cfg_pattern_r;       // 0=bars 1=hgrad 2=vgrad 3=checker 4=solid 6=grid 7=ramp 8=noise
-    reg [15:0] box_w_r, box_h_r;    // box size (px)
-    reg [15:0] box_dx_r, box_dy_r;  // box speed (px/frame)
-    reg [23:0] box_color_r;         // box fill colour {Y,Cb,Cr}
+    // Runtime vtpg config, written over UDP (VTPG_CTRL_PORT) as KV260-style
+    // register writes. The host (stream_view.py) owns all state exactly like the
+    // KV260 A53 app; defaults mirror that app's init (box 96x64, white, image-in-box).
+    reg [3:0]  cfg_pattern_r;                  // 0..9 (9=image); KV260 PATTERN_SEL
+    reg [23:0] solid_color_r, box_color_r;     // {Y,Cb,Cr}
+    reg [15:0] box_w_r, box_h_r;               // box size (px)
+    reg [15:0] box_dx_r, box_dy_r;             // box speed (px/frame)
+    reg [15:0] grid_spacing_r, checker_size_r;
+    reg [31:0] box_img_x_step_r, box_img_y_step_r;  // Q16 box-image scaler (0=solid box)
 
     vtpgz_core #(
         .EN_COLORBAR(1), .EN_MOVING_BOX(1), .EN_SOLID(1),
-        .EN_HGRAD(1), .EN_VGRAD(1), .EN_CHECKER(1),    // all patterns enabled for runtime select
+        .EN_HGRAD(1), .EN_VGRAD(1), .EN_CHECKER(1),
         .EN_GRID(1), .EN_RAMP(1), .EN_NOISE(1),
+        .EN_IMAGE(1),                                  // pattern 9 = full-frame mandrill
+        .IMAGE_W(128), .IMAGE_H(128), .IMAGE_OUT_W(1280), .IMAGE_OUT_H(720),
+        .IMAGE_HEX_FILE("mandrill_128x128_ycbcr.mem"), // YCbCr (OUTPUT_MODE=2 reads {Y,Cb,Cr})
+        .EN_BOX_IMAGE(1),                              // mandrill in the moving box ('i' toggle)
+        .BOX_IMAGE_W(32), .BOX_IMAGE_H(32),
+        .BOX_IMAGE_HEX_FILE("mandrill_32x32_ycbcr.mem"),
         .OUTPUT_MODE(2),     // YUV
         .YUV_SUBSAMPLE(1),   // 4:2:2 -> 16-bit {C,Y}
         .BPC(8)
@@ -136,14 +145,15 @@ module demo_top_vtpg_eth #(
         .cfg_enable(1'b1), .cfg_sw_fsync(1'b0), .cfg_ext_sync(1'b1),
         .cfg_img_width(IMG_W[15:0]), .cfg_img_height(IMG_H[15:0]),
         .cfg_pattern(cfg_pattern_r),
-        .cfg_solid_color(24'h00_80_80),
+        .cfg_solid_color(solid_color_r),
         .cfg_box_color(box_color_r),
         .cfg_box_width(box_w_r), .cfg_box_height(box_h_r),
         .cfg_box_dx(box_dx_r), .cfg_box_dy(box_dy_r),
-        .cfg_grid_spacing(16'd64), .cfg_grid_color(24'hEB_80_80), .cfg_checker_size(16'd64),
+        .cfg_grid_spacing(grid_spacing_r), .cfg_grid_color(24'hEB_80_80), .cfg_checker_size(checker_size_r),
         .cfg_frame_rate_div(32'd2), .cfg_bar_width(16'd160),  // bar = 1280/8
         .cfg_hg_step(16'd16), .cfg_vg_step(16'd16),
         .cfg_box_border_color(24'h00_80_80), .cfg_box_border_width(8'd2),  // black ring ({Y,Cb,Cr}), 2px
+        .cfg_box_img_x_step(box_img_x_step_r), .cfg_box_img_y_step(box_img_y_step_r),
         .sts_busy(), .sts_frame_count(),
         .m_axis_tdata(vid_tdata), .m_axis_tvalid(vid_tvalid),
         .m_axis_tready(vid_tready), .m_axis_tlast(vid_tlast), .m_axis_tuser(vid_tuser),
@@ -296,20 +306,31 @@ module demo_top_vtpg_eth #(
     //    packet as an opcode, committed at end-of-packet (the same instant u_trig
     //    latches the destination). The destination still latches on every trigger
     //    packet regardless of opcode (u_trig.busy is tied 0). --
+    //    VTPG_CTRL_PORT packets carry a KV260-style register write: payload byte 0
+    //    is the register offset, bytes 1..4 the 32-bit value (big-endian). The host
+    //    (stream_view.py) owns all vtpg state and emits these writes per keystroke.
     reg        ud_in_pkt;
-    reg [7:0]  trg_opcode;
+    reg [7:0]  trg_opcode;       // payload byte 0: trigger opcode / vtpg reg offset
+    reg [31:0] vc_val;           // VTPG_CTRL_PORT value (bytes 1..4, big-endian)
+    reg [2:0]  vc_idx;           // payload byte index (saturating)
     reg        trg_op_valid;     // TRIGGER_PORT: stream control (start/stop/single)
-    reg        vtpg_op_valid;    // VTPG_CTRL_PORT: vtpg cfg keyboard command
+    reg        vtpg_op_valid;    // VTPG_CTRL_PORT: register-write commit
     always @(posedge clk) begin
         if (!eth_rst_n) begin
-            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; vtpg_op_valid <= 1'b0; trg_opcode <= 8'd0;
+            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; vtpg_op_valid <= 1'b0;
+            trg_opcode <= 8'd0; vc_val <= 32'd0; vc_idx <= 3'd0;
         end else begin
             trg_op_valid  <= 1'b0;
             vtpg_op_valid <= 1'b0;
             if (ud_valid) begin
                 if (!ud_in_pkt) begin
                     ud_in_pkt  <= 1'b1;
-                    trg_opcode <= ud_data;        // first payload byte = opcode/key
+                    trg_opcode <= ud_data;        // byte 0 = opcode / register offset
+                    vc_val     <= 32'd0;
+                    vc_idx     <= 3'd1;
+                end else begin
+                    if (vc_idx <= 3'd4) vc_val <= {vc_val[23:0], ud_data};  // bytes 1..4 (BE)
+                    if (vc_idx != 3'd7) vc_idx <= vc_idx + 3'd1;
                 end
                 if (ud_last) begin
                     ud_in_pkt <= 1'b0;
@@ -381,8 +402,11 @@ module demo_top_vtpg_eth #(
         if (!rst_n || sw_reset) begin
             vstate<=V_IDLE; frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
             frame_cnt<=32'd0; loop_en<=1'b0; single_pend<=1'b0;
-            cfg_pattern_r<=4'd0; box_w_r<=16'd160; box_h_r<=16'd120;
-            box_dx_r<=16'd8; box_dy_r<=16'd6; box_color_r<=24'hEB_80_80;
+            cfg_pattern_r<=4'd0; box_w_r<=16'd96; box_h_r<=16'd64;       // KV260 app inits
+            box_dx_r<=16'd4; box_dy_r<=16'd3;
+            box_color_r<=24'hEB_80_80; solid_color_r<=24'hEB_80_80;      // white (palette[6])
+            grid_spacing_r<=16'd32; checker_size_r<=16'd32;
+            box_img_x_step_r<=32'd21845; box_img_y_step_r<=32'd32768;    // (32<<16)/96, /64
         end else begin
             frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
 
@@ -395,33 +419,18 @@ module demo_top_vtpg_eth #(
                 endcase
             end
 
-            // -- vtpg cfg keyboard commands (VTPG_CTRL_PORT, 1 byte each) --
+            // -- vtpg cfg register write (VTPG_CTRL_PORT, KV260 register map) --
             if (vtpg_op_valid) begin
-                case (trg_opcode)
-                    8'h30,8'h31,8'h32,8'h33,8'h34,8'h35,8'h36,8'h37,8'h38,8'h39:
-                        cfg_pattern_r <= trg_opcode[3:0];            // '0'..'9' pattern select
-                    8'h2B, 8'h3D: begin                              // '+'/'=' grow box
-                        if (box_w_r < 16'd1232) box_w_r <= box_w_r + 16'd16;
-                        if (box_h_r < 16'd680)  box_h_r <= box_h_r + 16'd16;
-                    end
-                    8'h2D: begin                                     // '-' shrink box
-                        if (box_w_r > 16'd32) box_w_r <= box_w_r - 16'd16;
-                        if (box_h_r > 16'd32) box_h_r <= box_h_r - 16'd16;
-                    end
-                    8'h66: begin                                     // 'f' faster
-                        if (box_dx_r < 16'd32) box_dx_r <= box_dx_r + 16'd1;
-                        if (box_dy_r < 16'd32) box_dy_r <= box_dy_r + 16'd1;
-                    end
-                    8'h73: begin                                     // 's' slower
-                        if (box_dx_r > 16'd1) box_dx_r <= box_dx_r - 16'd1;
-                        if (box_dy_r > 16'd1) box_dy_r <= box_dy_r - 16'd1;
-                    end
-                    8'h62: case (box_color_r)                        // 'b' cycle box colour
-                        24'hEB_80_80: box_color_r <= 24'h51_5A_F0;   // white -> red
-                        24'h51_5A_F0: box_color_r <= 24'h91_36_22;   // red -> green
-                        24'h91_36_22: box_color_r <= 24'h29_F0_6E;   // green -> blue
-                        default:      box_color_r <= 24'hEB_80_80;   // (any) -> white
-                    endcase
+                case (trg_opcode)                                   // byte 0 = reg offset
+                    8'h18: cfg_pattern_r    <= vc_val[3:0];         // PATTERN_SEL
+                    8'h20: solid_color_r    <= vc_val[23:0];        // SOLID_COLOR
+                    8'h24: box_color_r      <= vc_val[23:0];        // BOX_COLOR
+                    8'h28: begin box_w_r  <= vc_val[31:16]; box_h_r  <= vc_val[15:0]; end  // BOX_SIZE
+                    8'h2C: begin box_dx_r <= vc_val[31:16]; box_dy_r <= vc_val[15:0]; end  // BOX_SPEED
+                    8'h34: grid_spacing_r   <= vc_val[15:0];        // GRID_SPACING
+                    8'h3C: checker_size_r   <= vc_val[15:0];        // CHECKER_SIZE
+                    8'h54: box_img_x_step_r <= vc_val;              // BOX_IMG_X_STEP
+                    8'h58: box_img_y_step_r <= vc_val;              // BOX_IMG_Y_STEP
                     default: ;
                 endcase
             end
