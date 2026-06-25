@@ -25,8 +25,9 @@ module demo_top_vtpg_eth #(
     parameter JPEG_WORDS = 65536,
     parameter [47:0] OUR_MAC = 48'h02_00_00_00_00_01,
     parameter [31:0] OUR_IP  = 32'hC0_A8_ED_32,   // 192.168.237.50
-    parameter [15:0] TRIGGER_PORT = 16'd9999,
-    parameter [15:0] RTP_PORT     = 16'd5004
+    parameter [15:0] TRIGGER_PORT   = 16'd9999,
+    parameter [15:0] RTP_PORT       = 16'd5004,
+    parameter [15:0] VTPG_CTRL_PORT = 16'd9998   // single-byte keyboard cfg commands
 ) (
     input  wire CLK100MHZ,
     output wire led0,        // heartbeat
@@ -116,10 +117,17 @@ module demo_top_vtpg_eth #(
     wire [15:0] vid_tdata;       // {C,Y} 4:2:2
     wire        vid_tvalid, vid_tready, vid_tlast, vid_tuser;
 
+    // Runtime-controllable vtpg config, driven by VTPG_CTRL_PORT keyboard
+    // commands (decoded in the control FSM). Defaults reproduce the original demo.
+    reg [3:0]  cfg_pattern_r;       // 0=bars 1=hgrad 2=vgrad 3=checker 4=solid 6=grid 7=ramp 8=noise
+    reg [15:0] box_w_r, box_h_r;    // box size (px)
+    reg [15:0] box_dx_r, box_dy_r;  // box speed (px/frame)
+    reg [23:0] box_color_r;         // box fill colour {Y,Cb,Cr}
+
     vtpgz_core #(
         .EN_COLORBAR(1), .EN_MOVING_BOX(1), .EN_SOLID(1),
-        .EN_HGRAD(0), .EN_VGRAD(0), .EN_CHECKER(0),
-        .EN_GRID(0), .EN_RAMP(0), .EN_NOISE(0),
+        .EN_HGRAD(1), .EN_VGRAD(1), .EN_CHECKER(1),    // all patterns enabled for runtime select
+        .EN_GRID(1), .EN_RAMP(1), .EN_NOISE(1),
         .OUTPUT_MODE(2),     // YUV
         .YUV_SUBSAMPLE(1),   // 4:2:2 -> 16-bit {C,Y}
         .BPC(8)
@@ -127,14 +135,14 @@ module demo_top_vtpg_eth #(
         .aclk(clk), .aresetn(rst_n),
         .cfg_enable(1'b1), .cfg_sw_fsync(1'b0), .cfg_ext_sync(1'b1),
         .cfg_img_width(IMG_W[15:0]), .cfg_img_height(IMG_H[15:0]),
-        .cfg_pattern(4'd0),                  // colorbar
-        .cfg_solid_color(24'h00_80_80),      // (unused bg)
-        .cfg_box_color(24'hEB_80_80),        // white-ish box ({Y,Cb,Cr})
-        .cfg_box_width(16'd160), .cfg_box_height(16'd120),
-        .cfg_box_dx(16'd8), .cfg_box_dy(16'd6),
-        .cfg_grid_spacing(16'd0), .cfg_grid_color(24'd0), .cfg_checker_size(16'd0),
+        .cfg_pattern(cfg_pattern_r),
+        .cfg_solid_color(24'h00_80_80),
+        .cfg_box_color(box_color_r),
+        .cfg_box_width(box_w_r), .cfg_box_height(box_h_r),
+        .cfg_box_dx(box_dx_r), .cfg_box_dy(box_dy_r),
+        .cfg_grid_spacing(16'd64), .cfg_grid_color(24'hEB_80_80), .cfg_checker_size(16'd64),
         .cfg_frame_rate_div(32'd2), .cfg_bar_width(16'd160),  // bar = 1280/8
-        .cfg_hg_step(16'd0), .cfg_vg_step(16'd0),
+        .cfg_hg_step(16'd16), .cfg_vg_step(16'd16),
         .cfg_box_border_color(24'h00_80_80), .cfg_box_border_width(8'd2),  // black ring ({Y,Cb,Cr}), 2px
         .sts_busy(), .sts_frame_count(),
         .m_axis_tdata(vid_tdata), .m_axis_tvalid(vid_tvalid),
@@ -322,21 +330,23 @@ module demo_top_vtpg_eth #(
     //    packet regardless of opcode (u_trig.busy is tied 0). --
     reg        ud_in_pkt;
     reg [7:0]  trg_opcode;
-    reg        trg_op_valid;
+    reg        trg_op_valid;     // TRIGGER_PORT: stream control (start/stop/single)
+    reg        vtpg_op_valid;    // VTPG_CTRL_PORT: vtpg cfg keyboard command
     always @(posedge clk) begin
         if (!eth_rst_n) begin
-            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; trg_opcode <= 8'd0;
+            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; vtpg_op_valid <= 1'b0; trg_opcode <= 8'd0;
         end else begin
-            trg_op_valid <= 1'b0;
+            trg_op_valid  <= 1'b0;
+            vtpg_op_valid <= 1'b0;
             if (ud_valid) begin
                 if (!ud_in_pkt) begin
                     ud_in_pkt  <= 1'b1;
-                    trg_opcode <= ud_data;        // first payload byte = opcode
+                    trg_opcode <= ud_data;        // first payload byte = opcode/key
                 end
                 if (ud_last) begin
                     ud_in_pkt <= 1'b0;
-                    if (ud_dst_port == TRIGGER_PORT)
-                        trg_op_valid <= 1'b1;     // commit (TRIGGER_PORT packets only)
+                    if (ud_dst_port == TRIGGER_PORT)   trg_op_valid  <= 1'b1;
+                    if (ud_dst_port == VTPG_CTRL_PORT) vtpg_op_valid <= 1'b1;
                 end
             end
         end
@@ -403,6 +413,8 @@ module demo_top_vtpg_eth #(
         if (!rst_n || sw_reset) begin
             vstate<=V_IDLE; frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
             frame_cnt<=32'd0; loop_en<=1'b0; single_pend<=1'b0;
+            cfg_pattern_r<=4'd0; box_w_r<=16'd160; box_h_r<=16'd120;
+            box_dx_r<=16'd8; box_dy_r<=16'd6; box_color_r<=24'hEB_80_80;
         end else begin
             frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
 
@@ -412,6 +424,37 @@ module demo_top_vtpg_eth #(
                     OP_STOP_0, OP_STOP_S, OP_STOP_s: begin loop_en<=1'b0; single_pend<=1'b0; end
                     OP_ONE_0,  OP_ONE_1:             single_pend <= 1'b1;   // arm one frame
                     default:                         loop_en     <= 1'b1;   // start continuous
+                endcase
+            end
+
+            // -- vtpg cfg keyboard commands (VTPG_CTRL_PORT, 1 byte each) --
+            if (vtpg_op_valid) begin
+                case (trg_opcode)
+                    8'h30,8'h31,8'h32,8'h33,8'h34,8'h35,8'h36,8'h37,8'h38,8'h39:
+                        cfg_pattern_r <= trg_opcode[3:0];            // '0'..'9' pattern select
+                    8'h2B, 8'h3D: begin                              // '+'/'=' grow box
+                        if (box_w_r < 16'd1232) box_w_r <= box_w_r + 16'd16;
+                        if (box_h_r < 16'd680)  box_h_r <= box_h_r + 16'd16;
+                    end
+                    8'h2D: begin                                     // '-' shrink box
+                        if (box_w_r > 16'd32) box_w_r <= box_w_r - 16'd16;
+                        if (box_h_r > 16'd32) box_h_r <= box_h_r - 16'd16;
+                    end
+                    8'h66: begin                                     // 'f' faster
+                        if (box_dx_r < 16'd32) box_dx_r <= box_dx_r + 16'd1;
+                        if (box_dy_r < 16'd32) box_dy_r <= box_dy_r + 16'd1;
+                    end
+                    8'h73: begin                                     // 's' slower
+                        if (box_dx_r > 16'd1) box_dx_r <= box_dx_r - 16'd1;
+                        if (box_dy_r > 16'd1) box_dy_r <= box_dy_r - 16'd1;
+                    end
+                    8'h62: case (box_color_r)                        // 'b' cycle box colour
+                        24'hEB_80_80: box_color_r <= 24'h51_5A_F0;   // white -> red
+                        24'h51_5A_F0: box_color_r <= 24'h91_36_22;   // red -> green
+                        24'h91_36_22: box_color_r <= 24'h29_F0_6E;   // green -> blue
+                        default:      box_color_r <= 24'hEB_80_80;   // (any) -> white
+                    endcase
+                    default: ;
                 endcase
             end
 

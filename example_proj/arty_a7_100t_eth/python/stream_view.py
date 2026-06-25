@@ -129,11 +129,30 @@ def main():
             font = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 24)
         except Exception:
             font = ImageFont.load_default()
+    try:
+        helpfont = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 18)
+    except Exception:
+        helpfont = font
+
+    # vtpg keyboard control: each mapped key sends its ASCII byte to the FPGA's
+    # VTPG_CTRL_PORT; the demo decodes it into a vtpgz_core config change.
+    ctrl = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    CTRL_PORT = 9998
+    KEYS = set("0123456789+-=fsb")
+    HELP = "keys:  0-9 pattern   +/- box size   f/s speed   b box colour"
 
     root = tk.Tk()
-    root.title("vtpgZero live - bitrate HUD")
+    root.title("vtpgZero live - bitrate + keyboard control")
     label = tk.Label(root)
     label.pack()
+
+    def on_key(ev):
+        if ev.char and ev.char in KEYS:
+            try:
+                ctrl.sendto(ev.char.encode("latin-1"), (IP, CTRL_PORT))
+            except Exception:
+                pass
+    root.bind("<Key>", on_key)
 
     def update():
         with _lock:
@@ -148,6 +167,12 @@ def main():
                 box_w = 820
             dr.rectangle([0, 0, box_w, 38], fill=(0, 0, 0))
             dr.text((10, 7), txt, fill=(255, 255, 0), font=font)
+            try:
+                hw = dr.textbbox((10, 0), HELP, font=helpfont)[2] + 10
+            except Exception:
+                hw = 740
+            dr.rectangle([0, d.height - 28, hw, d.height], fill=(0, 0, 0))
+            dr.text((10, d.height - 25), HELP, fill=(0, 255, 255), font=helpfont)
             ph = ImageTk.PhotoImage(d)
             label.configure(image=ph)
             label.image = ph
