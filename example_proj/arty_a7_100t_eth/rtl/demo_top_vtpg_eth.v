@@ -62,7 +62,7 @@ module demo_top_vtpg_eth #(
     //  paths there; 138 closes with margin and still exceeds 60 fps @ 720p.)
     // =======================================================================
     wire clk100_unused, clk, clk25, locked;
-    clk_gen_eth #(.CLKOUT0_DIV(6.500)) u_clkgen (   // 900/6.5 = 138.46 MHz functional clock
+    clk_gen_eth #(.CLKOUT0_DIV(6.875)) u_clkgen (   // 900/6.875 = 130.9 MHz functional clock (relaxed timing, ~63 fps)
         .clk_in (CLK100MHZ), .reset(1'b0),
         .clk_150(clk), .clk_100(clk100_unused), .clk_25(clk25), .locked(locked)
     );
