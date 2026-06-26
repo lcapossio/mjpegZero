@@ -134,6 +134,7 @@ output and the sink.
 | `EXIF_Y_RES`    | 72      | EXIF YResolution numerator                                      |
 | `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
 | `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default) |
+| `HUFF_BANKS`    | 8       | Huffman input-ring depth = blocks in flight: **2, 4, or 8 only** (asserted at elaboration); higher = more throughput, more LUTRAM |
 
 <a id="capabilities"></a>
 ## Capabilities <sub>[↑ Top](#top)</sub>
