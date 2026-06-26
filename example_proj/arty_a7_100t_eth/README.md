@@ -132,13 +132,16 @@ so they run standalone against the `demo_top_vtpg_eth` build.
 
 | LUT | FF | BRAM tiles | DSP | WNS |
 |----:|---:|-----------:|----:|----:|
-| 7,762 | 6,892 | 95 (of 135) | 21 | +0.063 ns |
+| 7,347 | 6,863 | 96 (of 135) | 21 | +0.003 ns |
 
+(Vivado 2025.2 post-route, upstream vtpgZero with the registered image reads.)
 Functional clock **130.9 MHz** (vs 150 MHz for the still demo). vtpgZero's image
 scaler is a ~74 MHz DisplayPort-rate core, so its read path is pipelined
 (synchronous BRAM read, +1 px latency) to close above the DP rate — which also
-moved the 128×128 image from LUTRAM into BRAM (≈6.6k fewer LUTs, +12 BRAM tiles).
-The encoder runs `HUFF_BANKS=8` for DCT-limited ~62 fps at 720p.
+moved the 128×128 image and 32×32 box image from LUTRAM into BRAM (≈7k fewer
+LUTs, +13 BRAM tiles vs the combinational read). WNS is thin and varies run to
+run with placement; it meets at 130.9 MHz. The encoder runs `HUFF_BANKS=8` for
+DCT-limited ~62 fps at 720p.
 
 ## Hardware test flow
 

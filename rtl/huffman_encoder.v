@@ -465,6 +465,15 @@ module huffman_encoder #(
     // rd_count is a wire, so the FSM observes a pop the same cycle it issues it.
     localparam NB = HUFF_BANKS;
     localparam BW = (NB <= 2) ? 1 : (NB <= 4) ? 2 : (NB <= 8) ? 3 : 4;
+    // NB must be 2, 4 or 8: wr_bank = wr_count[BW-1:0] is a power-of-two mask and
+    // the per-bank arrays below are sized to NB, so a non-power-of-two or >8
+    // value would index nonexistent banks. Reject at elaboration (mirrored in
+    // mjpegzero_enc_top) rather than wrap into out-of-range banks.
+    generate if (NB != 2 && NB != 4 && NB != 8)
+        begin : g_huff_banks_check
+            HUFF_BANKS_must_be_2_4_or_8 illegal_huff_banks_value();
+        end
+    endgenerate
     (* ram_style = "distributed" *) reg signed [15:0] coeff_buf [0:NB*64-1];
     /* verilator coverage_off */
     reg [5:0]    coeff_wr_idx;

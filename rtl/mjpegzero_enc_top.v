@@ -34,7 +34,7 @@ module mjpegzero_enc_top #(
     parameter EXIF_Y_RES    = 72,                          // Y resolution numerator
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
-    parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth = max blocks in flight; higher = more throughput, more LUTRAM
+    parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth (blocks in flight): 2, 4, or 8 only; higher = more throughput, more LUTRAM
     parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
@@ -315,11 +315,22 @@ module mjpegzero_enc_top #(
     // Gate block output: only allow blocks to flow when:
     //   1. Encoder is enabled
     //   2. JFIF headers have been written
-    //   3. Pipeline is not full (at most 2 blocks in flight)
-    // The Huffman encoder has a double-buffer (2 banks). We limit blocks
-    // in flight to prevent buffer overflow when the Huffman takes many
-    // cycles to process complex blocks.
+    //   3. Pipeline is not full (at most HUFF_BANKS blocks in flight)
+    // The Huffman encoder has an NB=HUFF_BANKS-deep input ring. We cap blocks
+    // in flight at HUFF_BANKS to prevent ring overflow when the Huffman takes
+    // many cycles to process complex blocks.
     // ========================================================================
+
+    // HUFF_BANKS must be 2, 4 or 8: pipeline_depth below is 4 bits (so the cap
+    // 0..8 cannot wrap) and the Huffman bank ring assumes a power-of-two <= 8.
+    // Reject any other value at elaboration (mirrored in huffman_encoder)
+    // instead of silently wrapping the counter / indexing nonexistent banks.
+    generate if (HUFF_BANKS != 2 && HUFF_BANKS != 4 && HUFF_BANKS != 8)
+        begin : g_huff_banks_check
+            HUFF_BANKS_must_be_2_4_or_8 illegal_huff_banks_value();
+        end
+    endgenerate
+
     reg [3:0] pipeline_depth;
 
     always @(posedge clk) begin
