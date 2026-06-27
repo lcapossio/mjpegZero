@@ -20,7 +20,6 @@
 
 /* verilator lint_off WIDTHTRUNC */
 module huffman_encoder #(
-    parameter LITE_MODE  = 0,    // retained for interface compatibility (unused below)
     parameter HUFF_BANKS = 4     // coefficient input-ring depth; MUST equal the top
                                  // in-flight cap (pipeline_depth < HUFF_BANKS) so the
                                  // ring can never overflow (no backpressure into zigzag)
@@ -454,8 +453,6 @@ module huffman_encoder #(
 
     // ========================================================================
     // Input buffering with level-based ready signal
-    // LITE_MODE=0: Double-buffered (2x64), allows overlap of write and FSM read
-    // LITE_MODE=1: Single-buffered (1x64), saves ~64x16 = 1024 bits of registers
     // ========================================================================
     // ---- NB-deep ring of 64-coefficient blocks (a FIFO of whole blocks) ----
     // Deeper buffering lets the streaming front end (DCT/zigzag, ~64 cyc/block)
@@ -615,8 +612,6 @@ module huffman_encoder #(
                 S_DC_FETCH: begin
                     out_valid <= 1'b0;
                     // Compute DC differential based on component
-                    // LITE_MODE: single buffer, direct 6-bit index
-                    // Full mode: double buffer, {bank, index} 7-bit address
                     if (blk_comp_id <= 2'd1) begin
                         cur_coeff <= coeff_dc - prev_dc_y;
                         prev_dc_y <= coeff_dc;

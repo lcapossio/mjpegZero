@@ -495,7 +495,6 @@ module mjpegzero_enc_top #(
 
     // --- Huffman Encoder ---
     huffman_encoder #(
-        .LITE_MODE  (LITE_MODE),
         .HUFF_BANKS (HUFF_BANKS)
     ) u_huffman (
         .clk       (clk),
