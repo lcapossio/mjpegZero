@@ -6,9 +6,11 @@
 # ============================================================================
 # run_sim.py — RTL simulation using Vivado xsim
 # ============================================================================
-# Usage: python scripts/run_sim.py [lite] [720p] [vcd] [quality=N]
-#   lite:      LITE_MODE=1 (lite mode, fixed quality table)
+# Usage: python scripts/run_sim.py [lite|full] [720p|1080p|WIDTHxHEIGHT] [vcd] [quality=N]
+#   lite:      LITE_MODE=1 (fixed quality table)
+#   full:      LITE_MODE=0 (runtime AXI quality)
 #   720p:      1280x720 test image
+#   1080p:     1920x1080 test image
 #   vcd:       dump full VCD to build/sim/tb_mjpegzero_enc.vcd
 #   quality=N  LITE_QUALITY override (requires lite)
 # ============================================================================
@@ -68,14 +70,24 @@ def run(cmd, cwd=None):
 def main():
     parser = argparse.ArgumentParser(description='Vivado xsim RTL simulation')
     parser.add_argument('flags', nargs='*',
-                        help='Options: lite, 720p, vcd, quality=N')
+                        help='Options: lite, full, 720p, 1080p, WIDTHxHEIGHT, vcd, quality=N')
     args = parser.parse_args()
 
     lite_mode    = 'lite' in args.flags
-    mode_720p    = '720p' in args.flags
     dump_vcd     = 'vcd'  in args.flags
     lite_quality = next((f.split('=', 1)[1] for f in args.flags
                          if f.startswith('quality=')), None)
+    img_width = 64
+    img_height = 8
+    for flag in args.flags:
+        f = flag.lower()
+        if f == '720p':
+            img_width, img_height = 1280, 720
+        elif f == '1080p':
+            img_width, img_height = 1920, 1080
+        elif 'x' in f and f.replace('x', '').isdigit():
+            w, h = f.split('x', 1)
+            img_width, img_height = int(w), int(h)
 
     viv = find_vivado_bin()
     if not viv:
@@ -97,16 +109,17 @@ def main():
     # Build define list
     defines = []
     if lite_mode:    defines += ['-d', 'LITE_MODE']
-    if mode_720p:    defines += ['-d', 'TB_720P']
     if dump_vcd:     defines += ['-d', 'DUMP_VCD']
-    if lite_quality:
-        vh = os.path.join(BUILD_DIR, 'sim_defines.vh')
-        with open(vh, 'w') as f:
+    vh = os.path.join(BUILD_DIR, 'sim_defines.vh')
+    with open(vh, 'w') as f:
+        f.write(f'`define TB_IMG_WIDTH {img_width}\n')
+        f.write(f'`define TB_IMG_HEIGHT {img_height}\n')
+        if lite_quality:
             f.write(f'`define LITE_QUALITY {lite_quality}\n')
-        defines += ['-d', 'HAVE_DEFINES']
+    defines += ['-d', 'HAVE_DEFINES']
 
     print('=' * 70)
-    print(f'LITE_MODE={int(lite_mode)}  720P={int(mode_720p)}  '
+    print(f'LITE_MODE={int(lite_mode)}  {img_width}x{img_height}  '
           f'Q={lite_quality or "default"}')
     print('Step 1: Compiling Verilog sources...')
     print('=' * 70)

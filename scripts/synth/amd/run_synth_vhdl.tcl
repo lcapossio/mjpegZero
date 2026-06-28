@@ -5,24 +5,38 @@
 # Vivado VHDL Synthesis Script for mjpegZero
 # Target: AMD/Xilinx Spartan-7 XC7S50 (Arty S7-50, CSGA324, -1)
 # Usage: vivado -mode batch -source scripts/synth/amd/run_synth_vhdl.tcl \
-#                           [-tclargs [lite [quality]]]
-#   No args:      LITE_MODE=0, 1920x1080, 150 MHz target
-#   lite:         LITE_MODE=1, 1280x720, 150 MHz target (default Q95)
-#   lite <1-100>: LITE_MODE=1, 1280x720, custom quality
+#                           [-tclargs [full|lite] [720p|1080p|<width>x<height>] [quality]]
+#   No args:      LITE_MODE=0, 1280x720, 150 MHz target
+#   lite:         LITE_MODE=1, same resolution default, fixed Q95
+#   1080p lite 80: LITE_MODE=1, 1920x1080, fixed Q80
 # ============================================================================
 
 set lite_mode 0
 set lite_quality 95
-set img_width 1920
-set img_height 1080
+set img_width 1280
+set img_height 720
 set target_mhz 150
 set target_period 6.897
-if {[llength $argv] > 0 && [lindex $argv 0] eq "lite"} {
-    set lite_mode 1
-    set img_width 1280
-    set img_height 720
-    if {[llength $argv] > 1} {
-        set lite_quality [lindex $argv 1]
+foreach raw_arg $argv {
+    set arg [string tolower $raw_arg]
+    if {$arg eq "lite" || $arg eq "fixed"} {
+        set lite_mode 1
+    } elseif {$arg eq "full" || $arg eq "runtime"} {
+        set lite_mode 0
+    } elseif {$arg eq "720p"} {
+        set img_width 1280
+        set img_height 720
+    } elseif {$arg eq "1080p"} {
+        set img_width 1920
+        set img_height 1080
+    } elseif {[regexp {^([0-9]+)x([0-9]+)$} $arg -> w h]} {
+        set img_width $w
+        set img_height $h
+    } elseif {[regexp {^quality=([0-9]+)$} $arg -> q] || [regexp {^q([0-9]+)$} $arg -> q] || [regexp {^([0-9]+)$} $arg -> q]} {
+        set lite_quality $q
+    } else {
+        puts "ERROR: unknown argument '$raw_arg'"
+        exit 1
     }
 }
 

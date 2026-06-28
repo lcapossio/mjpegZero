@@ -8,15 +8,15 @@
 # ============================================================================
 #
 # Usage:
-#   quartus_sh --script scripts/synth/altera/run_synth.tcl [-tclargs [lite [quality]]]
+#   quartus_sh --script scripts/synth/altera/run_synth.tcl [-tclargs [full|lite] [720p|1080p|<width>x<height>] [quality]]
 #
 # Examples:
 #   quartus_sh --script scripts/synth/altera/run_synth.tcl
-#                                          → LITE_MODE=0, 1920×1080, 150 MHz
+#                                          -> LITE_MODE=0, 1280x720, 150 MHz
 #   quartus_sh --script scripts/synth/altera/run_synth.tcl -tclargs lite
-#                                          → LITE_MODE=1, 1280×720, Q95 fixed
-#   quartus_sh --script scripts/synth/altera/run_synth.tcl -tclargs lite 75
-#                                          → LITE_MODE=1, 1280×720, Q75 fixed
+#                                          -> LITE_MODE=1, 1280x720, Q95 fixed
+#   quartus_sh --script scripts/synth/altera/run_synth.tcl -tclargs 1080p lite 75
+#                                          -> LITE_MODE=1, 1920x1080, Q75 fixed
 #
 # Typical device strings:
 #   Cyclone IV E : EP4CE22F17C6     FAMILY "Cyclone IV E"
@@ -32,17 +32,31 @@ package require ::quartus::report
 # ---- Configuration ----------------------------------------------------------
 set lite_mode    0
 set lite_quality 95
-set img_width    1920
-set img_height   1080
+set img_width    1280
+set img_height   720
 set target_mhz   150
 set target_period 6.667
 
-if {[llength $argv] > 0 && [lindex $argv 0] eq "lite"} {
-    set lite_mode   1
-    set img_width   1280
-    set img_height  720
-    if {[llength $argv] > 1} {
-        set lite_quality [lindex $argv 1]
+foreach raw_arg $argv {
+    set arg [string tolower $raw_arg]
+    if {$arg eq "lite" || $arg eq "fixed"} {
+        set lite_mode 1
+    } elseif {$arg eq "full" || $arg eq "runtime"} {
+        set lite_mode 0
+    } elseif {$arg eq "720p"} {
+        set img_width 1280
+        set img_height 720
+    } elseif {$arg eq "1080p"} {
+        set img_width 1920
+        set img_height 1080
+    } elseif {[regexp {^([0-9]+)x([0-9]+)$} $arg -> w h]} {
+        set img_width $w
+        set img_height $h
+    } elseif {[regexp {^quality=([0-9]+)$} $arg -> q] || [regexp {^q([0-9]+)$} $arg -> q] || [regexp {^([0-9]+)$} $arg -> q]} {
+        set lite_quality $q
+    } else {
+        puts "ERROR: unknown argument '$raw_arg'"
+        exit 1
     }
 }
 
