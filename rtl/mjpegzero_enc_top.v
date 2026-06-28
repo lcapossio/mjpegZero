@@ -331,6 +331,7 @@ module mjpegzero_enc_top #(
         end
     endgenerate
 
+    localparam [3:0] HUFF_BANKS_CAP = HUFF_BANKS[3:0];
     reg [3:0] pipeline_depth;
 
     always @(posedge clk) begin
@@ -350,7 +351,7 @@ module mjpegzero_enc_top #(
     // input-ring depth so the ring (which zigzag cannot backpressure) never
     // overflows. Deeper = the DCT/zigzag run ahead and keep the serial Huffman
     // FSM fed, instead of the pipeline running one block at a time.
-    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < HUFF_BANKS);
+    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < HUFF_BANKS_CAP);
 
     // ========================================================================
     // Video input path (YUYV pass-through or RGB→YUYV via rgb_to_ycbcr)
