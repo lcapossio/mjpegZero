@@ -25,6 +25,7 @@ TV_DIR = Path(os.environ["ENC_TV_DIR"])
 REF = Path(os.environ["ENC_REF"])
 QUALITY = int(os.environ.get("ENC_QUALITY", "95"))
 FRAMES = int(os.environ.get("ENC_FRAMES", "1"))
+EXPECT_MIN_PIPE_DEPTH = int(os.environ.get("ENC_EXPECT_MIN_PIPE_DEPTH", "0"))
 
 IMG_W, IMG_H = 64, 8
 NUM_MCUS = (IMG_W // 16) * (IMG_H // 8)  # 4:2:2 MCU is 16x8 -> 4 MCUs
@@ -39,6 +40,52 @@ def _i(sig):
         return int(sig.value)
     except Exception:
         return 0
+
+
+def _optional_signal(dut, name):
+    try:
+        return getattr(dut, name)
+    except Exception:
+        return None
+
+
+async def monitor_huffman_window(dut, stats):
+    """Track the top-level Huffman in-flight depth contract.
+
+    This catches the VHDL bug where LITE_MODE still implied a 1/2-bank Huffman
+    buffer and the top capped admission at two blocks. The Verilog contract is
+    HUFF_BANKS=8 by default, so a 4-MCU smoke frame should observe at least
+    three blocks in flight while the serial Huffman FSM drains.
+    """
+    depth_sig = _optional_signal(dut, "pipeline_depth")
+    push_sigs = [
+        _optional_signal(dut, "ibuf_blk_valid"),
+        _optional_signal(dut, "ibuf_blk_sob"),
+        _optional_signal(dut, "ibuf_blk_ready"),
+    ]
+    pop_sigs = [
+        _optional_signal(dut, "huff_out_eob"),
+        _optional_signal(dut, "huff_out_valid"),
+        _optional_signal(dut, "huff_bp_ready"),
+    ]
+    if depth_sig is None and any(sig is None for sig in push_sigs + pop_sigs):
+        stats["observable"] = False
+        return
+
+    computed_depth = 0
+    while True:
+        await RisingEdge(dut.clk)
+        if depth_sig is not None:
+            stats["max_depth"] = max(stats["max_depth"], _i(depth_sig))
+            continue
+
+        push = all(_i(sig) for sig in push_sigs)
+        pop = all(_i(sig) for sig in pop_sigs)
+        if push and not pop:
+            computed_depth += 1
+        elif pop and not push:
+            computed_depth -= 1
+        stats["max_depth"] = max(stats["max_depth"], computed_depth)
 
 
 async def axi_write(dut, addr, data):
@@ -89,6 +136,7 @@ async def feed_frame(dut, vid):
 @cocotb.test()
 async def golden(dut):
     frames = []
+    huff_window = {"observable": True, "max_depth": 0}
 
     async def capture():
         cur = bytearray()
@@ -118,6 +166,7 @@ async def golden(dut):
 
     dut._log.info("reset released")
     cocotb.start_soon(capture())
+    cocotb.start_soon(monitor_huffman_window(dut, huff_window))
     await axi_write(dut, 0x00, 0x1)      # CTRL: enable
     await axi_write(dut, 0x0C, QUALITY)  # QUALITY (full mode; ignored in lite)
     for _ in range(600):
@@ -146,3 +195,15 @@ async def golden(dut):
         f"vs {REF.name}: max_dc={max_dc} max_ac={max_ac}"
     )
     assert passed, f"golden mismatch vs {REF.name}: max_dc={max_dc} max_ac={max_ac}"
+
+    if EXPECT_MIN_PIPE_DEPTH:
+        assert huff_window["observable"], "cannot observe Huffman in-flight depth contract"
+        dut._log.info(
+            f"Huffman in-flight depth max={huff_window['max_depth']} "
+            f"(expected >= {EXPECT_MIN_PIPE_DEPTH})"
+        )
+        assert huff_window["max_depth"] >= EXPECT_MIN_PIPE_DEPTH, (
+            f"Huffman in-flight depth only reached {huff_window['max_depth']}; "
+            f"expected >= {EXPECT_MIN_PIPE_DEPTH}. This usually means the top "
+            "is still capped below HUFF_BANKS or the VHDL Huffman buffer is stale."
+        )

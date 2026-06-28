@@ -88,11 +88,36 @@ real motion. No JTAG pixel upload needed.
    step per frame (real motion). `eth_trigger.py`'s "GO" still works (= start).
    `python/hw_status_vtpg.py` reads the loop state over JTAG.
 
+### vtpg keyboard control (KV260-style, UDP port 9998)
+
+With the `stream_view.py` window focused, single keystrokes write vtpgZero
+config registers over UDP (port 9998), mirroring the KV260 `dp_vtpgzero_box.c`
+app — the host owns all state and emits `[reg_offset, value(4 B BE)]` writes:
+
+| Key | Effect |
+|-----|--------|
+| `0`–`9` (skip `5`) | pattern: 0 bars, 1/2 gradients, 3 checker, 4 solid, 6 grid, 7 ramp, 8 noise, **9 image** |
+| `+` / `-` | grow / shrink the moving box (image-in-box rescales) |
+| `f` / `s` | box faster / slower |
+| `b` / `c` | cycle box / solid colour (8-entry palette) |
+| `g` / `G` | grid spacing −/+ (pattern 6) |
+| `k` / `K` | checker size −/+ (pattern 3) |
+| `i` | toggle the mandrill image inside the box vs solid fill |
+
+**Image mode (mandrill).** `EN_IMAGE=1` renders a 128×128 mandrill scaled to
+full screen as pattern 9; `EN_BOX_IMAGE=1` puts a 32×32 mandrill in the moving
+box (`i` toggles it). The vtpgZero `.mem` images are RGB, but the core runs
+`OUTPUT_MODE=2` (YUV) and reads the image triple directly as `{Y,Cb,Cr}`, so
+`scripts/rgb_mem_to_ycbcr.py` converts them to studio BT.601 into
+`data/mandrill_*_ycbcr.mem` (added to the build).
+
 ## Stream diagnostics (host)
 
-Measured live on hardware (720p, LITE Q75): ~11 fps, ~22.9 KB/frame,
-**~2.1 Mbps** compressed — about 2% of the 100 Mbps link. The frame rate is
-encoder-bound, not network-bound (the encoder is ~98% of each frame's period).
+Measured live on hardware (720p, LITE Q75): **~62 fps**, ~22 KB/frame,
+**~11 Mbps** compressed — about 11% of the 100 Mbps link. The frame rate is
+encoder-bound, not network-bound (encode is ~89% of each frame's period); the
+encoder is DCT-limited at the 130.9 MHz functional clock with `HUFF_BANKS=8`.
+High-entropy patterns (grid/noise/image) are larger and stream slower.
 
 | Tool | What it does |
 |------|--------------|
@@ -102,6 +127,21 @@ encoder-bound, not network-bound (the encoder is ~98% of each frame's period).
 
 All three send the start opcode on launch and stop on exit (trigger port 9999),
 so they run standalone against the `demo_top_vtpg_eth` build.
+
+## Resources & timing (`demo_top_vtpg_eth`, XC7A100T)
+
+| LUT | FF | BRAM tiles | DSP | WNS |
+|----:|---:|-----------:|----:|----:|
+| 7,347 | 6,863 | 96 (of 135) | 21 | +0.003 ns |
+
+(Vivado 2025.2 post-route, upstream vtpgZero with the registered image reads.)
+Functional clock **130.9 MHz** (vs 150 MHz for the still demo). vtpgZero's image
+scaler is a ~74 MHz DisplayPort-rate core, so its read path is pipelined
+(synchronous BRAM read, +1 px latency) to close above the DP rate — which also
+moved the 128×128 image and 32×32 box image from LUTRAM into BRAM (≈7k fewer
+LUTs, +13 BRAM tiles vs the combinational read). WNS is thin and varies run to
+run with placement; it meets at 130.9 MHz. The encoder runs `HUFF_BANKS=8` for
+DCT-limited ~62 fps at 720p.
 
 ## Hardware test flow
 

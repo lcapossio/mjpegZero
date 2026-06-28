@@ -416,3 +416,8 @@ jobs:
 
       - name: cocotb - VHDL/GHDL (multi-frame, full Q95 x2)
         run: python sim/cocotb/test_runner.py vhdl full 95 2
+
+      # Demo JPEG output path (capture -> buffer -> RTP), Icarus-only. Self-
+      # contained: builds a synthetic JPEG, no test vectors/ffmpeg needed.
+      - name: cocotb - demo JPEG path (capture/buffer/RTP contract)
+        run: python example_proj/arty_a7_100t_eth/sim/cocotb/run_jpeg_path.py

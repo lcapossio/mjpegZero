@@ -129,11 +129,93 @@ def main():
             font = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 24)
         except Exception:
             font = ImageFont.load_default()
+    try:
+        helpfont = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 18)
+    except Exception:
+        helpfont = font
+
+    # KV260-style vtpg control: the host owns all state exactly like the KV260
+    # A53 app (vtpgzero/hw/kv260/src/dp_vtpgzero_box.c) and writes vtpgZero
+    # registers over UDP. Each packet = [reg_offset, value(4 B big-endian)] to
+    # VTPG_CTRL_PORT; the FPGA latches it into the matching cfg_* register.
+    ctrl = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    CTRL_PORT = 9998
+    R_PATTERN, R_SOLID, R_BOX_COLOR = 0x18, 0x20, 0x24
+    R_BOX_SIZE, R_BOX_SPEED = 0x28, 0x2C
+    R_GRID, R_CHECKER, R_IMGX, R_IMGY = 0x34, 0x3C, 0x54, 0x58
+    BOX_IMG_W = BOX_IMG_H = 32   # matches BOX_IMAGE_W/H baked into the PL
+    # palette as {Y,Cb,Cr} (studio BT.601 equivalents of the KV260 RGB palette):
+    # yellow, cyan, magenta, green, blue, red, white, gray
+    PALETTE = [0xD21092, 0xAAA610, 0x6ACADE, 0x913622,
+               0x29F06E, 0x515AF0, 0xEB8080, 0x7E8080]
+    st = {"bw": 96, "bh": 64, "dx": 4, "dy": 3,
+          "bc": 6, "sc": 6, "grid": 32, "chk": 32, "img": 1}
+
+    def wr(off, val):
+        try:
+            ctrl.sendto(bytes([off & 0xFF]) + int(val & 0xFFFFFFFF).to_bytes(4, "big"),
+                        (IP, CTRL_PORT))
+        except Exception:
+            pass
+
+    def push_box_img():
+        wr(R_IMGX, (BOX_IMG_W << 16) // st["bw"] if st["img"] else 0)
+        wr(R_IMGY, (BOX_IMG_H << 16) // st["bh"] if st["img"] else 0)
+
+    def push_all():   # sync the FPGA to the host's initial state
+        wr(R_PATTERN, 0); wr(R_SOLID, PALETTE[st["sc"]]); wr(R_BOX_COLOR, PALETTE[st["bc"]])
+        wr(R_BOX_SIZE, (st["bw"] << 16) | st["bh"])
+        wr(R_BOX_SPEED, (st["dx"] << 16) | st["dy"])
+        wr(R_GRID, st["grid"]); wr(R_CHECKER, st["chk"]); push_box_img()
+
+    HELP = ("0-9 pattern (9=img)  +/- size  f/s speed  b/c box/solid colour  "
+            "g/G grid  k/K checker  i image-in-box")
+
+    def on_key(ev):
+        ch = ev.char
+        if not ch:
+            return
+        if "0" <= ch <= "9" and ch != "5":
+            wr(R_PATTERN, ord(ch) - ord("0"))
+        elif ch in ("+", "="):
+            st["bw"] = min(st["bw"] + 16, 600); st["bh"] = min(st["bh"] + 16, 400)
+            wr(R_BOX_SIZE, (st["bw"] << 16) | st["bh"])
+            if st["img"]: push_box_img()
+        elif ch == "-":
+            st["bw"] = max(st["bw"] - 16, 32); st["bh"] = max(st["bh"] - 16, 32)
+            wr(R_BOX_SIZE, (st["bw"] << 16) | st["bh"])
+            if st["img"]: push_box_img()
+        elif ch == "f":
+            st["dx"] = min(st["dx"] + 1, 16); st["dy"] = min(st["dy"] + 1, 16)
+            wr(R_BOX_SPEED, (st["dx"] << 16) | st["dy"])
+        elif ch == "s":
+            st["dx"] = max(st["dx"] - 1, 1); st["dy"] = max(st["dy"] - 1, 1)
+            wr(R_BOX_SPEED, (st["dx"] << 16) | st["dy"])
+        elif ch == "b":
+            st["bc"] = (st["bc"] + 1) & 7; wr(R_BOX_COLOR, PALETTE[st["bc"]])
+        elif ch == "c":
+            st["sc"] = (st["sc"] + 1) & 7; wr(R_SOLID, PALETTE[st["sc"]])
+        elif ch == "g":
+            if st["grid"] > 8: st["grid"] -= 8
+            wr(R_GRID, st["grid"])
+        elif ch == "G":
+            if st["grid"] < 256: st["grid"] += 8
+            wr(R_GRID, st["grid"])
+        elif ch == "k":
+            if st["chk"] > 4: st["chk"] -= 4
+            wr(R_CHECKER, st["chk"])
+        elif ch == "K":
+            if st["chk"] < 256: st["chk"] += 4
+            wr(R_CHECKER, st["chk"])
+        elif ch == "i":
+            st["img"] ^= 1; push_box_img()
 
     root = tk.Tk()
-    root.title("vtpgZero live - bitrate HUD")
+    root.title("vtpgZero live - bitrate + KV260 keyboard control")
     label = tk.Label(root)
     label.pack()
+    root.bind("<Key>", on_key)
+    push_all()   # sync the FPGA to the host's initial state
 
     def update():
         with _lock:
@@ -148,6 +230,12 @@ def main():
                 box_w = 820
             dr.rectangle([0, 0, box_w, 38], fill=(0, 0, 0))
             dr.text((10, 7), txt, fill=(255, 255, 0), font=font)
+            try:
+                hw = dr.textbbox((10, 0), HELP, font=helpfont)[2] + 10
+            except Exception:
+                hw = 740
+            dr.rectangle([0, d.height - 28, hw, d.height], fill=(0, 0, 0))
+            dr.text((10, d.height - 25), HELP, fill=(0, 255, 255), font=helpfont)
             ph = ImageTk.PhotoImage(d)
             label.configure(image=ph)
             label.image = ph
