@@ -25,10 +25,10 @@
 // ============================================================================
 
 module mjpegzero_enc_top #(
-    parameter LITE_MODE     = 1,                           // 0 = full (1080p30, 150 MHz), 1 = lite (720p60)
+    parameter LITE_MODE     = 1,                           // 0 = runtime AXI quality, 1 = fixed synthesis-time quality
     parameter LITE_QUALITY  = 95,                          // Quality 1-100, used when LITE_MODE=1
-    parameter IMG_WIDTH     = LITE_MODE ? 1280 : 1920,     // 720p lite, 1080p full
-    parameter IMG_HEIGHT    = LITE_MODE ? 720  : 1080,
+    parameter IMG_WIDTH     = 1280,                        // image width in pixels, independent of LITE_MODE
+    parameter IMG_HEIGHT    = 720,                         // image height in pixels, independent of LITE_MODE
     parameter EXIF_ENABLE   = 0,                           // 1 = embed APP1/EXIF segment after APP0
     parameter EXIF_X_RES    = 72,                          // X resolution numerator (DPI if EXIF_RES_UNIT=2)
     parameter EXIF_Y_RES    = 72,                          // Y resolution numerator

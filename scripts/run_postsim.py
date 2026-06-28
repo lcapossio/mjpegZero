@@ -10,10 +10,12 @@
 # then simulates the netlist with the standard testbench.
 # Catches synthesis-introduced bugs invisible in RTL simulation.
 #
-# Usage: python scripts/run_postsim.py [vhdl] [lite] [720p] [vcd] [quality=N]
+# Usage: python scripts/run_postsim.py [vhdl] [lite|full] [720p|1080p|WIDTHxHEIGHT] [vcd] [quality=N]
 #   vhdl:      synthesize the VHDL RTL instead of the Verilog RTL
-#   lite:      LITE_MODE=1 (lite mode)
+#   lite:      LITE_MODE=1 (fixed quality)
+#   full:      LITE_MODE=0 (runtime AXI quality)
 #   720p:      1280x720 test image
+#   1080p:     1920x1080 test image
 #   vcd:       dump full VCD
 #   quality=N  LITE_QUALITY override (requires lite)
 # ============================================================================
@@ -62,9 +64,15 @@ def vivado_tool(viv_bin, name):
     return os.path.join(viv_bin, name)
 
 
-def run(cmd, cwd=None):
+def vivado_env():
+    env = os.environ.copy()
+    env.setdefault('XILINX_LOCAL_USER_DATA', os.path.join(PROJ_DIR, '.xilinx_local'))
+    return env
+
+
+def run(cmd, cwd=None, env=None):
     print(' '.join(str(x) for x in cmd))
-    r = subprocess.run(cmd, cwd=cwd)
+    r = subprocess.run(cmd, cwd=cwd, env=env)
     if r.returncode != 0:
         sys.exit(r.returncode)
 
@@ -73,15 +81,25 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Post-synthesis simulation')
     parser.add_argument('flags', nargs='*',
-                        help='Options: lite, 720p, vcd, quality=N')
+                        help='Options: vhdl, lite, full, 720p, 1080p, WIDTHxHEIGHT, vcd, quality=N')
     args = parser.parse_args()
 
     lite_mode    = 'lite' in args.flags
     vhdl_mode    = 'vhdl' in args.flags
-    mode_720p    = '720p' in args.flags
     dump_vcd     = 'vcd'  in args.flags
     lite_quality = next((f.split('=', 1)[1] for f in args.flags
                          if f.startswith('quality=')), None)
+    img_width = 64
+    img_height = 8
+    for flag in args.flags:
+        f = flag.lower()
+        if f == '720p':
+            img_width, img_height = 1280, 720
+        elif f == '1080p':
+            img_width, img_height = 1920, 1080
+        elif 'x' in f and f.replace('x', '').isdigit():
+            w, h = f.split('x', 1)
+            img_width, img_height = int(w), int(h)
 
     vivado_exe, viv = find_vivado()
 
@@ -95,15 +113,16 @@ def main():
     print('=' * 70)
     print(f'Post-synthesis sim: RTL={"VHDL" if vhdl_mode else "Verilog"}  '
           f'LITE_MODE={int(lite_mode)}  '
-          f'720P={int(mode_720p)}  Q={lite_quality or "default"}')
+          f'{img_width}x{img_height}  Q={lite_quality or "default"}')
     print('Step 1: Synthesizing and exporting funcsim.v...')
     print('=' * 70)
 
     tcl_args = []
     if lite_mode:
         tcl_args.append('lite')
-        if lite_quality:
-            tcl_args.append(lite_quality)
+    tcl_args.append(f'{img_width}x{img_height}')
+    if lite_quality:
+        tcl_args.append(lite_quality)
 
     synth_tcl = os.path.join(PROJ_DIR, 'scripts',
                              'synth_for_postsim_vhdl.tcl' if vhdl_mode
@@ -112,7 +131,7 @@ def main():
            '-source', synth_tcl]
     if tcl_args:
         cmd += ['-tclargs'] + tcl_args
-    run(cmd)
+    run(cmd, env=vivado_env())
 
     funcsim = os.path.join(build_dir, 'funcsim.v')
     if not os.path.isfile(funcsim):
@@ -125,14 +144,14 @@ def main():
 
     defines = ['-d', 'POSTSIM']
     if lite_mode:    defines += ['-d', 'LITE_MODE']
-    if mode_720p:    defines += ['-d', 'TB_720P']
     if dump_vcd:     defines += ['-d', 'DUMP_VCD']
-    if lite_quality:
-        vh = os.path.join(build_dir, 'sim_defines.vh')
-        with open(vh, 'w') as f:
+    vh = os.path.join(build_dir, 'sim_defines.vh')
+    with open(vh, 'w') as f:
+        f.write(f'`define TB_IMG_WIDTH {img_width}\n')
+        f.write(f'`define TB_IMG_HEIGHT {img_height}\n')
+        if lite_quality:
             f.write(f'`define LITE_QUALITY {lite_quality}\n')
-        defines += ['-d', 'HAVE_DEFINES']
-
+    defines += ['-d', 'HAVE_DEFINES']
     os.makedirs(os.path.join(build_dir, 'test_vectors'), exist_ok=True)
     for f in glob.glob(os.path.join(TV_DIR, '*')):
         shutil.copy2(f, os.path.join(build_dir, 'test_vectors'))

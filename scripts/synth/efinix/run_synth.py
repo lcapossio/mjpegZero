@@ -9,7 +9,7 @@
 # ============================================================================
 #
 # Usage:
-#   python scripts/synth/efinix/run_synth.py [lite [quality]]
+#   python scripts/synth/efinix/run_synth.py [full|lite] [720p|1080p|WIDTHxHEIGHT] [quality]
 #
 # This script:
 #   1. Generates an Efinity project XML from a template
@@ -56,7 +56,7 @@ def generate_xml(output_dir, rtl_files, sdc_file, device, family,
     )
 
     # Build Verilog define list (Efinity uses these for preprocessor + param override)
-    defines = [f'LITE_MODE={lite_mode}']
+    defines = [f'LITE_MODE={lite_mode}', f'IMG_WIDTH={img_width}', f'IMG_HEIGHT={img_height}']
     if lite_mode:
         defines.append(f'LITE_QUALITY={lite_quality}')
     define_str = ' '.join(defines)
@@ -110,20 +110,39 @@ def generate_sdc(output_dir, target_mhz):
 
 def main():
     parser = argparse.ArgumentParser(description='Efinix Efinity synthesis for mjpegZero')
-    parser.add_argument('mode',    nargs='?', default='full',
-                        help='"lite" for LITE_MODE=1 (default: full)')
-    parser.add_argument('quality', nargs='?', type=int, default=95,
-                        help='LITE_QUALITY when lite mode (default: 95)')
+    parser.add_argument('flags', nargs='*',
+                        help='Options: lite, full, 720p, 1080p, WIDTHxHEIGHT, quality/Q value')
     parser.add_argument('--device',  default=DEVICE,
                         help=f'Efinity device part number (default: {DEVICE})')
     parser.add_argument('--family',  default=FAMILY,
                         help=f'Device family (default: {FAMILY})')
     args = parser.parse_args()
 
-    lite_mode    = 1 if args.mode == 'lite' else 0
-    lite_quality = args.quality
-    img_width    = 1280 if lite_mode else 1920
-    img_height   = 720  if lite_mode else 1080
+    lite_mode = 0
+    lite_quality = 95
+    img_width = 1280
+    img_height = 720
+    for flag in args.flags:
+        f = flag.lower()
+        if f in ('lite', 'fixed'):
+            lite_mode = 1
+        elif f in ('full', 'runtime'):
+            lite_mode = 0
+        elif f == '720p':
+            img_width, img_height = 1280, 720
+        elif f == '1080p':
+            img_width, img_height = 1920, 1080
+        elif 'x' in f and f.replace('x', '').isdigit():
+            w, h = f.split('x', 1)
+            img_width, img_height = int(w), int(h)
+        elif f.startswith('quality='):
+            lite_quality = int(f.split('=', 1)[1])
+        elif f.startswith('q') and f[1:].isdigit():
+            lite_quality = int(f[1:])
+        elif f.isdigit():
+            lite_quality = int(f)
+        else:
+            parser.error(f'unknown argument: {flag}')
 
     mode_str = (f'LITE ({img_width}x{img_height}, Q{lite_quality})'
                 if lite_mode else f'FULL ({img_width}x{img_height}, dynamic Q)')

@@ -18,17 +18,29 @@ module tb_mjpegzero_enc;
     // ========================================================================
     localparam CLK_PERIOD = 10;  // 100 MHz
 
-`ifdef TB_720P
+`ifdef HAVE_DEFINES
+  `include "sim_defines.vh"
+`endif
+
+`ifdef TB_IMG_WIDTH
+    localparam IMG_WIDTH  = `TB_IMG_WIDTH;
+`elsif TB_720P
     localparam IMG_WIDTH  = 1280;
-    localparam IMG_HEIGHT = 720;
 `else
     localparam IMG_WIDTH  = 64;   // default: 4 MCUs (fast sim)
+`endif
+
+`ifdef TB_IMG_HEIGHT
+    localparam IMG_HEIGHT = `TB_IMG_HEIGHT;
+`elsif TB_720P
+    localparam IMG_HEIGHT = 720;
+`else
     localparam IMG_HEIGHT = 8;
 `endif
 
     localparam NUM_PIXELS  = IMG_WIDTH * IMG_HEIGHT;
-    // Generous size bounds: at least 1 KB header+data, at most uncompressed RGB
-    localparam MIN_BYTES   = 1000;
+    // Generous size bounds: small smoke frames can fit below 1 KB.
+    localparam MIN_BYTES   = (NUM_PIXELS <= 512) ? 500 : 1000;
     localparam MAX_BYTES   = IMG_WIDTH * IMG_HEIGHT * 3;
 
     // LITE_MODE: compile with -d LITE_MODE to test lite variant
@@ -38,11 +50,7 @@ module tb_mjpegzero_enc;
     localparam TB_LITE_MODE = 0;
 `endif
 
-    // LITE_QUALITY: read from sim_defines.vh if it exists (written by run_sim.sh),
-    // or fall back to 95.  The include path must be in the xelab search path.
-`ifdef HAVE_DEFINES
-  `include "sim_defines.vh"
-`endif
+    // LITE_QUALITY: read from sim_defines.vh if it exists, or fall back to 95.
 `ifdef LITE_QUALITY
     localparam TB_LITE_QUALITY = `LITE_QUALITY;
 `else
@@ -368,9 +376,8 @@ module tb_mjpegzero_enc;
                             dut.quant_out_valid,
                             dut.zz_out_valid,
                             dut.zz_out_sob);
-                        $display("  huff_state=%0d huff_blk_ready=%b huff_wr_idx=%0d huff_ac_idx=%0d",
+                        $display("  huff_state=%0d huff_wr_idx=%0d huff_ac_idx=%0d",
                             dut.u_huffman.state,
-                            dut.u_huffman.coeff_block_ready,
                             dut.u_huffman.coeff_wr_idx,
                             dut.u_huffman.ac_idx);
                         $display("  dct_row_valid=%b dct_tbuf_done=%b dct_col_valid=%b dct_out_cnt=%0d",

@@ -125,7 +125,7 @@ output and the sink.
 
 | Parameter       | Default | Description                                                      |
 |-----------------|---------|------------------------------------------------------------------|
-| `LITE_MODE`     | 1       | 0 = full (1080p30, runtime quality), 1 = lite (720p60)          |
+| `LITE_MODE`     | 1       | 0 = runtime AXI-programmable quality, 1 = fixed synthesis-time quality |
 | `LITE_QUALITY`  | 95      | Synthesis-time quality 1–100, used when LITE_MODE=1             |
 | `IMG_WIDTH`     | 1280    | Input image width in pixels (multiple of 16)                    |
 | `IMG_HEIGHT`    | 720     | Input image height in pixels (multiple of 8)                    |
@@ -145,7 +145,7 @@ output and the sink.
 - **Tables**: Standard Huffman tables (Annex K), standard quantization tables
 - **Quality**: Runtime via AXI4-Lite register (1–100) in full mode; synthesis-time via `LITE_QUALITY` (1–100, default 95) in lite mode
 - **Resolution**: Parameterizable; validated at 1920×1080, 1280×720, and 640×480
-- **Frame rate**: 1080p30 (full mode), 720p60 (lite mode), both at 150 MHz
+- **Frame rate**: Resolution-dependent; validated presets include 1920x1080 and 1280x720 at 150 MHz
 - **Output**: Complete JFIF files with SOI, APP0, [APP1/EXIF], DQT, SOF0, DHT, SOS, DRI/RST, EOI
 - **EXIF**: Optional APP1/EXIF segment (`EXIF_ENABLE=1`) with XResolution, YResolution, ResolutionUnit IFD0 tags
 - **RGB input**: Optional built-in BT.601 color converter (`RGB_INPUT=1`) accepts 24-bit `{R,G,B}` and produces YUYV internally
@@ -156,12 +156,12 @@ output and the sink.
 
 Both modes run at 150 MHz, delivering 2,343,750 blocks/sec with ~1 MCU row latency (8 lines).
 
-| Metric              | Full Mode                  | Lite Mode                       |
+| Metric              | Runtime-Quality Mode       | Fixed-Quality Mode              |
 |---------------------|----------------------------|---------------------------------|
-| Use case            | HD capture, quality tuning | Cost-sensitive streaming        |
-| Target resolution   | 1920×1080 (1080p30)        | 1280×720 (720p60)               |
+| Use case            | Quality tuning at runtime  | Cost-sensitive fixed-Q streaming |
+| Resolution          | Set by `IMG_WIDTH` / `IMG_HEIGHT` | Set by `IMG_WIDTH` / `IMG_HEIGHT` |
 | Quality             | Runtime adjustable (1–100) | Synthesis-time (1–100, Q95 default) |
-| Pipeline headroom   | 1080p30: 83%               | 720p60: 74%                     |
+| Pipeline headroom   | Depends on selected resolution | Depends on selected resolution |
 
 <a id="compression-mandrill-test-image"></a>
 ### Compression (Mandrill test image) <sub>[↑ Top](#top)</sub>
@@ -188,8 +188,9 @@ versus the original image.
 <a id="resource-usage"></a>
 ## Resource Usage <sub>[↑ Top](#top)</sub>
 
-The numbers below are for the `mjpegzero_enc_top` encoder core only. They do
-not include board wrappers, debug bridges, ELAs, or demo readback buffers.
+The numbers below are for the `mjpegzero_enc_top` encoder core only. They are
+example synthesis presets, not definitions of full/lite mode. They do not
+include board wrappers, debug bridges, ELAs, or demo readback buffers.
 Synthesized by `scripts/synth/amd/run_core_synth.tcl` for an XC7A100T at
 150 MHz. The Verilog core uses `HUFF_BANKS=8` (8-deep Huffman input ring for
 throughput, ~+400 LUTRAM); its WNS is **post-route** (synth-only over-reports
@@ -206,7 +207,7 @@ the ring path). The VHDL core uses the original 2-bank buffer.
 synthesis-fixed); the rest of the pipeline is identical. At the **same
 resolution** the delta is small — full vs lite at 720p is **+250 LUT / +65 FF /
 +0 BRAM / +2 DSP** (the runtime-quality update FSM, reciprocal LUT, and Q-scaling
-multiply). The full rows above are shown at 1080p (its typical target); their
+multiply). The rows above use different resolution presets, so their
 larger BRAM (16 vs 11) is the wider line buffers — **BRAM scales with image
 width, not with full/lite**.
 
@@ -434,23 +435,23 @@ indicator if the downstream consumer stalls longer than the FIFO can absorb.
 
 ```bash
 # Using the master runner (recommended):
-python scripts/run_all.py synth               # Full mode, AMD/Xilinx (default)
+python scripts/run_all.py synth               # Runtime-quality mode, AMD/Xilinx (default)
 python scripts/run_all.py synth --vendor amd
 python scripts/run_all.py impl  --vendor amd
 
 # Direct Vivado invocation:
-# Full mode (1920×1080, 150 MHz, runtime quality)
+# Runtime-quality mode (default 1280x720, 150 MHz)
 vivado -mode batch -source scripts/synth/amd/run_synth.tcl
 
-# Lite mode (1280×720, 150 MHz, default Q95)
+# Fixed-quality mode (same default resolution, Q95)
 vivado -mode batch -source scripts/synth/amd/run_synth.tcl -tclargs lite
 
-# Lite mode with custom quality (e.g., Q80)
-vivado -mode batch -source scripts/synth/amd/run_synth.tcl -tclargs lite 80
+# Fixed-quality mode at 1920x1080 with custom quality (Q80)
+vivado -mode batch -source scripts/synth/amd/run_synth.tcl -tclargs 1080p lite 80
 
 # Native VHDL-1993 encoder synthesis
 vivado -mode batch -source scripts/synth/amd/run_synth_vhdl.tcl
-vivado -mode batch -source scripts/synth/amd/run_synth_vhdl.tcl -tclargs lite 80
+vivado -mode batch -source scripts/synth/amd/run_synth_vhdl.tcl -tclargs 1080p lite 80
 
 # Core-only Verilog/VHDL resource comparison
 vivado -mode batch -source scripts/synth/amd/run_core_synth.tcl -tclargs verilog
@@ -459,6 +460,8 @@ python scripts/check_core_resources.py
 ```
 
 Reports are written to `build/synth/` or `build/synth_lite/`.
+Mode (`full`/`lite`) controls only the quality path; pass `720p`, `1080p`, or
+`<width>x<height>` separately to choose resolution.
 
 AMD/Vivado and Altera/Quartus scripts are fully implemented.
 Synthesis scripts for Lattice Radiant, Microchip Libero, Efinix Efinity, and GoWin EDA
@@ -500,7 +503,7 @@ Reports are written to `build/impl/`.
 mjpegzero_enc_top #(
     .IMG_WIDTH    (1920),
     .IMG_HEIGHT   (1080),
-    .LITE_MODE    (0),         // 1 = fixed quality, 720p, ~47% fewer LUTs
+    .LITE_MODE    (0),         // 0 = runtime quality, 1 = fixed synthesis-time quality
     .LITE_QUALITY (95),        // Synthesis-time quality (1-100), lite mode only
     // Optional: EXIF APP1 segment
     .EXIF_ENABLE  (1),         // 0 = no EXIF (default)

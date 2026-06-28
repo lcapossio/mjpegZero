@@ -12,8 +12,8 @@
 module synth_timing_wrapper #(
     parameter LITE_MODE    = 1,
     parameter LITE_QUALITY = 95,
-    parameter IMG_WIDTH    = LITE_MODE ? 1280 : 1920,
-    parameter IMG_HEIGHT   = LITE_MODE ? 720  : 1080,
+    parameter IMG_WIDTH    = 1280,
+    parameter IMG_HEIGHT   = 720,
     parameter RGB_INPUT    = 0,                          // 1 = 24-bit RGB input; 0 = 16-bit YUYV
     parameter VID_DATA_W   = RGB_INPUT ? 24 : 16         // derived, do not override
 ) (
