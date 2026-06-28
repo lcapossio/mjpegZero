@@ -21,6 +21,7 @@ Available jobs:
     rtl-sim            iverilog RTL simulation (full + lite + corner cases)
     rtl-verilator-sim  Verilator functional simulation
     rtl-coverage       Verilator code coverage
+    cocotb-dual        cocotb dual-language simulation (Verilog + VHDL)
     vhdl-top-sim       Vivado xsim VHDL top simulation (full + lite)
     demo-shell-sim     Vivado xsim board shell simulation with AXI JPEG readback
     core-resource-equiv Vivado core Verilog/VHDL resource comparison
@@ -286,6 +287,22 @@ def job_rtl_coverage():
     )
 
 
+def job_cocotb_dual():
+    return run_job(
+        'cocotb-dual',
+        prereqs_tools=['iverilog', 'ghdl'],
+        prereqs_modules=['cocotb', 'cocotb_tools'],
+        steps=[
+            ('cocotb Verilog full Q95', py('sim/cocotb/test_runner.py', 'verilog', 'full', '95', '1')),
+            ('cocotb Verilog lite Q75', py('sim/cocotb/test_runner.py', 'verilog', 'lite', '75', '1')),
+            ('cocotb Verilog full Q95 x2', py('sim/cocotb/test_runner.py', 'verilog', 'full', '95', '2')),
+            ('cocotb VHDL full Q95', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '1')),
+            ('cocotb VHDL lite Q75', py('sim/cocotb/test_runner.py', 'vhdl', 'lite', '75', '1')),
+            ('cocotb VHDL full Q95 x2', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '2')),
+        ],
+    )
+
+
 def job_vhdl_top_sim():
     return run_job(
         'vhdl-top-sim',
@@ -349,6 +366,7 @@ JOBS = {
     'rtl-sim':           job_rtl_sim,
     'rtl-verilator-sim': job_rtl_verilator_sim,
     'rtl-coverage':      job_rtl_coverage,
+    'cocotb-dual':       job_cocotb_dual,
     'vhdl-top-sim':      job_vhdl_top_sim,
     'demo-shell-sim':    job_demo_shell_sim,
     'core-resource-equiv': job_core_resource_equiv,
@@ -357,7 +375,7 @@ JOBS = {
 
 ALL_JOBS_ORDER = [
     'verify', 'rtl-lint', 'rtl-sim',
-    'rtl-verilator-sim', 'rtl-coverage', 'fusesoc',
+    'rtl-verilator-sim', 'rtl-coverage', 'cocotb-dual', 'fusesoc',
 ]
 
 
