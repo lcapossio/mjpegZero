@@ -7,7 +7,7 @@ use ieee.numeric_std.all;
 
 entity huffman_encoder is
     generic (
-        LITE_MODE : natural := 0
+        HUFF_BANKS : natural := 4
     );
     port (
         clk       : in  std_logic;
@@ -27,6 +27,17 @@ entity huffman_encoder is
 end entity;
 
 architecture rtl of huffman_encoder is
+    function bank_width(n : natural) return natural is
+    begin
+        if n <= 2 then
+            return 1;
+        elsif n <= 4 then
+            return 2;
+        else
+            return 3;
+        end if;
+    end function;
+
     function dc_luma_lookup(sym : natural) return std_logic_vector is
     begin
         case sym is
@@ -447,18 +458,23 @@ architecture rtl of huffman_encoder is
         return std_logic_vector(base or val);
     end function;
 
-    type coeff_array_t is array (0 to 127) of signed(15 downto 0);
+    constant NB : natural := HUFF_BANKS;
+    constant BW : natural := bank_width(NB);
+
+    type coeff_array_t is array (0 to NB * 64 - 1) of signed(15 downto 0);
     signal coeff_buf : coeff_array_t := (others => (others => '0'));
 
     signal coeff_wr_idx : unsigned(5 downto 0) := (others => '0');
-    signal coeff_block_ready : std_logic := '0';
     signal coeff_comp_id : std_logic_vector(1 downto 0) := (others => '0');
     signal last_nonzero_idx : unsigned(5 downto 0) := (others => '0');
-    signal ready_comp_id : std_logic_vector(1 downto 0) := (others => '0');
-    signal ready_last_nonzero : unsigned(5 downto 0) := (others => '0');
-    signal coeff_wr_bank : std_logic := '0';
-    signal ready_rd_bank : std_logic := '0';
-    signal fsm_ack : std_logic := '0';
+    signal wr_count : unsigned(BW downto 0) := (others => '0');
+    signal rd_count : unsigned(BW downto 0) := (others => '0');
+    signal occ : unsigned(BW downto 0);
+
+    type bank_comp_t is array (0 to NB - 1) of std_logic_vector(1 downto 0);
+    type bank_lnz_t is array (0 to NB - 1) of unsigned(5 downto 0);
+    signal bank_comp : bank_comp_t := (others => (others => '0'));
+    signal bank_lnz : bank_lnz_t := (others => (others => '0'));
 
     type state_t is (S_IDLE, S_DC_FETCH, S_DC_ENCODE, S_DC_CALC, S_DC_EMIT,
                      S_AC_FETCH, S_AC_SCAN, S_AC_ENCODE, S_AC_EMIT,
@@ -467,7 +483,7 @@ architecture rtl of huffman_encoder is
     signal ac_idx : unsigned(5 downto 0) := to_unsigned(1, 6);
     signal zero_run : unsigned(3 downto 0) := (others => '0');
     signal blk_comp_id : std_logic_vector(1 downto 0) := (others => '0');
-    signal coeff_rd_bank : std_logic := '0';
+    signal coeff_rd_bank : unsigned(BW - 1 downto 0) := (others => '0');
     signal blk_last_nonzero : unsigned(5 downto 0) := (others => '0');
     signal prev_dc_y : signed(15 downto 0) := (others => '0');
     signal prev_dc_cb : signed(15 downto 0) := (others => '0');
@@ -483,59 +499,44 @@ architecture rtl of huffman_encoder is
     signal out_valid_i : std_logic := '0';
 begin
     out_valid <= out_valid_i;
+    occ <= wr_count - rd_count;
+
+    assert NB = 2 or NB = 4 or NB = 8
+        report "HUFF_BANKS must be 2, 4, or 8" severity failure;
 
     process (clk)
         variable wr_addr : natural;
+        variable wr_bank : natural;
     begin
         if rising_edge(clk) then
             if rst_n = '0' then
                 coeff_wr_idx <= (others => '0');
-                coeff_wr_bank <= '0';
-                coeff_block_ready <= '0';
                 last_nonzero_idx <= (others => '0');
+                wr_count <= (others => '0');
             else
-                if fsm_ack = '1' then
-                    coeff_block_ready <= '0';
-                end if;
-
                 if in_valid = '1' then
+                    wr_bank := to_integer(wr_count(BW - 1 downto 0));
                     if in_sob = '1' then
-                        if LITE_MODE /= 0 then
-                            wr_addr := 0;
-                        elsif coeff_wr_bank = '1' then
-                            wr_addr := 64;
-                        else
-                            wr_addr := 0;
-                        end if;
+                        wr_addr := wr_bank * 64;
                         coeff_buf(wr_addr) <= signed(in_data);
                         coeff_wr_idx <= to_unsigned(1, 6);
                         coeff_comp_id <= comp_id;
                         last_nonzero_idx <= (others => '0');
                     else
-                        if LITE_MODE /= 0 then
-                            wr_addr := to_integer(coeff_wr_idx);
-                        elsif coeff_wr_bank = '1' then
-                            wr_addr := 64 + to_integer(coeff_wr_idx);
-                        else
-                            wr_addr := to_integer(coeff_wr_idx);
-                        end if;
+                        wr_addr := wr_bank * 64 + to_integer(coeff_wr_idx);
                         coeff_buf(wr_addr) <= signed(in_data);
                         if signed(in_data) /= 0 then
                             last_nonzero_idx <= coeff_wr_idx;
                         end if;
                         if coeff_wr_idx = 63 then
-                            coeff_block_ready <= '1';
-                            ready_comp_id <= coeff_comp_id;
+                            bank_comp(wr_bank) <= coeff_comp_id;
                             if signed(in_data) /= 0 then
-                                ready_last_nonzero <= to_unsigned(63, 6);
+                                bank_lnz(wr_bank) <= to_unsigned(63, 6);
                             else
-                                ready_last_nonzero <= last_nonzero_idx;
+                                bank_lnz(wr_bank) <= last_nonzero_idx;
                             end if;
                             coeff_wr_idx <= (others => '0');
-                            if LITE_MODE = 0 then
-                                ready_rd_bank <= coeff_wr_bank;
-                                coeff_wr_bank <= not coeff_wr_bank;
-                            end if;
+                            wr_count <= wr_count + 1;
                         else
                             coeff_wr_idx <= coeff_wr_idx + 1;
                         end if;
@@ -552,6 +553,7 @@ begin
         variable dc_lookup : std_logic_vector(19 downto 0);
         variable ac_lookup : std_logic_vector(20 downto 0);
         variable ac_sym : natural;
+        variable rd_bank : natural;
     begin
         if rising_edge(clk) then
             if rst_n = '0' then
@@ -567,10 +569,9 @@ begin
                 ac_idx <= to_unsigned(1, 6);
                 zero_run <= (others => '0');
                 restart_pending <= '0';
-                coeff_rd_bank <= '0';
-                fsm_ack <= '0';
+                coeff_rd_bank <= (others => '0');
+                rd_count <= (others => '0');
             else
-                fsm_ack <= '0';
                 if restart = '1' then
                     restart_pending <= '1';
                 end if;
@@ -588,19 +589,17 @@ begin
                             prev_dc_cr <= (others => '0');
                             restart_pending <= '0';
                         end if;
-                        if coeff_block_ready = '1' then
-                            fsm_ack <= '1';
-                            blk_comp_id <= ready_comp_id;
-                            blk_last_nonzero <= ready_last_nonzero;
-                            if LITE_MODE = 0 then
-                                coeff_rd_bank <= ready_rd_bank;
-                            end if;
+                        if occ /= 0 then
+                            rd_bank := to_integer(rd_count(BW - 1 downto 0));
+                            blk_comp_id <= bank_comp(rd_bank);
+                            blk_last_nonzero <= bank_lnz(rd_bank);
+                            coeff_rd_bank <= rd_count(BW - 1 downto 0);
                             state <= S_DC_FETCH;
                         end if;
 
                     when S_DC_FETCH =>
                         out_valid_i <= '0';
-                        if LITE_MODE /= 0 then rd_addr := 0; elsif coeff_rd_bank = '1' then rd_addr := 64; else rd_addr := 0; end if;
+                        rd_addr := to_integer(coeff_rd_bank) * 64;
                         if unsigned(blk_comp_id) <= 1 then
                             cur_coeff <= coeff_buf(rd_addr) - prev_dc_y;
                             prev_dc_y <= coeff_buf(rd_addr);
@@ -651,7 +650,7 @@ begin
                         out_valid_i <= '0';
                         out_sob <= '0';
                         out_eob <= '0';
-                        if LITE_MODE /= 0 then rd_addr := to_integer(ac_idx); elsif coeff_rd_bank = '1' then rd_addr := 64 + to_integer(ac_idx); else rd_addr := to_integer(ac_idx); end if;
+                        rd_addr := to_integer(coeff_rd_bank) * 64 + to_integer(ac_idx);
                         cur_coeff <= coeff_buf(rd_addr);
                         state <= S_AC_SCAN;
 
@@ -694,6 +693,7 @@ begin
                             out_valid_i <= '0';
                             zero_run <= (others => '0');
                             if ac_idx = 63 then
+                                rd_count <= rd_count + 1;
                                 state <= S_IDLE;
                             else
                                 ac_idx <= ac_idx + 1;
@@ -725,6 +725,7 @@ begin
                         if out_ready = '1' and out_valid_i = '1' then
                             out_valid_i <= '0';
                             out_eob <= '0';
+                            rd_count <= rd_count + 1;
                             state <= S_IDLE;
                         end if;
                 end case;

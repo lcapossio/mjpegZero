@@ -74,14 +74,28 @@ def run_checked_sim(cmd, cwd=None):
 
 def main():
     parser = argparse.ArgumentParser(description='Vivado xsim VHDL top simulation')
-    parser.add_argument('flags', nargs='*', help='Options: lite, 720p, vcd, quality=N')
+    parser.add_argument('flags', nargs='*', help='Options: lite, full, 720p, 1080p, WIDTHxHEIGHT, vcd, quality=N')
     args = parser.parse_args()
 
     lite_mode = 'lite' in args.flags
-    mode_720p = '720p' in args.flags
     dump_vcd = 'vcd' in args.flags
     lite_quality = next((f.split('=', 1)[1] for f in args.flags if f.startswith('quality=')), None)
-    tag_parts = ['lite' if lite_mode else 'full', '720p' if mode_720p else 'small']
+    img_width = 64
+    img_height = 8
+    res_tag = 'small'
+    for flag in args.flags:
+        f = flag.lower()
+        if f == '720p':
+            img_width, img_height = 1280, 720
+            res_tag = '720p'
+        elif f == '1080p':
+            img_width, img_height = 1920, 1080
+            res_tag = '1080p'
+        elif 'x' in f and f.replace('x', '').isdigit():
+            w, h = f.split('x', 1)
+            img_width, img_height = int(w), int(h)
+            res_tag = f'{img_width}x{img_height}'
+    tag_parts = ['lite' if lite_mode else 'full', res_tag]
     if lite_quality:
         tag_parts.append(f'q{lite_quality}')
     build_dir = os.path.join(BUILD_ROOT, '_'.join(tag_parts))
@@ -103,22 +117,21 @@ def main():
     defines = ['-d', 'VHDL_DUT']
     if lite_mode:
         defines += ['-d', 'LITE_MODE']
-    if mode_720p:
-        defines += ['-d', 'TB_720P']
+    with open(os.path.join(build_dir, 'sim_defines.vh'), 'w') as f:
+        f.write(f'`define TB_IMG_WIDTH {img_width}\n')
+        f.write(f'`define TB_IMG_HEIGHT {img_height}\n')
+        if lite_quality:
+            f.write(f'`define LITE_QUALITY {lite_quality}\n')
+    defines += ['-d', 'HAVE_DEFINES']
     if dump_vcd:
         defines += ['-d', 'DUMP_VCD']
-    if lite_quality:
-        with open(os.path.join(build_dir, 'sim_defines.vh'), 'w') as f:
-            f.write(f'`define LITE_QUALITY {lite_quality}\n')
-        defines += ['-d', 'HAVE_DEFINES']
-
     xvlog = vivado_tool(viv, 'xvlog')
     xvhdl = vivado_tool(viv, 'xvhdl')
     xelab = vivado_tool(viv, 'xelab')
     xsim = vivado_tool(viv, 'xsim')
 
     print('=' * 70)
-    print(f'VHDL top  LITE_MODE={int(lite_mode)}  720P={int(mode_720p)}  Q={lite_quality or "default"}')
+    print(f'VHDL top  LITE_MODE={int(lite_mode)}  {img_width}x{img_height}  Q={lite_quality or "default"}')
     print('Step 1: Compiling VHDL sources...')
     print('=' * 70)
     run([xvhdl,

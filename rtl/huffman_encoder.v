@@ -20,7 +20,9 @@
 
 /* verilator lint_off WIDTHTRUNC */
 module huffman_encoder #(
-    parameter LITE_MODE = 0     // 1 = single-buffered input (reduced LUTs)
+    parameter HUFF_BANKS = 4     // coefficient input-ring depth; MUST equal the top
+                                 // in-flight cap (pipeline_depth < HUFF_BANKS) so the
+                                 // ring can never overflow (no backpressure into zigzag)
 ) (
     /* verilator coverage_off */
     input  wire        clk,
@@ -451,76 +453,66 @@ module huffman_encoder #(
 
     // ========================================================================
     // Input buffering with level-based ready signal
-    // LITE_MODE=0: Double-buffered (2x64), allows overlap of write and FSM read
-    // LITE_MODE=1: Single-buffered (1x64), saves ~64x16 = 1024 bits of registers
     // ========================================================================
-    (* ram_style = "distributed" *) reg signed [15:0] coeff_buf [0:127];
+    // ---- NB-deep ring of 64-coefficient blocks (a FIFO of whole blocks) ----
+    // Deeper buffering lets the streaming front end (DCT/zigzag, ~64 cyc/block)
+    // run ahead and keep this serial Huffman FSM fed, instead of the old 1-2
+    // block limit that forced the whole pipeline to process one block at a time
+    // (latency-bound, ~5x slower than the DCT can sustain). occ = wr_count -
+    // rd_count is a wire, so the FSM observes a pop the same cycle it issues it.
+    localparam [3:0] NB = HUFF_BANKS[3:0];
+    localparam BW = (NB <= 4'd2) ? 1 : (NB <= 4'd4) ? 2 : (NB <= 4'd8) ? 3 : 4;
+    // NB must be 2, 4 or 8: wr_bank = wr_count[BW-1:0] is a power-of-two mask and
+    // the per-bank arrays below are sized to NB, so a non-power-of-two or >8
+    // value would index nonexistent banks. Reject at elaboration (mirrored in
+    // mjpegzero_enc_top) rather than wrap into out-of-range banks.
+    generate if (HUFF_BANKS != 2 && HUFF_BANKS != 4 && HUFF_BANKS != 8)
+        begin : g_huff_banks_check
+            HUFF_BANKS_must_be_2_4_or_8 illegal_huff_banks_value();
+        end
+    endgenerate
+    (* ram_style = "distributed" *) reg signed [15:0] coeff_buf [0:NB*64-1];
     /* verilator coverage_off */
-    reg [5:0]  coeff_wr_idx;
-    reg        coeff_block_ready;
-    reg [1:0]  coeff_comp_id;
-    reg [5:0]  last_nonzero_idx;
-    reg [1:0]  ready_comp_id;
-    reg [5:0]  ready_last_nonzero;
-    reg        coeff_wr_bank;
-    reg        ready_rd_bank;
+    reg [5:0]    coeff_wr_idx;
+    reg [1:0]    coeff_comp_id;
+    reg [5:0]    last_nonzero_idx;
+    reg [BW:0]   wr_count;            // block write pointer (BW+1 bits)
+    reg [BW:0]   rd_count;            // block read  pointer (BW+1 bits)
+    reg [1:0]    bank_comp [0:NB-1];  // per-bank comp_id
+    reg [5:0]    bank_lnz  [0:NB-1];  // per-bank last-nonzero index
     /* verilator coverage_on */
 
-    // Acknowledgment from FSM (driven in FSM always block)
-    reg        fsm_ack;
+    wire [BW-1:0] wr_bank = wr_count[BW-1:0];
+    wire [BW-1:0] rd_bank = rd_count[BW-1:0];
+    wire [BW:0]   occ      = wr_count - rd_count;   // 0..NB blocks queued
 
-    wire [6:0] coeff_wr_addr =
-        LITE_MODE ? (in_sob ? 7'd0 : {1'b0, coeff_wr_idx}) :
-                    {coeff_wr_bank, (in_sob ? 6'd0 : coeff_wr_idx)};
+    wire [BW+5:0] coeff_wr_addr = {wr_bank, (in_sob ? 6'd0 : coeff_wr_idx)};
 
+    // Write side: fill the current bank with 64 coefficients, then advance the
+    // write pointer (push). The top-level cap keeps occ < NB whenever a new
+    // block's first coefficient arrives, so a write never clobbers a queued bank.
     always @(posedge clk) begin
         if (!rst_n) begin
-            coeff_wr_idx <= 6'd0;
-            coeff_wr_bank <= 1'b0;
-            coeff_block_ready <= 1'b0;
+            coeff_wr_idx     <= 6'd0;
+            wr_count         <= {(BW+1){1'b0}};
             last_nonzero_idx <= 6'd0;
         end else begin
-            // Clear ready when FSM acknowledges (BEFORE set, so set wins on collision)
-            if (fsm_ack)
-                coeff_block_ready <= 1'b0;
-
             if (in_valid) begin
                 coeff_buf[coeff_wr_addr] <= in_data;
-                if (LITE_MODE) begin
-                    if (in_sob) begin
-                        coeff_wr_idx <= 6'd1;
-                        coeff_comp_id <= comp_id;
-                        last_nonzero_idx <= 6'd0;
-                    end else begin
-                        if (in_data != 16'd0)
-                            last_nonzero_idx <= coeff_wr_idx;
-                        if (coeff_wr_idx == 6'd63) begin
-                            coeff_block_ready <= 1'b1;
-                            ready_comp_id <= coeff_comp_id;
-                            ready_last_nonzero <= (in_data != 16'd0) ? 6'd63 : last_nonzero_idx;
-                            coeff_wr_idx <= 6'd0;
-                        end else begin
-                            coeff_wr_idx <= coeff_wr_idx + 6'd1;
-                        end
-                    end
+                if (in_sob) begin
+                    coeff_wr_idx     <= 6'd1;
+                    coeff_comp_id    <= comp_id;
+                    last_nonzero_idx <= 6'd0;
                 end else begin
-                    if (in_sob) begin
-                        coeff_wr_idx <= 6'd1;
-                        coeff_comp_id <= comp_id;
-                        last_nonzero_idx <= 6'd0;
+                    if (in_data != 16'd0)
+                        last_nonzero_idx <= coeff_wr_idx;
+                    if (coeff_wr_idx == 6'd63) begin
+                        bank_comp[wr_bank] <= coeff_comp_id;
+                        bank_lnz[wr_bank]  <= (in_data != 16'd0) ? 6'd63 : last_nonzero_idx;
+                        wr_count           <= wr_count + 1'b1;   // push (advances wr_bank)
+                        coeff_wr_idx       <= 6'd0;
                     end else begin
-                        if (in_data != 16'd0)
-                            last_nonzero_idx <= coeff_wr_idx;
-                        if (coeff_wr_idx == 6'd63) begin
-                            coeff_block_ready <= 1'b1;
-                            ready_comp_id <= coeff_comp_id;
-                            ready_last_nonzero <= (in_data != 16'd0) ? 6'd63 : last_nonzero_idx;
-                            ready_rd_bank <= coeff_wr_bank;
-                            coeff_wr_idx <= 6'd0;
-                            coeff_wr_bank <= ~coeff_wr_bank;
-                        end else begin
-                            coeff_wr_idx <= coeff_wr_idx + 6'd1;
-                        end
+                        coeff_wr_idx <= coeff_wr_idx + 6'd1;
                     end
                 end
             end
@@ -547,7 +539,7 @@ module huffman_encoder #(
     reg [5:0]  ac_idx;
     reg [3:0]  zero_run;
     reg [1:0]  blk_comp_id;
-    reg        coeff_rd_bank;
+    reg [BW-1:0] coeff_rd_bank;
     reg [5:0]  blk_last_nonzero;
     reg signed [15:0] prev_dc_y;
     reg signed [15:0] prev_dc_cb;
@@ -567,8 +559,8 @@ module huffman_encoder #(
     reg [5:0]  vshift;
     /* verilator coverage_on */
     wire       blk_is_luma = (blk_comp_id <= 2'd1);
-    wire [6:0] coeff_dc_addr = LITE_MODE ? 7'd0 : {coeff_rd_bank, 6'd0};
-    wire [6:0] coeff_ac_addr = LITE_MODE ? {1'b0, ac_idx} : {coeff_rd_bank, ac_idx};
+    wire [BW+5:0] coeff_dc_addr = {coeff_rd_bank, 6'd0};
+    wire [BW+5:0] coeff_ac_addr = {coeff_rd_bank, ac_idx};
     wire signed [15:0] coeff_dc = coeff_buf[coeff_dc_addr];
     wire signed [15:0] coeff_ac = coeff_buf[coeff_ac_addr];
 
@@ -584,11 +576,9 @@ module huffman_encoder #(
             ac_idx <= 6'd1;
             zero_run <= 4'd0;
             restart_pending <= 1'b0;
-            coeff_rd_bank <= 1'b0;
-            fsm_ack <= 1'b0;
+            coeff_rd_bank <= {BW{1'b0}};
+            rd_count <= {(BW+1){1'b0}};
         end else begin
-            fsm_ack <= 1'b0;  // Default: 1-cycle pulse
-
             // Latch restart request
             if (restart)
                 restart_pending <= 1'b1;
@@ -608,12 +598,11 @@ module huffman_encoder #(
                         restart_pending <= 1'b0;
                     end
 
-                    if (coeff_block_ready) begin
-                        fsm_ack <= 1'b1;  // Acknowledge: clear coeff_block_ready
-                        blk_comp_id <= ready_comp_id;
-                        blk_last_nonzero <= ready_last_nonzero;
-                        if (!LITE_MODE) coeff_rd_bank <= ready_rd_bank;
-                        state <= S_DC_FETCH;
+                    if (occ != {(BW+1){1'b0}}) begin
+                        blk_comp_id      <= bank_comp[rd_bank];
+                        blk_last_nonzero <= bank_lnz[rd_bank];
+                        coeff_rd_bank    <= rd_bank;
+                        state            <= S_DC_FETCH;
                     end
                 end
 
@@ -623,8 +612,6 @@ module huffman_encoder #(
                 S_DC_FETCH: begin
                     out_valid <= 1'b0;
                     // Compute DC differential based on component
-                    // LITE_MODE: single buffer, direct 6-bit index
-                    // Full mode: double buffer, {bank, index} 7-bit address
                     if (blk_comp_id <= 2'd1) begin
                         cur_coeff <= coeff_dc - prev_dc_y;
                         prev_dc_y <= coeff_dc;
@@ -768,6 +755,7 @@ module huffman_encoder #(
                         out_valid <= 1'b0;
                         zero_run <= 4'd0;
                         if (ac_idx == 6'd63) begin
+                            rd_count <= rd_count + 1'b1;   // pop completed block
                             state <= S_IDLE;
                         end else begin
                             ac_idx <= ac_idx + 6'd1;
@@ -807,6 +795,7 @@ module huffman_encoder #(
                     if (out_valid && out_ready) begin
                         out_valid <= 1'b0;
                         out_eob <= 1'b0;
+                        rd_count <= rd_count + 1'b1;   // pop completed block
                         state <= S_IDLE;
                     end
                 end

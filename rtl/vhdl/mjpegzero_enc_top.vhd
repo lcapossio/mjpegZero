@@ -22,6 +22,7 @@ entity mjpegzero_enc_top is
         EXIF_Y_RES    : natural := 72;
         EXIF_RES_UNIT : natural := 2;
         RGB_INPUT     : natural := 0;
+        HUFF_BANKS    : natural := 8;
         VID_DATA_W    : natural := 16
     );
     port (
@@ -135,7 +136,7 @@ architecture rtl of mjpegzero_enc_top is
     end component;
 
     component huffman_encoder is
-        generic (LITE_MODE : natural);
+        generic (HUFF_BANKS : natural);
         port (
             clk : in std_logic; rst_n : in std_logic;
             comp_id : in std_logic_vector(1 downto 0); restart : in std_logic;
@@ -263,7 +264,7 @@ architecture rtl of mjpegzero_enc_top is
     signal restart_trigger : std_logic := '0';
     signal huff_restart    : std_logic := '0';
     signal frame_hdr_started : std_logic := '0';
-    signal pipeline_depth : unsigned(2 downto 0) := (others => '0');
+    signal pipeline_depth : unsigned(3 downto 0) := (others => '0');
 
     signal vid_yuyv_tdata : std_logic_vector(15 downto 0);
     signal vid_yuyv_tvalid : std_logic;
@@ -287,6 +288,8 @@ begin
         report "LITE_QUALITY must be in the range 1..100" severity failure;
     assert EXIF_RES_UNIT >= 1 and EXIF_RES_UNIT <= 3
         report "EXIF_RES_UNIT must be 1, 2, or 3" severity failure;
+    assert HUFF_BANKS = 2 or HUFF_BANKS = 4 or HUFF_BANKS = 8
+        report "HUFF_BANKS must be 2, 4, or 8" severity failure;
 
     rst_int_n <= rst_n and not ctrl_soft_reset;
     dct_in_data <= std_logic_vector(signed(std_logic_vector(resize(unsigned(ibuf_blk_data), 12))) - to_signed(128, 12));
@@ -296,7 +299,8 @@ begin
     huff_comp_id <= comp_fifo_h(to_integer(comp_fifo_h_rd(2 downto 0)));
     sts_busy <= frame_active;
     sts_frame_done_pulse <= frame_done_pulse;
-    ibuf_blk_ready <= ctrl_enable and jfif_headers_done when pipeline_depth < 2 else '0';
+    ibuf_blk_ready <= ctrl_enable and jfif_headers_done
+        when pipeline_depth < to_unsigned(HUFF_BANKS, pipeline_depth'length) else '0';
     s_axis_vid_tvalid_gated <= s_axis_vid_tvalid and ctrl_enable;
     frame_cnt_slv <= std_logic_vector(frame_cnt);
 
@@ -509,7 +513,7 @@ begin
     huff_restart <= restart_trigger or frame_done_pulse;
 
     u_huffman : huffman_encoder
-        generic map (LITE_MODE => LITE_MODE)
+        generic map (HUFF_BANKS => HUFF_BANKS)
         port map (
             clk => clk, rst_n => rst_int_n, comp_id => huff_comp_id,
             restart => huff_restart, in_valid => zz_out_valid,

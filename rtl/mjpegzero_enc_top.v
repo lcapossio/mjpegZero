@@ -25,15 +25,16 @@
 // ============================================================================
 
 module mjpegzero_enc_top #(
-    parameter LITE_MODE     = 1,                           // 0 = full (1080p30, 150 MHz), 1 = lite (720p60)
+    parameter LITE_MODE     = 1,                           // 0 = runtime AXI quality, 1 = fixed synthesis-time quality
     parameter LITE_QUALITY  = 95,                          // Quality 1-100, used when LITE_MODE=1
-    parameter IMG_WIDTH     = LITE_MODE ? 1280 : 1920,     // 720p lite, 1080p full
-    parameter IMG_HEIGHT    = LITE_MODE ? 720  : 1080,
+    parameter IMG_WIDTH     = 1280,                        // image width in pixels, independent of LITE_MODE
+    parameter IMG_HEIGHT    = 720,                         // image height in pixels, independent of LITE_MODE
     parameter EXIF_ENABLE   = 0,                           // 1 = embed APP1/EXIF segment after APP0
     parameter EXIF_X_RES    = 72,                          // X resolution numerator (DPI if EXIF_RES_UNIT=2)
     parameter EXIF_Y_RES    = 72,                          // Y resolution numerator
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
+    parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth (blocks in flight): 2, 4, or 8 only; higher = more throughput, more LUTRAM
     parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
@@ -314,27 +315,43 @@ module mjpegzero_enc_top #(
     // Gate block output: only allow blocks to flow when:
     //   1. Encoder is enabled
     //   2. JFIF headers have been written
-    //   3. Pipeline is not full (at most 2 blocks in flight)
-    // The Huffman encoder has a double-buffer (2 banks). We limit blocks
-    // in flight to prevent buffer overflow when the Huffman takes many
-    // cycles to process complex blocks.
+    //   3. Pipeline is not full (at most HUFF_BANKS blocks in flight)
+    // The Huffman encoder has an NB=HUFF_BANKS-deep input ring. We cap blocks
+    // in flight at HUFF_BANKS to prevent ring overflow when the Huffman takes
+    // many cycles to process complex blocks.
     // ========================================================================
-    reg [2:0] pipeline_depth;
+
+    // HUFF_BANKS must be 2, 4 or 8: pipeline_depth below is 4 bits (so the cap
+    // 0..8 cannot wrap) and the Huffman bank ring assumes a power-of-two <= 8.
+    // Reject any other value at elaboration (mirrored in huffman_encoder)
+    // instead of silently wrapping the counter / indexing nonexistent banks.
+    generate if (HUFF_BANKS != 2 && HUFF_BANKS != 4 && HUFF_BANKS != 8)
+        begin : g_huff_banks_check
+            HUFF_BANKS_must_be_2_4_or_8 illegal_huff_banks_value();
+        end
+    endgenerate
+
+    localparam [3:0] HUFF_BANKS_CAP = HUFF_BANKS[3:0];
+    reg [3:0] pipeline_depth;
 
     always @(posedge clk) begin
         if (!rst_int_n) begin
-            pipeline_depth <= 3'd0;
+            pipeline_depth <= 4'd0;
         end else begin
             case ({ibuf_blk_valid && ibuf_blk_sob && ibuf_blk_ready,
                    huff_out_eob && huff_out_valid && huff_bp_ready})
-                2'b10: pipeline_depth <= pipeline_depth + 3'd1;
-                2'b01: pipeline_depth <= pipeline_depth - 3'd1;
+                2'b10: pipeline_depth <= pipeline_depth + 4'd1;
+                2'b01: pipeline_depth <= pipeline_depth - 4'd1;
                 default: ; // no change or balanced
             endcase
         end
     end
 
-    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < 3'd2);
+    // Admit blocks until HUFF_BANKS are in flight. This MUST match the Huffman's
+    // input-ring depth so the ring (which zigzag cannot backpressure) never
+    // overflows. Deeper = the DCT/zigzag run ahead and keep the serial Huffman
+    // FSM fed, instead of the pipeline running one block at a time.
+    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < HUFF_BANKS_CAP);
 
     // ========================================================================
     // Video input path (YUYV pass-through or RGB→YUYV via rgb_to_ycbcr)
@@ -479,7 +496,7 @@ module mjpegzero_enc_top #(
 
     // --- Huffman Encoder ---
     huffman_encoder #(
-        .LITE_MODE  (LITE_MODE)
+        .HUFF_BANKS (HUFF_BANKS)
     ) u_huffman (
         .clk       (clk),
         .rst_n     (rst_int_n),

@@ -96,6 +96,7 @@ def main():
     os.environ["ENC_REF"] = str(ref)
     os.environ["ENC_QUALITY"] = str(quality)
     os.environ["ENC_FRAMES"] = str(frames)
+    os.environ.setdefault("ENC_EXPECT_MIN_PIPE_DEPTH", "3")
 
     parameters = {
         "IMG_WIDTH": 64, "IMG_HEIGHT": 8,

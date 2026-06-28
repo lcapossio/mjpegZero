@@ -45,6 +45,7 @@ set rtl_files [list \
     $repo_root/rtl/mjpegzero_enc_top.v \
     $common_dir/rtl/axi_init.v \
     $common_dir/rtl/demo_jpeg_buffer.v \
+    $common_dir/rtl/jpeg_capture.v \
     $ex_dir/rtl/clk_gen_eth.v \
     $ex_dir/rtl/demo_top_vtpg_eth.v \
     $vtpg_rtl/vtpgz_core.v \
@@ -91,13 +92,18 @@ set xdc_file [file normalize $ex_dir/constraints/arty_a7_100t_eth.xdc]
 
 create_project -force arty_a7_vtpg $proj_dir -part $part
 add_files -norecurse $rtl_files
+# vtpg image memories: YCbCr-converted from the vtpgZero RGB .mem (OUTPUT_MODE=2
+# reads the image triple as {Y,Cb,Cr}). $readmemh resolves them by basename.
+add_files -norecurse [list \
+    $ex_dir/data/mandrill_128x128_ycbcr.mem \
+    $ex_dir/data/mandrill_32x32_ycbcr.mem]
 add_files -fileset constrs_1 -norecurse $xdc_file
 set_property include_dirs [list $vtpg_rtl] [current_fileset]
 set_property top $top [current_fileset]
 
 puts "=== Synthesis (top=$top) ==="
 synth_design -top $top -part $part -flatten_hierarchy rebuilt \
-    -directive PerformanceOptimized -verilog_define XILINX_7SERIES
+    -retiming -verilog_define XILINX_7SERIES
 report_utilization    -file $rpt_dir/synth_utilization.rpt
 report_timing_summary -file $rpt_dir/synth_timing.rpt
 write_checkpoint -force $build_dir/post_synth_vtpg.dcp

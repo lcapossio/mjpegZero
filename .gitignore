@@ -47,6 +47,7 @@ sim/rtp_test/
 # Board example build artifacts (source is tracked; build output is not)
 example_proj/*/build/
 example_proj/*/build_vhdl/
+example_proj/*/sim/cocotb/build_*/
 
 # FuseSoC local config (machine-specific paths)
 fusesoc.conf

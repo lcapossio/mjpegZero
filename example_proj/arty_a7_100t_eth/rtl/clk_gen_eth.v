@@ -10,10 +10,12 @@
 
 `timescale 1ns / 1ps
 
-module clk_gen_eth (
+module clk_gen_eth #(
+    parameter real CLKOUT0_DIV = 6.000   // CLKOUT0 = 900/CLKOUT0_DIV MHz (6.0=150, 6.5=138)
+) (
     input  wire clk_in,     // 100 MHz board oscillator
     input  wire reset,      // active-high async reset
-    output wire clk_150,
+    output wire clk_150,    // = 900/CLKOUT0_DIV MHz (port name kept for compatibility)
     output wire clk_100,
     output wire clk_25,
     output wire locked
@@ -29,7 +31,7 @@ module clk_gen_eth (
         .DIVCLK_DIVIDE      (1),
         .CLKFBOUT_MULT_F    (9.000),    // VCO = 900 MHz
         .CLKFBOUT_PHASE     (0.000),
-        .CLKOUT0_DIVIDE_F   (6.000),    // 150 MHz
+        .CLKOUT0_DIVIDE_F   (CLKOUT0_DIV), // 900/CLKOUT0_DIV MHz (default 150)
         .CLKOUT0_PHASE      (0.000),
         .CLKOUT0_DUTY_CYCLE (0.500),
         .CLKOUT1_DIVIDE     (9),        // 100 MHz
