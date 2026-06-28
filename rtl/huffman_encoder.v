@@ -460,13 +460,13 @@ module huffman_encoder #(
     // block limit that forced the whole pipeline to process one block at a time
     // (latency-bound, ~5x slower than the DCT can sustain). occ = wr_count -
     // rd_count is a wire, so the FSM observes a pop the same cycle it issues it.
-    localparam NB = HUFF_BANKS;
-    localparam BW = (NB <= 2) ? 1 : (NB <= 4) ? 2 : (NB <= 8) ? 3 : 4;
+    localparam [3:0] NB = HUFF_BANKS[3:0];
+    localparam BW = (NB <= 4'd2) ? 1 : (NB <= 4'd4) ? 2 : (NB <= 4'd8) ? 3 : 4;
     // NB must be 2, 4 or 8: wr_bank = wr_count[BW-1:0] is a power-of-two mask and
     // the per-bank arrays below are sized to NB, so a non-power-of-two or >8
     // value would index nonexistent banks. Reject at elaboration (mirrored in
     // mjpegzero_enc_top) rather than wrap into out-of-range banks.
-    generate if (NB != 2 && NB != 4 && NB != 8)
+    generate if (HUFF_BANKS != 2 && HUFF_BANKS != 4 && HUFF_BANKS != 8)
         begin : g_huff_banks_check
             HUFF_BANKS_must_be_2_4_or_8 illegal_huff_banks_value();
         end
