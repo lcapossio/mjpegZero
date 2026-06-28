@@ -35,7 +35,7 @@ parameters:
   LITE_MODE:
     datatype: int
     default: 1
-    description: "0 = full mode (1080p30, runtime quality via AXI4-Lite), 1 = lite mode (720p60, synthesis-time quality)"
+    description: "0 = runtime quality via AXI4-Lite, 1 = fixed synthesis-time quality; resolution is set independently by IMG_WIDTH/IMG_HEIGHT"
     paramtype: vlogparam
 
   LITE_QUALITY:
@@ -86,6 +86,12 @@ parameters:
     description: "1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV (default)"
     paramtype: vlogparam
 
+  HUFF_BANKS:
+    datatype: int
+    default: 8
+    description: "Huffman input-ring depth / max blocks in flight: 2, 4, or 8"
+    paramtype: vlogparam
+
 targets:
   default:
     filesets:
@@ -100,6 +106,7 @@ targets:
       - EXIF_Y_RES
       - EXIF_RES_UNIT
       - RGB_INPUT
+      - HUFF_BANKS
     toplevel: mjpegzero_enc_top
 
   # Note: simulation requires test vectors in sim/test_vectors/ relative to the
@@ -119,6 +126,7 @@ targets:
       - EXIF_Y_RES
       - EXIF_RES_UNIT
       - RGB_INPUT
+      - HUFF_BANKS
     default_tool: icarus
     tools:
       icarus:
@@ -138,6 +146,7 @@ targets:
       - EXIF_Y_RES
       - EXIF_RES_UNIT
       - RGB_INPUT
+      - HUFF_BANKS
     default_tool: icarus
     tools:
       icarus:
@@ -156,6 +165,7 @@ targets:
       - IMG_HEIGHT
       - EXIF_ENABLE
       - RGB_INPUT
+      - HUFF_BANKS
     default_tool: verilator
     tools:
       verilator:
@@ -179,6 +189,7 @@ targets:
       - EXIF_Y_RES
       - EXIF_RES_UNIT
       - RGB_INPUT
+      - HUFF_BANKS
     default_tool: vivado
     tools:
       vivado:
@@ -198,6 +209,7 @@ targets:
       - EXIF_Y_RES
       - EXIF_RES_UNIT
       - RGB_INPUT
+      - HUFF_BANKS
     default_tool: vivado
     tools:
       vivado:
