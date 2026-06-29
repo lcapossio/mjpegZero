@@ -45,7 +45,7 @@ module tb_vtpg_full;
     reg  [4:0]  awaddr; reg awvalid; wire awready;
     reg  [31:0] wdata; reg [3:0] wstrb; reg wvalid; wire wready;
     wire [1:0]  bresp; wire bvalid; reg bready;
-    mjpegzero_enc_top #(.IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H), .LITE_MODE(1), .LITE_QUALITY(75)) u_enc (
+    mjpegzero_enc_top #(.IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H), .LITE_MODE(0), .LITE_QUALITY(75)) u_enc (
         .clk(clk), .rst_n(rst_n),
         .s_axis_vid_tdata(vid_tdata), .s_axis_vid_tvalid(vid_tvalid), .s_axis_vid_tready(vid_tready),
         .s_axis_vid_tlast(vid_tlast), .s_axis_vid_tuser(vid_tuser),
@@ -221,6 +221,7 @@ module tb_vtpg_full;
         awaddr=0; awvalid=0; wdata=0; wstrb=0; wvalid=0; bready=0;
         repeat(10) @(posedge clk); rst_n=1; repeat(5) @(posedge clk);
         axi_write(5'h00, 32'h1);             // enable encoder
+        axi_write(5'h0C, 32'd75);            // runtime quality
         repeat(600) @(posedge clk);          // Q-table load
         init_done_r=1; loop_en=1;            // start the autonomous loop
         // run TWO full 720p frames to test frame-dependent drift (frame0 vs frame1)
