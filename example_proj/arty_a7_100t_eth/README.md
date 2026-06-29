@@ -20,7 +20,8 @@ new bit is the Ethernet egress through the [emacZero](../../emaczero) MAC.
           + arp_responder, mac_csr_init        enc_done/size cross 150→100
 ```
 
-- Encoder: `LITE_MODE=1`, `LITE_QUALITY=75`, 1280×720, YUV 4:2:2 → RFC 2435 type 0.
+- Still demo encoder: `LITE_MODE=1`, `LITE_QUALITY=75`, 1280×720, YUV 4:2:2 → RFC 2435 type 0.
+- Moving VTPG demo encoder: `LITE_MODE=0`, runtime quality starts at Q75 and adapts to keep the JPEG buffer from overflowing.
 - New RTL: [`rtl/eth/jpeg_rtp_tx.v`](../../rtl/eth/jpeg_rtp_tx.v),
   [`jpeg_rtp_trigger.v`](../../rtl/eth/jpeg_rtp_trigger.v),
   [`mac_csr_init.v`](../../rtl/eth/mac_csr_init.v), plus
@@ -86,7 +87,8 @@ real motion. No JTAG pixel upload needed.
    ```
    `start` runs the autonomous generate→encode→stream loop; the box advances one
    step per frame (real motion). `eth_trigger.py`'s "GO" still works (= start).
-   `python/hw_status_vtpg.py` reads the loop state over JTAG.
+   `python/hw_status_vtpg.py` reads the loop state, rate-control quality, and
+   dropped-overflow count over JTAG.
 
 ### vtpg keyboard control (KV260-style, UDP port 9998)
 
@@ -140,8 +142,8 @@ scaler is a ~74 MHz DisplayPort-rate core, so its read path is pipelined
 (synchronous BRAM read, +1 px latency) to close above the DP rate — which also
 moved the 128×128 image and 32×32 box image from LUTRAM into BRAM (≈7k fewer
 LUTs, +13 BRAM tiles vs the combinational read). WNS is thin and varies run to
-run with placement; it meets at 130.9 MHz. The encoder runs `HUFF_BANKS=8` for
-DCT-limited ~62 fps at 720p.
+run with placement; it meets at 130.9 MHz. The encoder runs full/runtime-quality
+mode with `HUFF_BANKS=8` for DCT-limited ~62 fps at 720p.
 
 ## Hardware test flow
 
@@ -185,5 +187,8 @@ tables + RTP/IP structure + pixel-identical decode (see
   DC predictors are reset at every start-of-scan (i.e. each frame), which is
   required for correct **multi-frame** streaming — without it every frame after
   the first decodes with washed-out luma contrast.
+- `demo_top_vtpg_eth` drops frames that overflow the JPEG buffer and writes a
+  lower runtime quality before the next capture; it raises quality slowly after
+  several comfortably small frames.
 - Host address is learned from the trigger/control packet (no static-IP mode yet).
 - 100 Mbps MII; the MAC pads short frames and adds preamble/FCS/IFG.
