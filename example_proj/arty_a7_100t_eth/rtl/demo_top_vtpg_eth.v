@@ -53,6 +53,39 @@ module demo_top_vtpg_eth #(
     localparam IMG_W      = 1280;
     localparam IMG_H      = 720;
     localparam JPEG_BYTES = JPEG_WORDS * 4;
+    localparam [18:0] JPEG_CAP_BYTES = JPEG_BYTES[18:0];
+    localparam [18:0] RC_HIGH_BYTES  = JPEG_CAP_BYTES - (JPEG_CAP_BYTES >> 3); // 87.5%
+    localparam [18:0] RC_LOW_BYTES   = JPEG_CAP_BYTES >> 1;                    // 50.0%
+    localparam [6:0]  RC_Q_INIT      = 7'd75;
+    localparam [6:0]  RC_Q_MIN       = 7'd5;
+    localparam [6:0]  RC_Q_MAX       = 7'd95;
+    localparam [6:0]  RC_Q_NEAR_STEP = 7'd5;
+    localparam [6:0]  RC_Q_OVF_STEP  = 7'd20;
+    localparam [2:0]  RC_GOOD_FRAMES = 3'd4;
+    localparam [9:0]  RC_Q_SETTLE_CYCLES = 10'd600;
+
+    function [6:0] rc_quality_sub;
+        input [6:0] q;
+        input [6:0] delta;
+        reg [7:0] min_plus_delta;
+        begin
+            min_plus_delta = {1'b0, RC_Q_MIN} + {1'b0, delta};
+            if ({1'b0, q} <= min_plus_delta)
+                rc_quality_sub = RC_Q_MIN;
+            else
+                rc_quality_sub = q - delta;
+        end
+    endfunction
+
+    function [6:0] rc_quality_inc;
+        input [6:0] q;
+        begin
+            if (q >= RC_Q_MAX)
+                rc_quality_inc = RC_Q_MAX;
+            else
+                rc_quality_inc = q + 7'd1;
+        end
+    endfunction
 
     // =======================================================================
     // Clocks & reset (single 138 MHz functional domain + 25 MHz PHY ref)
@@ -99,6 +132,10 @@ module demo_top_vtpg_eth #(
     wire [4:0]  ei_araddr;  wire ei_arvalid, ei_arready;
     wire [31:0] ei_rdata;   wire [1:0] ei_rresp; wire ei_rvalid, ei_rready;
     wire init_done;
+    reg         enc_quality_req;
+    reg  [6:0]  enc_quality_value;
+    wire        enc_quality_busy;
+    wire        enc_quality_done;
 
     axi_init u_init (
         .clk(clk), .rst_n(rst_n),
@@ -107,7 +144,10 @@ module demo_top_vtpg_eth #(
         .m_axi_wready(ei_wready), .m_axi_bresp(ei_bresp), .m_axi_bvalid(ei_bvalid),
         .m_axi_bready(ei_bready), .m_axi_araddr(ei_araddr), .m_axi_arvalid(ei_arvalid),
         .m_axi_arready(ei_arready), .m_axi_rdata(ei_rdata), .m_axi_rresp(ei_rresp),
-        .m_axi_rvalid(ei_rvalid), .m_axi_rready(ei_rready), .init_done(init_done)
+        .m_axi_rvalid(ei_rvalid), .m_axi_rready(ei_rready),
+        .quality_req(enc_quality_req), .quality_value(enc_quality_value),
+        .quality_busy(enc_quality_busy), .quality_done(enc_quality_done),
+        .init_done(init_done)
     );
 
     // =======================================================================
@@ -167,7 +207,7 @@ module demo_top_vtpg_eth #(
     wire       jpg_tvalid, jpg_tlast;
 
     mjpegzero_enc_top #(
-        .LITE_MODE(1), .LITE_QUALITY(75), .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H)
+        .LITE_MODE(0), .LITE_QUALITY(75), .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H)
     ) u_enc (
         .clk(clk), .rst_n(rst_n),
         .s_axis_vid_tdata(vid_tdata), .s_axis_vid_tvalid(vid_tvalid),
@@ -389,18 +429,27 @@ module demo_top_vtpg_eth #(
     // =======================================================================
     // Autonomous control FSM: kick a frame -> encode -> stream -> repeat
     // =======================================================================
-    localparam [2:0] V_IDLE=3'd0, V_KICK=3'd1, V_ENC=3'd2, V_STREAM=3'd3, V_WAIT=3'd4, V_KWAIT=3'd5;
+    localparam [3:0] V_IDLE=4'd0, V_QWRITE=4'd1, V_QWAIT=4'd2,
+                     V_KICK=4'd3, V_KWAIT=4'd4, V_ENC=4'd5,
+                     V_STREAM=4'd6, V_WAIT=4'd7;
     // Host control opcodes (first UDP payload byte of a TRIGGER_PORT packet):
     //   'G' (0x47) or anything else -> start continuous (back-compat: "GO" streams)
     //   'S'/'s'    or 0x00          -> stop after the current frame finishes
     //   '1'        or 0x02          -> stream exactly one frame
     localparam [7:0] OP_STOP_0=8'h00, OP_STOP_S=8'h53, OP_STOP_s=8'h73,
                      OP_ONE_0 =8'h02, OP_ONE_1 =8'h31;
-    reg [2:0]  vstate;
+    reg [3:0]  vstate;
     reg [31:0] frame_cnt;
+    reg [6:0]  rc_quality;
+    reg [2:0]  rc_good_frames;
+    reg [9:0]  rc_qwait_cnt;
+    reg [15:0] rc_dropped_frames;
     always @(posedge clk) begin
         if (!rst_n || sw_reset) begin
             vstate<=V_IDLE; frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
+            enc_quality_req<=1'b0; enc_quality_value<=RC_Q_INIT;
+            rc_quality<=RC_Q_INIT; rc_good_frames<=3'd0; rc_qwait_cnt<=10'd0;
+            rc_dropped_frames<=16'd0;
             frame_cnt<=32'd0; loop_en<=1'b0; single_pend<=1'b0;
             cfg_pattern_r<=4'd0; box_w_r<=16'd96; box_h_r<=16'd64;       // KV260 app inits
             box_dx_r<=16'd4; box_dy_r<=16'd3;
@@ -409,6 +458,7 @@ module demo_top_vtpg_eth #(
             box_img_x_step_r<=32'd21845; box_img_y_step_r<=32'd32768;    // (32<<16)/96, /64
         end else begin
             frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
+            enc_quality_req<=1'b0;
 
             // -- host control plane: opcode carried in the trigger packet --
             if (trg_op_valid) begin
@@ -438,8 +488,24 @@ module demo_top_vtpg_eth #(
             case (vstate)
                 V_IDLE:   if ((loop_en || single_pend) && init_done) begin
                               single_pend <= 1'b0;        // consume the one-shot arm
-                              vstate      <= V_KICK;
+                              vstate      <= V_QWRITE;
                           end
+                V_QWRITE: begin
+                    enc_quality_value <= rc_quality;
+                    if (enc_quality_done) begin
+                        rc_qwait_cnt <= 10'd0;
+                        vstate       <= V_QWAIT;
+                    end else if (!enc_quality_busy) begin
+                        enc_quality_req <= 1'b1;
+                    end
+                end
+                V_QWAIT: begin
+                    if (rc_qwait_cnt == RC_Q_SETTLE_CYCLES) begin
+                        vstate <= V_KICK;
+                    end else begin
+                        rc_qwait_cnt <= rc_qwait_cnt + 10'd1;
+                    end
+                end
                 V_KICK: begin
                     cap_reset  <= 1'b1;   // clear capture for the new frame
                     frame_kick <= 1'b1;   // emit one VTPG frame
@@ -450,12 +516,36 @@ module demo_top_vtpg_eth #(
                 // stale cap_done=1 and exits immediately -> blank/duplicate frame
                 // and a desynced capture->buffer->RTP stream (garbage QT + scan).
                 V_KWAIT:  vstate <= V_ENC;
-                V_ENC:    if (cap_done) vstate<=V_STREAM;   // full JPEG captured (EOI)
+                V_ENC: begin
+                    if (cap_done) begin
+                        if (jpeg_overflow) begin
+                            rc_quality       <= rc_quality_sub(rc_quality, RC_Q_OVF_STEP);
+                            rc_good_frames   <= 3'd0;
+                            rc_dropped_frames<= rc_dropped_frames + 16'd1;
+                            vstate           <= loop_en ? V_QWRITE : V_IDLE;
+                        end else begin
+                            if (jpeg_byte_cnt > RC_HIGH_BYTES) begin
+                                rc_quality     <= rc_quality_sub(rc_quality, RC_Q_NEAR_STEP);
+                                rc_good_frames <= 3'd0;
+                            end else if (jpeg_byte_cnt < RC_LOW_BYTES) begin
+                                if (rc_good_frames == (RC_GOOD_FRAMES - 3'd1)) begin
+                                    rc_quality     <= rc_quality_inc(rc_quality);
+                                    rc_good_frames <= 3'd0;
+                                end else begin
+                                    rc_good_frames <= rc_good_frames + 3'd1;
+                                end
+                            end else begin
+                                rc_good_frames <= 3'd0;
+                            end
+                            vstate <= V_STREAM;
+                        end
+                    end
+                end
                 V_STREAM: begin rtp_start<=1'b1;            // hold start until tx accepts
                               if (rtp_busy) vstate<=V_WAIT; end
                 V_WAIT:   if (rtp_done) begin
                               frame_cnt <= frame_cnt + 32'd1;
-                              vstate    <= loop_en ? V_KICK : V_IDLE;
+                              vstate    <= loop_en ? V_QWRITE : V_IDLE;
                           end
                 default:  vstate<=V_IDLE;
             endcase
@@ -648,8 +738,8 @@ module demo_top_vtpg_eth #(
     end
 
     // AR: read-only debug status (ctrl region 0x0200_00xx). word index ar_addr[4:2].
-    wire [11:0] dbg_word = {rtp_busy, dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
-                            loop_en, cap_done, vstate};   // [2:0]=vstate, [10]=rtp_busy
+    wire [12:0] dbg_word = {rtp_busy, dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
+                            jpeg_overflow, loop_en, cap_done, vstate};
     localparam [2:0] AR_IDLE=3'd0, AR_PRE=3'd1, AR_DATA=3'd2;
     reg [2:0] ar_state; reg [31:0] ar_addr; reg [7:0] ar_rem; reg ar_bad;
     always @(posedge clk) begin
@@ -672,7 +762,7 @@ module demo_top_vtpg_eth #(
                     if (ar_addr[14]) m_rdata <= {24'd0, jcap_rd}; // encoder-output capture (0x0200_4000+)
                     else
                     case (ar_addr[5:2])
-                        4'd0: m_rdata<={20'd0, dbg_word};         // status
+                        4'd0: m_rdata<={4'd0, rc_quality, rc_dropped_frames[7:0], dbg_word}; // status
                         4'd1: m_rdata<={13'd0, jpeg_byte_cnt};    // current frame size
                         4'd2: m_rdata<=frame_cnt;                 // frames streamed
                         4'd3: m_rdata<=trg_dst_ip;
