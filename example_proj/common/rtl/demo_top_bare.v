@@ -109,7 +109,9 @@ module demo_top_bare #(
         .m_axi_wready (ei_wready),  .m_axi_bresp  (ei_bresp),   .m_axi_bvalid (ei_bvalid),
         .m_axi_bready (ei_bready),  .m_axi_araddr (ei_araddr),  .m_axi_arvalid(ei_arvalid),
         .m_axi_arready(ei_arready), .m_axi_rdata  (ei_rdata),   .m_axi_rresp  (ei_rresp),
-        .m_axi_rvalid (ei_rvalid),  .m_axi_rready (ei_rready),  .init_done    (init_done)
+        .m_axi_rvalid (ei_rvalid),  .m_axi_rready (ei_rready),
+        .quality_req  (1'b0),       .quality_value(7'd95),      .quality_busy (),
+        .quality_done (),           .init_done    (init_done)
     );
 
     // -----------------------------------------------------------------------
