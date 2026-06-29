@@ -75,7 +75,7 @@ module tb_vtpg_enc;
     mjpegzero_enc_top dut (   // netlist: params baked in
 `else
     mjpegzero_enc_top #(
-        .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H), .LITE_MODE(1), .LITE_QUALITY(75)
+        .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H), .LITE_MODE(0), .LITE_QUALITY(75)
     ) dut (
 `endif
         .clk(clk), .rst_n(rst_n),
@@ -125,6 +125,7 @@ module tb_vtpg_enc;
         repeat(10) @(posedge clk);
         rst_n=1; repeat(5) @(posedge clk);
         axi_write(5'h00, 32'h1);           // enable encoder
+        axi_write(5'h0C, 32'd75);          // runtime quality
         repeat(600) @(posedge clk);        // Q-table load
         for (f=0; f<NFRAMES; f=f+1) begin
             @(negedge clk); frame_kick=1; @(negedge clk); frame_kick=0;
