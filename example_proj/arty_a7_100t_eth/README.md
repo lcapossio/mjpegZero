@@ -26,7 +26,10 @@ new bit is the Ethernet egress through the [emacZero](../../emaczero) MAC.
   [`jpeg_rtp_trigger.v`](../../rtl/eth/jpeg_rtp_trigger.v),
   [`mac_csr_init.v`](../../rtl/eth/mac_csr_init.v), plus
   [`rtl/clk_gen_eth.v`](rtl/clk_gen_eth.v), [`rtl/jpeg_buffer_dc.v`](rtl/jpeg_buffer_dc.v),
-  [`rtl/demo_top_eth.v`](rtl/demo_top_eth.v).
+  [`rtl/demo_top_eth.v`](rtl/demo_top_eth.v),
+  [`rtl/demo_top_vtpg_eth.v`](rtl/demo_top_vtpg_eth.v),
+  [`rtl/vtpg_udp_control.v`](rtl/vtpg_udp_control.v), and
+  [`rtl/vtpg_stream_control.v`](rtl/vtpg_stream_control.v).
 
 ## Network defaults (edit to taste)
 
@@ -66,9 +69,10 @@ Bitstream -> `build/arty_a7_vtpg_demo.bit`.
 ## Moving pattern - live motion (`demo_top_vtpg_eth`)
 
 vtpgZero generates colorbars + a bouncing box (YUV 4:2:2, fed straight into the
-encoder); an on-chip control FSM loops *generate -> encode -> stream*
-autonomously so the host just watches. The box advances one step per frame ->
-real motion. No JTAG pixel upload needed.
+encoder); `vtpg_stream_control` loops *generate -> encode -> stream*
+autonomously so the host just watches, while `vtpg_udp_control` decodes the host
+start/stop/single-frame and VTPG register-write packets. The box advances one
+step per frame -> real motion. No JTAG pixel upload needed.
 
 1. Program `build/arty_a7_vtpg_demo.bit`.
 2. Host NIC at `192.168.237.1/24`; allow inbound UDP 5004 (admin):

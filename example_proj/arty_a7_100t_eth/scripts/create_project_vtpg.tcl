@@ -47,6 +47,8 @@ set rtl_files [list \
     $common_dir/rtl/demo_jpeg_buffer.v \
     $common_dir/rtl/jpeg_capture.v \
     $ex_dir/rtl/clk_gen_eth.v \
+    $ex_dir/rtl/vtpg_udp_control.v \
+    $ex_dir/rtl/vtpg_stream_control.v \
     $ex_dir/rtl/demo_top_vtpg_eth.v \
     $vtpg_rtl/vtpgz_core.v \
     $repo_root/rtl/eth/jpeg_rtp_tx.v \
