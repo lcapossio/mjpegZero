@@ -10,7 +10,7 @@
 # (e.g. ffplay stream.sdp listening on 5004), then run this.
 #
 # Usage: python eth_trigger.py [fpga_ip] [trigger_port]
-#   defaults: 192.168.1.50  9999
+#   defaults: 192.168.237.50  9999
 
 import socket
 import sys
