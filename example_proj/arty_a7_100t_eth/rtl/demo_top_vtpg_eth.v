@@ -143,9 +143,9 @@ module demo_top_vtpg_eth #(
         .EN_IMAGE(1),                                  // pattern 9 = full-frame mandrill
         .IMAGE_W(128), .IMAGE_H(128), .IMAGE_OUT_W(1280), .IMAGE_OUT_H(720),
         .IMAGE_HEX_FILE("mandrill_128x128_ycbcr.mem"), // YCbCr (OUTPUT_MODE=2 reads {Y,Cb,Cr})
-        .EN_BOX_IMAGE(1),                              // mandrill in the moving box ('i' toggle)
+        .EN_BOX_IMAGE(1),                              // banana in the moving box ('i' toggle)
         .BOX_IMAGE_W(32), .BOX_IMAGE_H(32),
-        .BOX_IMAGE_HEX_FILE("mandrill_32x32_ycbcr.mem"),
+        .BOX_IMAGE_HEX_FILE("banana_32x32_ycbcr.mem"),
         .OUTPUT_MODE(2),     // YUV
         .YUV_SUBSAMPLE(1),   // 4:2:2 -> 16-bit {C,Y}
         .BPC(8)

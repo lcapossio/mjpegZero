@@ -161,11 +161,12 @@ The host owns this state, mirroring the KV260 `dp_vtpgzero_box.c` app.
 | `b` / `c` | Cycle box / solid color |
 | `g` / `G` | Grid spacing down / up |
 | `k` / `K` | Checker size down / up |
-| `i` | Toggle mandrill image-in-box vs solid box fill |
+| `i` | Toggle banana image-in-box vs solid box fill |
 
 Pattern 9 renders the 128x128 mandrill image scaled to full screen. The image
-memories in `data/mandrill_*_ycbcr.mem` are generated as studio-range BT.601
-YCbCr because `vtpgz_core` runs in YUV output mode for this demo.
+memory in `data/mandrill_128x128_ycbcr.mem` and the banana box texture in
+`data/banana_32x32_ycbcr.mem` are studio-range BT.601 YCbCr because
+`vtpgz_core` runs in YUV output mode for this demo.
 
 ## Fabric rate control
 
