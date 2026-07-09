@@ -403,22 +403,19 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
 
     # 3. Compare vs reference
     if rgb_input:
-        # RGB path: color conversion is internal to the DUT, so coefficients won't
-        # match the YUYV-path Python reference. Structural checks (SOI, EOI, size)
-        # from the testbench are sufficient; verify the JPEG decodes with Pillow.
-        try:
-            from PIL import Image
-            import io
-            with open(output_jpg, 'rb') as f:
-                Image.open(io.BytesIO(f.read())).verify()
-            print(f'    RGB_INPUT: Pillow decode OK')
-            return True
-        except ImportError:
-            print(f'    RGB_INPUT: Pillow not available — structural pass only')
-            return True
-        except Exception as e:
-            print(f'    ERROR: RGB_INPUT JPEG decode failed: {e}')
+        # RGB path: color conversion is internal to the DUT, so the YUYV-path
+        # references don't apply. Compare against reference_4mcu_rgb.jpg,
+        # generated from a bit-exact model of rtl/rgb_to_ycbcr.v
+        # (yuyv_convert.rtl_rgb_to_ycbcr_planes), so the full coefficient
+        # compare catches color-conversion regressions (e.g. chroma phase
+        # or Cb/Cr swaps that still decode as structurally valid JPEGs).
+        ref = os.path.join(TV_DIR, 'reference_4mcu_rgb.jpg')
+        if not os.path.exists(ref):
+            print(f'    ERROR: reference not found: {ref}')
+            print('    Re-run python/generate_test_vectors.py to create it.')
             return False
+        passed, _, _ = compare_jpegs(ref, output_jpg)
+        return passed
 
     # Determine reference file and MCU count for this configuration
     effective_mcus = num_mcus if num_mcus else NUM_MCUS
@@ -484,6 +481,7 @@ def main():
         os.path.join(TV_DIR, 'reference_4mcu.jpg'),
         os.path.join(TV_DIR, 'reference_4mcu_q50.jpg'),
         os.path.join(TV_DIR, 'reference_4mcu_q75.jpg'),
+        os.path.join(TV_DIR, 'reference_4mcu_rgb.jpg'),
     ]
     if not all(os.path.isfile(f) for f in _key_vectors):
         print('  Test vectors missing — running generate_test_vectors.py ...')
