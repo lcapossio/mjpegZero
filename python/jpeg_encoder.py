@@ -317,19 +317,39 @@ def encode_jpeg(img_rgb, quality=85, output_path=None):
     Returns:
         JPEG file bytes
     """
-    height, width = img_rgb.shape[:2]
+    # Color space conversion
+    ycbcr = rgb_to_ycbcr(img_rgb)
+
+    # Chroma subsampling (422)
+    Y, Cb, Cr = subsample_422(ycbcr)
+
+    return encode_jpeg_from_planes(Y, Cb, Cr, quality=quality,
+                                   output_path=output_path)
+
+
+def encode_jpeg_from_planes(Y, Cb, Cr, quality=85, output_path=None):
+    """Encode pre-converted YUV422 planes to JPEG.
+
+    Entry point for callers that perform their own color conversion /
+    subsampling (e.g. a bit-exact model of the RTL rgb_to_ycbcr converter).
+
+    Args:
+        Y:  numpy array (H, W) luma plane
+        Cb: numpy array (H, W/2) subsampled blue-difference chroma plane
+        Cr: numpy array (H, W/2) subsampled red-difference chroma plane
+        quality: JPEG quality factor 1-100
+        output_path: if set, write JPEG file to this path
+
+    Returns:
+        JPEG file bytes
+    """
+    height, width = Y.shape
     assert width % 16 == 0, f"Width must be multiple of 16, got {width}"
     assert height % 8 == 0, f"Height must be multiple of 8, got {height}"
 
     # Scale quantization tables
     quant_luma = scale_quant_table(STD_QUANT_TABLE_LUMA, quality)
     quant_chroma = scale_quant_table(STD_QUANT_TABLE_CHROMA, quality)
-
-    # Color space conversion
-    ycbcr = rgb_to_ycbcr(img_rgb)
-
-    # Chroma subsampling (422)
-    Y, Cb, Cr = subsample_422(ycbcr)
 
     # Build JFIF header
     header = build_jfif_header(width, height, quant_luma, quant_chroma)
