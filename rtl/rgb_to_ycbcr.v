@@ -21,7 +21,7 @@
 // Output: YUYV packed 16-bit words on AXI4-Stream
 //   Even pixels: {Cb, Y0}
 //   Odd pixels:  {Cr, Y1}
-//   Cb/Cr are averaged over each pixel pair (horizontal 4:2:2)
+//   Cb/Cr are taken from each pixel directly (horizontal 4:2:2, no averaging)
 //
 // Pipeline: 3-stage (register inputs, multiply+add, shift+pack)
 // ============================================================================
@@ -139,7 +139,8 @@ module rgb_to_ycbcr (
             m_axis_tuser  <= p2_user;
 
             if (p2_valid) begin
-                if (!pixel_odd) begin
+                // Start-of-frame pixel is always even (resync phase)
+                if (p2_user || !pixel_odd) begin
                     // Even pixel: output {Cb, Y0}
                     m_axis_tdata <= {cb_clamped, y_clamped};
                     pixel_odd    <= 1'b1;
@@ -148,10 +149,6 @@ module rgb_to_ycbcr (
                     m_axis_tdata <= {cr_clamped, y_clamped};
                     pixel_odd    <= 1'b0;
                 end
-
-                // Reset on start of frame
-                if (p2_user)
-                    pixel_odd <= 1'b0;
             end
         end
     end
