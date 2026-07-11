@@ -142,15 +142,12 @@ begin
                 m_axis_tuser_r <= p2_user;
 
                 if p2_valid = '1' then
-                    if pixel_odd = '0' then
+                    -- Start-of-frame pixel is always even (resync phase)
+                    if p2_user = '1' or pixel_odd = '0' then
                         m_axis_tdata_r <= cb_clamped & y_clamped;
                         pixel_odd <= '1';
                     else
                         m_axis_tdata_r <= cr_clamped & y_clamped;
-                        pixel_odd <= '0';
-                    end if;
-
-                    if p2_user = '1' then
                         pixel_odd <= '0';
                     end if;
                 end if;
