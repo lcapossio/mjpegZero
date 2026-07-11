@@ -7,11 +7,13 @@
 # operator can see the bitrate live while watching. ffplay can't compute the
 # compressed bitrate, hence this small decoder/overlay.
 #
-#   python stream_view.py            # GUI window: video + bitrate HUD
-#   python stream_view.py --console  # headless: prints a live bitrate line
+#   python stream_view.py                         # GUI window + bitrate HUD
+#   python stream_view.py --console --duration 5  # headless 5-second readout
+#   python stream_view.py --fpga-ip 192.168.237.50 --rtp-port 5004 --trigger-port 9999
 #
 # Sends 'start' on launch and 'stop' on exit (over the trigger port).
 
+import argparse
 import io
 import socket
 import sys
@@ -24,11 +26,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rtp_jpeg_recv import build_jfif  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-IP = "192.168.237.50"
-RPORT = 5004
-TPORT = 9999
-CONSOLE = "--console" in sys.argv
-DURATION = next((float(a) for a in sys.argv[1:] if a.replace(".", "", 1).isdigit()), None)
+def _parse_args():
+    parser = argparse.ArgumentParser(description="View the FPGA RTP/JPEG stream.")
+    parser.add_argument("duration", nargs="?", type=float,
+                        help="optional run time in seconds, useful with --console")
+    parser.add_argument("--console", action="store_true",
+                        help="print a live bitrate line instead of opening a GUI")
+    parser.add_argument("--duration", dest="duration_opt", type=float,
+                        help="run time in seconds; overrides positional duration")
+    parser.add_argument("--fpga-ip", default="192.168.237.50",
+                        help="FPGA control IP address")
+    parser.add_argument("--rtp-port", type=int, default=5004,
+                        help="local RTP/JPEG UDP receive port")
+    parser.add_argument("--trigger-port", type=int, default=9999,
+                        help="FPGA trigger/control UDP port")
+    return parser.parse_args()
+
+
+ARGS = _parse_args()
+IP = ARGS.fpga_ip
+RPORT = ARGS.rtp_port
+TPORT = ARGS.trigger_port
+CONSOLE = ARGS.console
+DURATION = ARGS.duration_opt if ARGS.duration_opt is not None else ARGS.duration
 
 _state = {"img": None, "mbps": 0.0, "total": 0.0, "fps": 0.0, "kb": 0.0, "res": "----"}
 _lock = threading.Lock()

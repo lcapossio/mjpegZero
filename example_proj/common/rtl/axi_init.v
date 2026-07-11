@@ -2,9 +2,9 @@
 // Commons Clause v1.0 applies — commercial use requires written permission. Contact: hello@bard0.com
 // Copyright (c) 2026 Leonardo Capossio — bard0 design
 //
-// axi_init.v — One-shot AXI4-Lite master that enables the mjpegZero encoder.
-// Writes CTRL register (addr 0x00) = 0x01 (enable=1) after reset.
-// In LITE_MODE the quality is fixed at synthesis time; no QUALITY write needed.
+// axi_init.v — Small AXI4-Lite master for mjpegZero encoder control.
+// Writes CTRL register (addr 0x00) = 0x01 (enable=1) after reset, then can
+// issue optional runtime QUALITY writes for full-mode demos.
 // Verilog 2001
 
 `timescale 1ns / 1ps
@@ -31,6 +31,11 @@ module axi_init (
     input  wire [1:0]  m_axi_rresp,
     input  wire        m_axi_rvalid,
     output wire        m_axi_rready,
+
+    input  wire        quality_req,     // pulse/hold high to write QUALITY
+    input  wire [6:0]  quality_value,
+    output reg         quality_busy,
+    output reg         quality_done,    // 1-cycle pulse when QUALITY write commits
 
     output reg         init_done   // stays high once init is complete
 );
@@ -59,9 +64,12 @@ module axi_init (
             m_axi_wvalid  <= 1'b0;
             m_axi_bready  <= 1'b0;
             init_done     <= 1'b0;
+            quality_busy  <= 1'b0;
+            quality_done  <= 1'b0;
             aw_done       <= 1'b0;
             w_done        <= 1'b0;
         end else begin
+            quality_done <= 1'b0;
             case (state)
                 S_RESET: begin
                     // Wait one cycle after reset before issuing transaction
@@ -99,12 +107,28 @@ module axi_init (
                 S_RESP: begin
                     if (m_axi_bvalid) begin
                         m_axi_bready <= 1'b0;
+                        if (quality_busy) begin
+                            quality_busy <= 1'b0;
+                            quality_done <= 1'b1;
+                        end
                         state        <= S_DONE;
                     end
                 end
 
                 S_DONE: begin
                     init_done <= 1'b1;
+                    if (quality_req && !quality_busy) begin
+                        m_axi_awaddr  <= 5'h0C;       // QUALITY register
+                        m_axi_wdata   <= {25'd0, quality_value};
+                        m_axi_wstrb   <= 4'hF;
+                        m_axi_awvalid <= 1'b1;
+                        m_axi_wvalid  <= 1'b1;
+                        m_axi_bready  <= 1'b1;
+                        quality_busy  <= 1'b1;
+                        aw_done       <= 1'b0;
+                        w_done        <= 1'b0;
+                        state         <= S_ADDR;
+                    end
                 end
 
                 default: state <= S_DONE;
