@@ -11,7 +11,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common" / "python"))
 from demo import FcapzHW   # noqa: E402
 
-VSTATE = {0: "IDLE", 1: "KICK", 2: "ENC", 3: "STREAM", 4: "WAIT"}
+VSTATE = {
+    0: "IDLE",
+    1: "QWRITE",
+    2: "QWAIT",
+    3: "KICK",
+    4: "KWAIT",
+    5: "ENC",
+    6: "STREAM",
+    7: "WAIT",
+}
 
 def main():
     hw = FcapzHW(fpga_name="xc7a100t", bitfile=None)
@@ -29,15 +38,18 @@ def main():
     finally:
         hw.close()
     print("raw status   = 0x%08x" % st)
-    print("  vstate      = %s" % VSTATE.get(st & 0x7, st & 0x7))
-    print("  cap_done    = %d" % ((st >> 3) & 1))
-    print("  loop_en     = %d" % ((st >> 4) & 1))
-    print("  dbg_udp     = %d  (net_rx saw a UDP packet)" % ((st >> 5) & 1))
-    print("  dbg_trg     = %d  (trigger fired)" % ((st >> 6) & 1))
-    print("  dbg_mactx   = %d  (MAC TX active)" % ((st >> 7) & 1))
-    print("  dbg_arp     = %d  (ARP reply sent)" % ((st >> 8) & 1))
-    print("  dbg_macbp   = %d  (MAC TX backpressure seen)" % ((st >> 9) & 1))
-    print("  rtp_busy    = %d  (jpeg_rtp_tx streaming)" % ((st >> 10) & 1))
+    print("  vstate      = %s" % VSTATE.get(st & 0xF, st & 0xF))
+    print("  cap_done    = %d" % ((st >> 4) & 1))
+    print("  loop_en     = %d" % ((st >> 5) & 1))
+    print("  overflow    = %d" % ((st >> 6) & 1))
+    print("  dbg_udp     = %d  (net_rx saw a UDP packet)" % ((st >> 7) & 1))
+    print("  dbg_trg     = %d  (trigger fired)" % ((st >> 8) & 1))
+    print("  dbg_mactx   = %d  (MAC TX active)" % ((st >> 9) & 1))
+    print("  dbg_arp     = %d  (ARP reply sent)" % ((st >> 10) & 1))
+    print("  dbg_macbp   = %d  (MAC TX backpressure seen)" % ((st >> 11) & 1))
+    print("  rtp_busy    = %d  (jpeg_rtp_tx streaming)" % ((st >> 12) & 1))
+    print("  rc_dropped  = %d" % ((st >> 13) & 0xFF))
+    print("  rc_quality  = %d" % ((st >> 21) & 0x7F))
     print("cur frame size = %d bytes" % sz)
     print("frames streamed= %d" % fc)
     print("rtp_tx packets = %d  (jpeg_rtp_tx produced)" % ((pk >> 16) & 0xFFFF))

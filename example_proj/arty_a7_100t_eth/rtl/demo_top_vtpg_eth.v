@@ -4,14 +4,15 @@
 // demo_top_vtpg_eth.v - Arty A7-100T: stream a MOVING test pattern as RTP/JPEG.
 //
 // vtpgZero (colorbars + bouncing box, YUV 4:2:2) feeds the mjpegZero encoder
-// directly; an autonomous control FSM loops { kick a VTPG frame -> encode ->
-// stream over Ethernet } so the host sees continuous live motion. The bouncing
-// box advances one step per frame -> real motion video. Everything runs in a
-// single 100 MHz domain (the MII clocks are async, handled inside eth_mac_sys).
+// directly; vtpg_stream_control loops { quality write -> kick a VTPG frame ->
+// encode -> stream over Ethernet } so the host sees continuous live motion.
+// The bouncing box advances one step per frame -> real motion video. Everything
+// runs in a single 100 MHz domain (the MII clocks are async, handled inside
+// eth_mac_sys).
 //
 //   vtpgz_core --(16b {C,Y} 4:2:2)--> mjpegzero_enc_top --> JPEG capture/buffer
 //        ^ frame_sync (1 frame per pulse)                          |
-//   ctrl FSM: KICK -> wait jpg EOI -> STREAM -> wait rtp_done -> KICK ...
+//   stream_control: QWRITE -> KICK -> wait jpg EOI -> STREAM -> wait rtp_done
 //                                                                  v
 //   net_rx -> jpeg_rtp_trigger (captures host addr, enables loop)
 //   jpeg_rtp_tx -> axis_frame_buffer -> arty_tx_arbiter -> eth_mac_sys (MII)
@@ -53,6 +54,7 @@ module demo_top_vtpg_eth #(
     localparam IMG_W      = 1280;
     localparam IMG_H      = 720;
     localparam JPEG_BYTES = JPEG_WORDS * 4;
+    localparam [18:0] JPEG_CAP_BYTES = JPEG_BYTES[18:0];
 
     // =======================================================================
     // Clocks & reset (single 138 MHz functional domain + 25 MHz PHY ref)
@@ -99,6 +101,10 @@ module demo_top_vtpg_eth #(
     wire [4:0]  ei_araddr;  wire ei_arvalid, ei_arready;
     wire [31:0] ei_rdata;   wire [1:0] ei_rresp; wire ei_rvalid, ei_rready;
     wire init_done;
+    wire        enc_quality_req;
+    wire [6:0]  enc_quality_value;
+    wire        enc_quality_busy;
+    wire        enc_quality_done;
 
     axi_init u_init (
         .clk(clk), .rst_n(rst_n),
@@ -107,25 +113,28 @@ module demo_top_vtpg_eth #(
         .m_axi_wready(ei_wready), .m_axi_bresp(ei_bresp), .m_axi_bvalid(ei_bvalid),
         .m_axi_bready(ei_bready), .m_axi_araddr(ei_araddr), .m_axi_arvalid(ei_arvalid),
         .m_axi_arready(ei_arready), .m_axi_rdata(ei_rdata), .m_axi_rresp(ei_rresp),
-        .m_axi_rvalid(ei_rvalid), .m_axi_rready(ei_rready), .init_done(init_done)
+        .m_axi_rvalid(ei_rvalid), .m_axi_rready(ei_rready),
+        .quality_req(enc_quality_req), .quality_value(enc_quality_value),
+        .quality_busy(enc_quality_busy), .quality_done(enc_quality_done),
+        .init_done(init_done)
     );
 
     // =======================================================================
     // Video test pattern generator (colorbars + bouncing box, YUV 4:2:2 8bpc)
     // =======================================================================
-    reg         frame_kick;     // 1-cycle pulse -> VTPG external frame sync
+    wire        frame_kick;     // 1-cycle pulse -> VTPG external frame sync
     wire [15:0] vid_tdata;       // {C,Y} 4:2:2
     wire        vid_tvalid, vid_tready, vid_tlast, vid_tuser;
 
     // Runtime vtpg config, written over UDP (VTPG_CTRL_PORT) as KV260-style
     // register writes. The host (stream_view.py) owns all state exactly like the
     // KV260 A53 app; defaults mirror that app's init (box 96x64, white, image-in-box).
-    reg [3:0]  cfg_pattern_r;                  // 0..9 (9=image); KV260 PATTERN_SEL
-    reg [23:0] solid_color_r, box_color_r;     // {Y,Cb,Cr}
-    reg [15:0] box_w_r, box_h_r;               // box size (px)
-    reg [15:0] box_dx_r, box_dy_r;             // box speed (px/frame)
-    reg [15:0] grid_spacing_r, checker_size_r;
-    reg [31:0] box_img_x_step_r, box_img_y_step_r;  // Q16 box-image scaler (0=solid box)
+    wire [3:0]  cfg_pattern_r;                  // 0..9 (9=image); KV260 PATTERN_SEL
+    wire [23:0] solid_color_r, box_color_r;     // {Y,Cb,Cr}
+    wire [15:0] box_w_r, box_h_r;               // box size (px)
+    wire [15:0] box_dx_r, box_dy_r;             // box speed (px/frame)
+    wire [15:0] grid_spacing_r, checker_size_r;
+    wire [31:0] box_img_x_step_r, box_img_y_step_r;  // Q16 box-image scaler (0=solid box)
 
     vtpgz_core #(
         .EN_COLORBAR(1), .EN_MOVING_BOX(1), .EN_SOLID(1),
@@ -134,9 +143,9 @@ module demo_top_vtpg_eth #(
         .EN_IMAGE(1),                                  // pattern 9 = full-frame mandrill
         .IMAGE_W(128), .IMAGE_H(128), .IMAGE_OUT_W(1280), .IMAGE_OUT_H(720),
         .IMAGE_HEX_FILE("mandrill_128x128_ycbcr.mem"), // YCbCr (OUTPUT_MODE=2 reads {Y,Cb,Cr})
-        .EN_BOX_IMAGE(1),                              // mandrill in the moving box ('i' toggle)
+        .EN_BOX_IMAGE(1),                              // banana in the moving box ('i' toggle)
         .BOX_IMAGE_W(32), .BOX_IMAGE_H(32),
-        .BOX_IMAGE_HEX_FILE("mandrill_32x32_ycbcr.mem"),
+        .BOX_IMAGE_HEX_FILE("banana_32x32_ycbcr.mem"),
         .OUTPUT_MODE(2),     // YUV
         .YUV_SUBSAMPLE(1),   // 4:2:2 -> 16-bit {C,Y}
         .BPC(8)
@@ -167,7 +176,7 @@ module demo_top_vtpg_eth #(
     wire       jpg_tvalid, jpg_tlast;
 
     mjpegzero_enc_top #(
-        .LITE_MODE(1), .LITE_QUALITY(75), .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H)
+        .LITE_MODE(0), .LITE_QUALITY(75), .IMG_WIDTH(IMG_W), .IMG_HEIGHT(IMG_H)
     ) u_enc (
         .clk(clk), .rst_n(rst_n),
         .s_axis_vid_tdata(vid_tdata), .s_axis_vid_tvalid(vid_tvalid),
@@ -186,7 +195,7 @@ module demo_top_vtpg_eth #(
     // =======================================================================
     // JPEG capture -> demo_jpeg_buffer (1W encoder, 1R jpeg_rtp_tx; single clk)
     // =======================================================================
-    reg         cap_reset;       // from control FSM: clear capture for a new frame
+    wire        cap_reset;       // from stream control: clear capture for a new frame
     wire        cap_done;        // set when a full JPEG (EOI) has been captured
     wire        jpeg_overflow;   // frame exceeded the buffer (partial capture)
     wire [18:0] jpeg_byte_cnt;   // total bytes captured (-> jpeg_rtp_tx .jpeg_size)
@@ -302,51 +311,46 @@ module demo_top_vtpg_eth #(
         .dst_port(trg_dst_port), .src_port(trg_src_port)
     );
 
-    // -- host control plane: capture the first UDP payload byte of a TRIGGER_PORT
-    //    packet as an opcode, committed at end-of-packet (the same instant u_trig
-    //    latches the destination). The destination still latches on every trigger
-    //    packet regardless of opcode (u_trig.busy is tied 0). --
-    //    VTPG_CTRL_PORT packets carry a KV260-style register write: payload byte 0
-    //    is the register offset, bytes 1..4 the 32-bit value (big-endian). The host
-    //    (stream_view.py) owns all vtpg state and emits these writes per keystroke.
-    reg        ud_in_pkt;
-    reg [7:0]  trg_opcode;       // payload byte 0: trigger opcode / vtpg reg offset
-    reg [31:0] vc_val;           // VTPG_CTRL_PORT value (bytes 1..4, big-endian)
-    reg [2:0]  vc_idx;           // payload byte index (saturating)
-    reg        trg_op_valid;     // TRIGGER_PORT: stream control (start/stop/single)
-    reg        vtpg_op_valid;    // VTPG_CTRL_PORT: register-write commit
-    always @(posedge clk) begin
-        if (!eth_rst_n) begin
-            ud_in_pkt <= 1'b0; trg_op_valid <= 1'b0; vtpg_op_valid <= 1'b0;
-            trg_opcode <= 8'd0; vc_val <= 32'd0; vc_idx <= 3'd0;
-        end else begin
-            trg_op_valid  <= 1'b0;
-            vtpg_op_valid <= 1'b0;
-            if (ud_valid) begin
-                if (!ud_in_pkt) begin
-                    ud_in_pkt  <= 1'b1;
-                    trg_opcode <= ud_data;        // byte 0 = opcode / register offset
-                    vc_val     <= 32'd0;
-                    vc_idx     <= 3'd1;
-                end else begin
-                    if (vc_idx <= 3'd4) vc_val <= {vc_val[23:0], ud_data};  // bytes 1..4 (BE)
-                    if (vc_idx != 3'd7) vc_idx <= vc_idx + 3'd1;
-                end
-                if (ud_last) begin
-                    ud_in_pkt <= 1'b0;
-                    if (ud_dst_port == TRIGGER_PORT)   trg_op_valid  <= 1'b1;
-                    if (ud_dst_port == VTPG_CTRL_PORT) vtpg_op_valid <= 1'b1;
-                end
-            end
-        end
-    end
-    reg loop_en;       // continuous-stream enable (set by 'G'/default, cleared by 'S')
-    reg single_pend;   // one-shot: stream exactly one frame ('1')
+    // -- host control plane: trigger packets start/stop/single-frame the stream,
+    //    VTPG control packets update the runtime test-pattern registers. --
+    wire ctrl_start_loop;
+    wire ctrl_stop_loop;
+    wire ctrl_single_req;
+    vtpg_udp_control #(
+        .TRIGGER_PORT(TRIGGER_PORT),
+        .VTPG_CTRL_PORT(VTPG_CTRL_PORT)
+    ) u_udp_control (
+        .clk(clk),
+        .rst_n(rst_n & ~sw_reset),
+        .udp_data(ud_data),
+        .udp_valid(ud_valid),
+        .udp_last(ud_last),
+        .udp_dst_port(ud_dst_port),
+        .start_loop(ctrl_start_loop),
+        .stop_loop(ctrl_stop_loop),
+        .single_req(ctrl_single_req),
+        .cfg_pattern(cfg_pattern_r),
+        .solid_color(solid_color_r),
+        .box_color(box_color_r),
+        .box_w(box_w_r),
+        .box_h(box_h_r),
+        .box_dx(box_dx_r),
+        .box_dy(box_dy_r),
+        .grid_spacing(grid_spacing_r),
+        .checker_size(checker_size_r),
+        .box_img_x_step(box_img_x_step_r),
+        .box_img_y_step(box_img_y_step_r)
+    );
 
     // -- RTP/JPEG packetizer (started by the control FSM) --
-    reg         rtp_start;
+    wire        rtp_start;
     wire [7:0]  rtp_tx_tdata;  wire rtp_tx_tvalid, rtp_tx_tready, rtp_tx_tlast;
     wire        rtp_busy, rtp_done;
+    wire [3:0]  vstate;
+    wire [31:0] frame_cnt;
+    wire        loop_en;
+    wire [6:0]  rc_quality;
+    wire [15:0] rc_dropped_frames;
     jpeg_rtp_tx #(
         .IMG_W(IMG_W), .IMG_H(IMG_H), .SCAN_OFF(623), .EOI_BYTES(2),
         .QT_LUMA_OFF(25), .QT_CHROMA_OFF(94), .SCAN_CHUNK(11'd1024)
@@ -387,80 +391,35 @@ module demo_top_vtpg_eth #(
     );
 
     // =======================================================================
-    // Autonomous control FSM: kick a frame -> encode -> stream -> repeat
+    // Autonomous stream control: write quality, kick, encode, stream, repeat.
     // =======================================================================
-    localparam [2:0] V_IDLE=3'd0, V_KICK=3'd1, V_ENC=3'd2, V_STREAM=3'd3, V_WAIT=3'd4, V_KWAIT=3'd5;
-    // Host control opcodes (first UDP payload byte of a TRIGGER_PORT packet):
-    //   'G' (0x47) or anything else -> start continuous (back-compat: "GO" streams)
-    //   'S'/'s'    or 0x00          -> stop after the current frame finishes
-    //   '1'        or 0x02          -> stream exactly one frame
-    localparam [7:0] OP_STOP_0=8'h00, OP_STOP_S=8'h53, OP_STOP_s=8'h73,
-                     OP_ONE_0 =8'h02, OP_ONE_1 =8'h31;
-    reg [2:0]  vstate;
-    reg [31:0] frame_cnt;
-    always @(posedge clk) begin
-        if (!rst_n || sw_reset) begin
-            vstate<=V_IDLE; frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
-            frame_cnt<=32'd0; loop_en<=1'b0; single_pend<=1'b0;
-            cfg_pattern_r<=4'd0; box_w_r<=16'd96; box_h_r<=16'd64;       // KV260 app inits
-            box_dx_r<=16'd4; box_dy_r<=16'd3;
-            box_color_r<=24'hEB_80_80; solid_color_r<=24'hEB_80_80;      // white (palette[6])
-            grid_spacing_r<=16'd32; checker_size_r<=16'd32;
-            box_img_x_step_r<=32'd21845; box_img_y_step_r<=32'd32768;    // (32<<16)/96, /64
-        end else begin
-            frame_kick<=1'b0; cap_reset<=1'b0; rtp_start<=1'b0;
-
-            // -- host control plane: opcode carried in the trigger packet --
-            if (trg_op_valid) begin
-                case (trg_opcode)
-                    OP_STOP_0, OP_STOP_S, OP_STOP_s: begin loop_en<=1'b0; single_pend<=1'b0; end
-                    OP_ONE_0,  OP_ONE_1:             single_pend <= 1'b1;   // arm one frame
-                    default:                         loop_en     <= 1'b1;   // start continuous
-                endcase
-            end
-
-            // -- vtpg cfg register write (VTPG_CTRL_PORT, KV260 register map) --
-            if (vtpg_op_valid) begin
-                case (trg_opcode)                                   // byte 0 = reg offset
-                    8'h18: cfg_pattern_r    <= vc_val[3:0];         // PATTERN_SEL
-                    8'h20: solid_color_r    <= vc_val[23:0];        // SOLID_COLOR
-                    8'h24: box_color_r      <= vc_val[23:0];        // BOX_COLOR
-                    8'h28: begin box_w_r  <= vc_val[31:16]; box_h_r  <= vc_val[15:0]; end  // BOX_SIZE
-                    8'h2C: begin box_dx_r <= vc_val[31:16]; box_dy_r <= vc_val[15:0]; end  // BOX_SPEED
-                    8'h34: grid_spacing_r   <= vc_val[15:0];        // GRID_SPACING
-                    8'h3C: checker_size_r   <= vc_val[15:0];        // CHECKER_SIZE
-                    8'h54: box_img_x_step_r <= vc_val;              // BOX_IMG_X_STEP
-                    8'h58: box_img_y_step_r <= vc_val;              // BOX_IMG_Y_STEP
-                    default: ;
-                endcase
-            end
-
-            case (vstate)
-                V_IDLE:   if ((loop_en || single_pend) && init_done) begin
-                              single_pend <= 1'b0;        // consume the one-shot arm
-                              vstate      <= V_KICK;
-                          end
-                V_KICK: begin
-                    cap_reset  <= 1'b1;   // clear capture for the new frame
-                    frame_kick <= 1'b1;   // emit one VTPG frame
-                    vstate     <= V_KWAIT;
-                end
-                // One cycle for cap_reset to clear the previous frame's sticky
-                // cap_done before V_ENC samples it. Without this, V_ENC sees the
-                // stale cap_done=1 and exits immediately -> blank/duplicate frame
-                // and a desynced capture->buffer->RTP stream (garbage QT + scan).
-                V_KWAIT:  vstate <= V_ENC;
-                V_ENC:    if (cap_done) vstate<=V_STREAM;   // full JPEG captured (EOI)
-                V_STREAM: begin rtp_start<=1'b1;            // hold start until tx accepts
-                              if (rtp_busy) vstate<=V_WAIT; end
-                V_WAIT:   if (rtp_done) begin
-                              frame_cnt <= frame_cnt + 32'd1;
-                              vstate    <= loop_en ? V_KICK : V_IDLE;
-                          end
-                default:  vstate<=V_IDLE;
-            endcase
-        end
-    end
+    vtpg_stream_control #(
+        .JPEG_CAP_BYTES(JPEG_CAP_BYTES)
+    ) u_stream_control (
+        .clk(clk),
+        .rst_n(rst_n & ~sw_reset),
+        .start_loop(ctrl_start_loop),
+        .stop_loop(ctrl_stop_loop),
+        .single_req(ctrl_single_req),
+        .init_done(init_done),
+        .enc_quality_req(enc_quality_req),
+        .enc_quality_value(enc_quality_value),
+        .enc_quality_busy(enc_quality_busy),
+        .enc_quality_done(enc_quality_done),
+        .frame_kick(frame_kick),
+        .cap_reset(cap_reset),
+        .cap_done(cap_done),
+        .jpeg_overflow(jpeg_overflow),
+        .jpeg_byte_cnt(jpeg_byte_cnt),
+        .rtp_start(rtp_start),
+        .rtp_busy(rtp_busy),
+        .rtp_done(rtp_done),
+        .vstate(vstate),
+        .frame_cnt(frame_cnt),
+        .loop_en(loop_en),
+        .rc_quality(rc_quality),
+        .rc_dropped_frames(rc_dropped_frames)
+    );
 
     // =======================================================================
     // Debug sticky flags (for JTAG status), all single-domain
@@ -648,8 +607,8 @@ module demo_top_vtpg_eth #(
     end
 
     // AR: read-only debug status (ctrl region 0x0200_00xx). word index ar_addr[4:2].
-    wire [11:0] dbg_word = {rtp_busy, dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
-                            loop_en, cap_done, vstate};   // [2:0]=vstate, [10]=rtp_busy
+    wire [12:0] dbg_word = {rtp_busy, dbg_macbp, dbg_arp, dbg_mactx, dbg_trg, dbg_udp,
+                            jpeg_overflow, loop_en, cap_done, vstate};
     localparam [2:0] AR_IDLE=3'd0, AR_PRE=3'd1, AR_DATA=3'd2;
     reg [2:0] ar_state; reg [31:0] ar_addr; reg [7:0] ar_rem; reg ar_bad;
     always @(posedge clk) begin
@@ -672,7 +631,7 @@ module demo_top_vtpg_eth #(
                     if (ar_addr[14]) m_rdata <= {24'd0, jcap_rd}; // encoder-output capture (0x0200_4000+)
                     else
                     case (ar_addr[5:2])
-                        4'd0: m_rdata<={20'd0, dbg_word};         // status
+                        4'd0: m_rdata<={4'd0, rc_quality, rc_dropped_frames[7:0], dbg_word}; // status
                         4'd1: m_rdata<={13'd0, jpeg_byte_cnt};    // current frame size
                         4'd2: m_rdata<=frame_cnt;                 // frames streamed
                         4'd3: m_rdata<=trg_dst_ip;
