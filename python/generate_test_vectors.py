@@ -20,8 +20,9 @@ from jpeg_common import (
     DC_LUMA_TABLE, DC_CHROMA_TABLE, AC_LUMA_TABLE, AC_CHROMA_TABLE,
     get_bit_category, encode_dc_value,
 )
-from jpeg_encoder import rgb_to_ycbcr, subsample_422, forward_dct_block, quantize_block, zigzag_scan
-from yuyv_convert import rgb_array_to_yuyv_words, write_yuyv_hex
+from jpeg_encoder import (rgb_to_ycbcr, subsample_422, forward_dct_block,
+                          quantize_block, zigzag_scan, encode_jpeg_from_planes)
+from yuyv_convert import rgb_array_to_yuyv_words, write_yuyv_hex, rtl_rgb_to_ycbcr_planes
 
 
 def to_signed_hex(val, bits=16):
@@ -264,6 +265,18 @@ def main():
 
     n = write_rgb_hex(crop_rgb, os.path.join(out_dir, 'rgb_input.hex'))
     print(f"Exported RGB input data ({n} words) for 64x8 crop (RGB_INPUT=1 path)")
+
+    # Golden reference for the RGB_INPUT=1 path: convert the same crop with a
+    # bit-exact model of rtl/rgb_to_ycbcr.v (fixed-point, per-pixel co-sited
+    # chroma) and encode with the standard pipeline. This lets verify_rtl_sim
+    # run the full coefficient compare on the RGB path instead of a
+    # structural-only check.
+    rgb_y, rgb_cb, rgb_cr = rtl_rgb_to_ycbcr_planes(crop_rgb)
+    rgb_jpeg = encode_jpeg_from_planes(
+        rgb_y.astype(np.float64), rgb_cb.astype(np.float64),
+        rgb_cr.astype(np.float64), quality=quality,
+        output_path=os.path.join(out_dir, 'reference_4mcu_rgb.jpg'))
+    print(f"Exported reference JPEG for RGB_INPUT=1 path ({len(rgb_jpeg)} bytes)")
 
     # ========================================================================
     # Minimum-width 16x8 crop (1 MCU) — corner case for MCU column counter

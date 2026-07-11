@@ -48,6 +48,40 @@ def rgb_array_to_yuyv_words(img_rgb):
     return words, h, w
 
 
+def rtl_rgb_to_ycbcr_planes(img_rgb):
+    """Bit-exact model of rtl/rgb_to_ycbcr.v (and its VHDL translation).
+
+    Mirrors the RTL's fixed-point arithmetic exactly so a golden JPEG for
+    the RGB_INPUT=1 path can be generated with zero input mismatch:
+      raw   = k_r*R + k_g*G + k_b*B + 32768        (26-bit signed)
+      value = (raw >> 16) [+ 128 for chroma]        (arithmetic shift)
+      clamped to 0..255
+    Chroma is co-sited per pixel pair as packed in the YUYV stream:
+      Cb of the even pixel, Cr of the odd pixel (no averaging).
+
+    Args:
+        img_rgb: numpy array (H, W, 3) uint8 RGB image, W even
+
+    Returns: (Y, Cb, Cr)
+        Y:  (H, W)   int32 luma plane
+        Cb: (H, W/2) int32 subsampled chroma plane (even pixels)
+        Cr: (H, W/2) int32 subsampled chroma plane (odd pixels)
+    """
+    r = img_rgb[:, :, 0].astype(np.int64)
+    g = img_rgb[:, :, 1].astype(np.int64)
+    b = img_rgb[:, :, 2].astype(np.int64)
+
+    y_raw  =  19595 * r + 38470 * g +  7471 * b + 32768
+    cb_raw = -11056 * r - 21712 * g + 32768 * b + 32768
+    cr_raw =  32768 * r - 27440 * g -  5328 * b + 32768
+
+    y  = np.clip(y_raw  >> 16,        0, 255).astype(np.int32)
+    cb = np.clip((cb_raw >> 16) + 128, 0, 255).astype(np.int32)
+    cr = np.clip((cr_raw >> 16) + 128, 0, 255).astype(np.int32)
+
+    return y, cb[:, 0::2], cr[:, 1::2]
+
+
 def write_yuyv_binary(words, out_path):
     """Write YUYV words as little-endian 16-bit binary file.
 
