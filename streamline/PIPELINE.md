@@ -1,4 +1,4 @@
-# SUMMARY.md — IMX900C + CrossLinkU-NX → UVC over USB 3.2 Pipeline Inventory
+# PIPELINE.md — IMX900C + CrossLinkU-NX → UVC over USB 3.2 Pipeline Inventory
 
 The five color-path blocks (debayer, CCM, CSC, chroma resampler, JPEG) are
 the **core color-processing path**, not the entire IMX900C-to-UVC pipeline:
@@ -16,19 +16,19 @@ File names for stages not yet written follow [CAMERA-PLAN.md](CAMERA-PLAN.md) §
 
 | Stage | Function | File | Status |
 |---|---|---|---|
-| 01 | D-PHY byte alignment | `camera/rtl/csi/dphy_byte_align.v` | planned (Lattice IP baseline until C3) |
-| 02 | CSI-2 packet decode | `camera/rtl/csi/csi2_rx.v` | planned (Lattice IP baseline until C3) |
-| 03 | RAW10/12 unpack | `camera/rtl/csi/raw_unpack.v` | planned C2 (ours) |
-| 04 | Frame/line sync, active region | `camera/rtl/csi/frame_sync.v` | planned C2 (ours) |
-| 05 | Black-level correction | `camera/rtl/isp/blc.v` | planned C3 |
-| 06 | White-balance gains | `camera/rtl/isp/wb_gains.v` | planned C3 |
-| 07 | Defective-pixel correction | `camera/rtl/isp/dpc.v` | **reserved** insertion point (C7) |
-| 08 | Lens-shading correction | `camera/rtl/isp/lsc.v` | **reserved** insertion point (C7) |
-| 09 | Debayer — MHC 5×5 ([DEBAYER-PLAN.md](DEBAYER-PLAN.md)) | `camera/rtl/isp/debayer.v` | planned C4 |
-| 10 | Color-correction matrix | `camera/rtl/isp/ccm.v` | planned C4 |
-| 11 | Gamma / tone LUT | `camera/rtl/isp/gamma_lut.v` | planned C4 |
-| 12 | RGB→YCbCr + filtered 4:2:2 | `camera/rtl/isp/csc_422.v` | planned C4 |
-| 13 | Center crop | `camera/rtl/isp/crop.v` | planned C4 |
+| 01 | D-PHY byte alignment | `streamline/rtl/csi/dphy_byte_align.v` | planned (Lattice IP baseline until C3) |
+| 02 | CSI-2 packet decode | `streamline/rtl/csi/csi2_rx.v` | planned (Lattice IP baseline until C3) |
+| 03 | RAW10/12 unpack | `streamline/rtl/csi/raw_unpack.v` | planned C2 (ours) |
+| 04 | Frame/line sync, active region | `streamline/rtl/csi/frame_sync.v` | planned C2 (ours) |
+| 05 | Black-level correction | `streamline/rtl/isp/blc.v` | **streamline ✓** (integrates at C3) |
+| 06 | White-balance gains | `streamline/rtl/isp/wb_gains.v` | **streamline ✓** (integrates at C3) |
+| 07 | Defective-pixel correction | `streamline/rtl/isp/dpc.v` | **reserved** insertion point (C7) |
+| 08 | Lens-shading correction | `streamline/rtl/isp/lsc.v` | **reserved** insertion point (C7) |
+| 09 | Debayer — MHC 5×5 ([DEBAYER-PLAN.md](DEBAYER-PLAN.md)) | `streamline/rtl/isp/debayer.v` | **streamline ✓** (integrates at C4) |
+| 10 | Color-correction matrix | `streamline/rtl/isp/ccm.v` | **streamline ✓** (integrates at C4) |
+| 11 | Gamma / tone LUT | `streamline/rtl/isp/gamma_lut.v` | **streamline ✓** (integrates at C4) |
+| 12 | RGB→YCbCr + filtered 4:2:2 | `streamline/rtl/isp/csc_422.v` | **streamline ✓** (integrates at C4) |
+| 13 | Center crop | `streamline/rtl/isp/crop.v` | planned C4 |
 | 14 | MCU/block formatter | `input_buffer.v` | `rtl/` until encoder Phase 3 |
 | 15 | 8×8 2-D DCT (dct_1d ×2 inside) | `dct_2d.v`, `dct_1d.v` | **streamline ✓** |
 | 16 | Quantizer | `quantizer.v` | **streamline ✓** |
@@ -36,18 +36,19 @@ File names for stages not yet written follow [CAMERA-PLAN.md](CAMERA-PLAN.md) §
 | 18 | Huffman encoder | `huffman_encoder.v` | **streamline ✓** |
 | 19 | Bitstream packer | `bitstream_packer.v` | **streamline ✓** |
 | 20 | JFIF/JPEG headers | `jfif_writer.v` | `rtl/` until encoder Phase 4 |
-| 21 | UVC payload packetizer | `camera/rtl/uvc/uvc_packetizer.v` | planned C5 |
-| 22 | USB endpoint FIFO / CDC | `camera/rtl/uvc/usb_ep_fifo.v` | planned C5 |
+| 21 | UVC payload packetizer | `streamline/rtl/uvc/uvc_packetizer.v` | planned C5 |
+| 22 | USB endpoint FIFO / CDC | `streamline/rtl/uvc/usb_ep_fifo.v` | planned C5 |
 | 23 | USB 3.2 Gen 1 hard interface | (CrossLinkU-NX silicon) | configure only |
 
 Not in the numbered pixel path (no linear position by design):
 
 | Function | File(s) | Notes |
 |---|---|---|
-| Sensor bring-up sequencer + I2C | `camera/rtl/ctrl/{seq_rom,i2c_master,csr_fabric}.v` | control plane, C2 |
-| AE/AWB statistics | `camera/rtl/isp/stats_ae_awb.v` | taps the RAW stream, feeds firmware |
+| ISP assembly top (stages 05–12) | `streamline/rtl/isp/isp_chain.v` | **streamline ✓** — blc → wb_gains → debayer → ccm → gamma_lut → csc_422, verified bit-exact end to end |
+| Sensor bring-up sequencer + I2C | `streamline/rtl/ctrl/{seq_rom,i2c_master,csr_fabric}.v` | control plane, C2 |
+| AE/AWB statistics | `streamline/rtl/isp/stats_ae_awb.v` | taps the RAW stream, feeds firmware |
 | Quantizer table read | `quantizer.v` `qt_rd` port | side tap serving stage 20's DQT |
-| RV32 SoC + firmware | `camera/rtl/cpu/`, `camera/fw/` | control plane, C6 |
+| RV32 SoC + firmware | `streamline/rtl/cpu/`, `streamline/fw/` | control plane, C6 |
 | Infrastructure | `bram_sdp.v`, `axi4_lite_regs.v`, `mjpegzero_enc_top.v`, `synth_timing_wrapper.v` | instantiated throughout |
 
 Parallelism note: at CAMERA-PLAN.md C5b, stages 14–19 are instantiated
@@ -579,9 +580,9 @@ UVC framing                                 uvc/uvc_packetizer.v
 USB 3.2                                     uvc/usb_ep_fifo.v → CrossLinkU-NX hard USB
 ```
 
-Directory-prefixed files live under `camera/rtl/` (CAMERA-PLAN.md §3); bare
-filenames are the JPEG encoder in `streamline/` (or `rtl/` until their
-rewrite phase lands). `[reserved]` marks insertion points that stay empty in
+Directory-prefixed files live under `streamline/rtl/` (CAMERA-PLAN.md §3); bare
+filenames are the JPEG encoder in `streamline/rtl/encoder/` (or upstream
+`rtl/` for the pieces whose rewrite phase has not landed). `[reserved]` marks insertion points that stay empty in
 v1 (CAMERA-PLAN.md C7).
 
 The most easily overlooked pieces are **sensor initialization, RAW unpacking, black-level correction, white balance, gamma/tone conversion, block formatting, and UVC packetization**.

@@ -5,7 +5,7 @@ JPEG encoder. This plan covers everything **around** that encoder needed to
 ship a complete camera: sensor control, MIPI/CSI-2 reception, the RAW and RGB
 ISP stages, a RISC-V control processor with C firmware, and UVC delivery over
 the CrossLinkU-NX hardened USB 3.2 Gen 1 interface. The pipeline inventory
-and stage rationale come from [SUMMARY.md](SUMMARY.md).
+and stage rationale come from [PIPELINE.md](PIPELINE.md).
 
 The two standards from ENCODER-PLAN.md apply unchanged and extend to firmware:
 
