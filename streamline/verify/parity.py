@@ -33,7 +33,7 @@ import sys
 
 PROJ = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 RTL = os.path.join(PROJ, 'rtl')
-STREAMLINE = os.path.join(PROJ, 'streamline')
+STREAMLINE = os.path.join(PROJ, 'streamline', 'rtl', 'encoder')
 SIM = os.path.join(PROJ, 'sim')
 BUILD = os.path.join(PROJ, 'build', 'parity')
 

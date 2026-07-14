@@ -3,7 +3,7 @@
 # ============================================================================
 # isp_model.py — bit-exact golden models for the ISP arithmetic stages
 # ============================================================================
-# Contracts for streamline/camera/rtl/isp/{blc,wb_gains,ccm}.v. All operate on DATA_W
+# Contracts for streamline/rtl/isp/{blc,wb_gains,ccm}.v. All operate on DATA_W
 # unsigned samples (default 12-bit). Bayer channel order for per-channel
 # parameters is [R, Gr, Gb, B], selected by pixel parity relative to the
 # frame's Bayer phase {py, px} exactly as in debayer_model.cfa_color.
