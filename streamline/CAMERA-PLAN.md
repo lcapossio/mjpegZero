@@ -69,9 +69,13 @@ replaced by ours in Phases C3–C4 via swap-and-verify.
 
 ## 3. Repository layout
 
+All Verilog we build lives under `streamline/rtl/<domain>/` — one rule,
+no exceptions:
+
 ```
-streamline/camera/
+streamline/
   rtl/
+    encoder/ the drop-in mjpegZero rewrites (mirror rtl/ module names)
     ctrl/    i2c_master.v  seq_rom.v  csr_fabric.v
     csi/     dphy_byte_align.v  csi2_rx.v  raw_unpack.v  frame_sync.v
     isp/     blc.v  wb_gains.v  debayer.v  ccm.v  gamma_lut.v
@@ -80,15 +84,14 @@ streamline/camera/
     uvc/     uvc_packetizer.v  usb_ep_fifo.v  descriptors (generated)
     top/     camera_top.v  clocks/resets/CDC
   fw/        C sources: init, uvc_ctrl, ae_awb, rate_ctrl, main loop
-  model/     Python golden ISP (stage-per-file, bit-exact fixed point)
-  sim/       cocotb/iverilog benches; csi2_frame_gen; RAW replay vectors
+  verify/    golden models, benches, runners (shared by every domain)
   boards/    LIFCL-33U-EVN constraints, Radiant project, pinout
 ```
 
-The JPEG encoder is consumed from `streamline/` as-is (it is
-drop-in-parameterized and already verified); its remaining phases (ENCODER-PLAN.md
-Phases 2–4) proceed independently and this plan only assumes the Phase 1
-back end.
+The JPEG encoder modules in `rtl/encoder/` keep their upstream filenames so
+the parity harness can swap them one-for-one against `rtl/`; the remaining
+encoder phases (ENCODER-PLAN.md Phases 3–4) proceed independently and this
+plan only assumes the Phase 1 back end.
 
 ## 4. Bandwidth and resource budget (verified at C0, tracked every phase)
 
