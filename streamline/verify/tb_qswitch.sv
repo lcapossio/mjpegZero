@@ -2,7 +2,7 @@
 // ============================================================================
 // tb_qswitch.sv — mid-stream quality change, full encoder, per-frame capture
 // ============================================================================
-// Encodes TB_NUM_FRAMES frames of the same content in runtime-quality mode,
+// Encodes frames of the same content in runtime-quality mode,
 // writing a new quality through AXI-Lite between frames per the schedule in
 // qsched.hex (one 7-bit value per frame). The write lands immediately after
 // the previous frame's JPEG completes and the next frame's pixels start on
@@ -83,11 +83,12 @@ module tb_qswitch;
         $sformat(fname, "frame_0.jpg");
         out_f = $fopen("frame_0.jpg", "wb");
     end
+    // tlast rides on the frame's final byte (the EOI's D9), so the byte
+    // is written before the split.
     always @(posedge clk) begin
         if (m_axis_jpg_tvalid) begin
-            if (!m_axis_jpg_tlast)
-                $fwrite(out_f, "%c", m_axis_jpg_tdata);
-            else begin
+            $fwrite(out_f, "%c", m_axis_jpg_tdata);
+            if (m_axis_jpg_tlast) begin
                 $fclose(out_f);
                 frames_done = frames_done + 1;
                 if (frames_done < NF) begin
@@ -123,6 +124,9 @@ module tb_qswitch;
 
         axi_write(5'h00, 32'h1);                       // enable
         axi_write(5'h0C, {25'd0, qsched[0]});          // initial quality
+`ifdef TB_DRI
+        axi_write(5'h10, `TB_DRI);                     // restart interval
+`endif
         repeat (600) @(posedge clk);                   // first table build
 
         for (f = 0; f < NF; f = f + 1) begin
@@ -160,5 +164,15 @@ module tb_qswitch;
         $display("DONE: %0d frames captured", frames_done);
         $finish;
     end
+
+    // Debug visibility (harmless in normal runs)
+`ifdef TB_DEBUG
+    initial begin
+        #30000000;
+        $display("DBG mcu_count=%0d total=%0d frames_done=%0d",
+                 dut.mcu_count, dut.TOTAL_BLOCKS, frames_done);
+        $finish;
+    end
+`endif
 
 endmodule
