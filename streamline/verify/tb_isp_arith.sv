@@ -38,6 +38,7 @@ module tb_isp_arith;
         .clk(clk), .rst_n(rst_n), .bayer_phase(prm[0][1:0]),
         .black_r(prm[1][11:0]), .black_gr(prm[2][11:0]),
         .black_gb(prm[3][11:0]), .black_b(prm[4][11:0]),
+        .pedestal(prm[5][7:0]),
         .s_valid(s_valid), .s_data(s_data), .s_sof(s_sof),
         .m_valid(m_valid), .m_data(m_data), .m_sof(m_sof));
 `endif
@@ -46,6 +47,7 @@ module tb_isp_arith;
         .clk(clk), .rst_n(rst_n), .bayer_phase(prm[0][1:0]),
         .gain_r(prm[1][11:0]), .gain_gr(prm[2][11:0]),
         .gain_gb(prm[3][11:0]), .gain_b(prm[4][11:0]),
+        .pedestal(prm[5][7:0]),
         .s_valid(s_valid), .s_data(s_data), .s_sof(s_sof),
         .m_valid(m_valid), .m_data(m_data), .m_sof(m_sof));
 `endif
@@ -55,6 +57,7 @@ module tb_isp_arith;
         .m00($signed(prm[1][12:0])), .m01($signed(prm[2][12:0])), .m02($signed(prm[3][12:0])),
         .m10($signed(prm[4][12:0])), .m11($signed(prm[5][12:0])), .m12($signed(prm[6][12:0])),
         .m20($signed(prm[7][12:0])), .m21($signed(prm[8][12:0])), .m22($signed(prm[9][12:0])),
+        .pedestal(prm[10][7:0]),
         .s_valid(s_valid), .s_r(s_r), .s_g(s_g), .s_b(s_b), .s_sof(s_sof),
         .m_valid(m_valid), .m_r(m_r), .m_g(m_g), .m_b(m_b), .m_sof(m_sof));
 `endif

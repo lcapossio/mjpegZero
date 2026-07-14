@@ -4,11 +4,13 @@
 //
 // Function
 //   Multiplies each RAW sample by a per-channel gain in U4.8 fixed point,
-//   rounding to nearest and saturating: out = min((in * gain + 128) >> 8,
-//   2^DATA_W - 1). Channel selection (R, Gr, Gb, B) is by pixel parity
-//   against the frame's Bayer phase. Gain 256 = unity; the U4.8 range
-//   covers gains up to ~16, far beyond photographic need. Bit-exact
-//   contract: verify/isp_model.py::wb_px.
+//   applied around the shadow pedestal so the pedestal itself is not
+//   scaled: out = clamp((((in - pedestal) * gain + 128) >>> 8) + pedestal).
+//   The product is signed — samples below the pedestal (noise under the
+//   black level) are scaled correctly instead of being rectified. Channel
+//   selection (R, Gr, Gb, B) is by pixel parity against the frame's Bayer
+//   phase. Gain 256 = unity. Bit-exact contract:
+//   verify/isp_model.py::wb_px.
 //
 // Interface
 //   Valid-only stream, raster order, s_sof framing; bayer_phase sampled at
@@ -35,6 +37,7 @@ module wb_gains #(
     input  wire [11:0] gain_gr,
     input  wire [11:0] gain_gb,
     input  wire [11:0] gain_b,
+    input  wire [7:0]  pedestal,
 
     input  wire        s_valid,
     input  wire [DATA_W-1:0] s_data,
@@ -80,9 +83,13 @@ module wb_gains #(
         (!cur_py &&  cur_px) ? gain_gr :
         ( cur_py && !cur_px) ? gain_gb : gain_b;
 
-    // Stage 1: multiply. DATA_W x 12 -> DATA_W+12 bits.
-    reg                  p1_valid, p1_sof;
-    reg [DATA_W+11:0]    p1_prod;
+    // Stage 1: signed multiply of (sample - pedestal) by the gain.
+    wire signed [DATA_W:0] centered =
+        $signed({1'b0, s_data})
+        - $signed({{(DATA_W-7){1'b0}}, pedestal});
+
+    reg                       p1_valid, p1_sof;
+    reg signed [DATA_W+13:0]  p1_prod;
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -91,17 +98,20 @@ module wb_gains #(
         end else begin
             p1_valid <= s_valid;
             p1_sof   <= sof_now;
-            p1_prod  <= s_data * gain;
+            p1_prod  <= centered * $signed({1'b0, gain});
         end
     end
 
-    // Stage 2: round to nearest, saturate to the sample range. The low
-    // eight bits of the rounded product are the discarded Q8 fraction.
-    localparam [DATA_W+11:0] HALF = 128;
+    // Stage 2: round (arithmetic shift floors, matching the model),
+    // restore the pedestal, saturate. The low eight bits are the
+    // discarded Q8 fraction.
+    localparam signed [DATA_W+13:0] HALF = 128;
     /* verilator lint_off UNUSEDSIGNAL */
-    wire [DATA_W+11:0] rounded = p1_prod + HALF;
+    wire signed [DATA_W+13:0] rounded = p1_prod + HALF;
     /* verilator lint_on UNUSEDSIGNAL */
-    wire [DATA_W+3:0]  shifted = rounded[DATA_W+11:8];
+    wire signed [DATA_W+5:0]  shifted =
+        $signed(rounded[DATA_W+13:8])
+        + $signed({{(DATA_W-2){1'b0}}, pedestal});
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -110,8 +120,9 @@ module wb_gains #(
         end else begin
             m_valid <= p1_valid;
             m_sof   <= p1_sof;
-            m_data  <= (shifted > {4'd0, {DATA_W{1'b1}}})
-                       ? {DATA_W{1'b1}} : shifted[DATA_W-1:0];
+            m_data  <= (shifted < 0) ? {DATA_W{1'b0}} :
+                       (shifted > $signed({6'd0, {DATA_W{1'b1}}}))
+                           ? {DATA_W{1'b1}} : shifted[DATA_W-1:0];
         end
     end
 

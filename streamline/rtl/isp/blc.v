@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // -----------------------------------------------------------------------------
-// blc — Bayer-domain black-level correction
+// blc — Bayer-domain black-level correction with shadow footroom
 //
 // Function
-//   Subtracts a per-channel black offset from each RAW sample, flooring at
-//   zero: out = max(in - black[channel], 0). The channel (R, Gr, Gb, B) is
-//   the pixel's Bayer position, derived from column/row parity and the
-//   frame's Bayer phase. Bit-exact contract: verify/isp_model.py::blc_px.
+//   Subtracts a per-channel black offset and adds the pedestal, clamping
+//   to the sample range: out = clamp(in - black[channel] + pedestal).
+//   Downstream RAW/RGB stages carry values in this pedestal-offset domain
+//   until the CCM removes it, so sensor noise below the black level
+//   survives the debayer's spatial averaging instead of being rectified
+//   upward — with pedestal 0 the pipeline is bit-identical to a plain
+//   floor-at-zero correction. The channel (R, Gr, Gb, B) is the pixel's
+//   Bayer position, from column/row parity and the frame's Bayer phase.
+//   Bit-exact contract: verify/isp_model.py::blc_px.
 //
 // Interface
 //   Valid-only stream, raster order, s_sof on each frame's first sample;
@@ -33,6 +38,7 @@ module blc #(
     input  wire [DATA_W-1:0] black_gr,
     input  wire [DATA_W-1:0] black_gb,
     input  wire [DATA_W-1:0] black_b,
+    input  wire [7:0]  pedestal,
 
     input  wire        s_valid,
     input  wire [DATA_W-1:0] s_data,
@@ -80,6 +86,14 @@ module blc #(
         (!cur_py &&  cur_px) ? black_gr :
         ( cur_py && !cur_px) ? black_gb : black_b;
 
+    // in - black + pedestal, signed, then clamped to the sample range.
+    // Implicit widening of the signed operands is sign-extension: lossless.
+    /* verilator lint_off WIDTHEXPAND */
+    wire signed [DATA_W+1:0] corrected =
+        $signed({2'b00, s_data}) - $signed({2'b00, black})
+        + $signed({{(DATA_W-6){1'b0}}, pedestal});
+    /* verilator lint_on WIDTHEXPAND */
+
     always @(posedge clk) begin
         if (!rst_n) begin
             m_valid <= 1'b0;
@@ -87,7 +101,9 @@ module blc #(
         end else begin
             m_valid <= s_valid;
             m_sof   <= sof_now;
-            m_data  <= (s_data > black) ? (s_data - black) : {DATA_W{1'b0}};
+            m_data  <= (corrected < 0) ? {DATA_W{1'b0}} :
+                       (corrected > $signed({2'b00, {DATA_W{1'b1}}}))
+                           ? {DATA_W{1'b1}} : corrected[DATA_W-1:0];
         end
     end
 

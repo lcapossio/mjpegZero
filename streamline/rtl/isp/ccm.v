@@ -4,9 +4,10 @@
 //
 // Function
 //   Maps sensor RGB to output RGB through a programmable 3x3 matrix in
-//   S4.8 fixed point: out_i = clamp((sum_j m[i][j] * in_j + 128) >> 8) to
-//   [0, 2^DATA_W - 1]. Coefficient 256 = 1.0; the S4.8 range (-16..+16)
-//   covers any practical sensor matrix. Bit-exact contract:
+//   S4.8 fixed point, removing the shadow pedestal on the way in — the
+//   last linear stage, after all spatial averaging:
+//   out_i = clamp((sum_j m[i][j] * (in_j - pedestal) + 128) >> 8) to
+//   [0, 2^DATA_W - 1]. Coefficient 256 = 1.0. Bit-exact contract:
 //   verify/isp_model.py::ccm_px.
 //
 // Interface
@@ -32,6 +33,7 @@ module ccm #(
     input  wire signed [12:0] m00, input wire signed [12:0] m01, input wire signed [12:0] m02,
     input  wire signed [12:0] m10, input wire signed [12:0] m11, input wire signed [12:0] m12,
     input  wire signed [12:0] m20, input wire signed [12:0] m21, input wire signed [12:0] m22,
+    input  wire [7:0]  pedestal,
 
     input  wire        s_valid,
     input  wire [DATA_W-1:0] s_r,
@@ -50,10 +52,17 @@ module ccm #(
     localparam PW = DATA_W + 14;
 
     function signed [PW-1:0] pmul;
-        input [DATA_W-1:0] v;
+        input signed [DATA_W:0] v;
         input signed [12:0] c;
-        pmul = $signed({1'b0, v}) * c;
+        pmul = v * c;
     endfunction
+
+    wire signed [DATA_W:0] in_r =
+        $signed({1'b0, s_r}) - $signed({{(DATA_W-7){1'b0}}, pedestal});
+    wire signed [DATA_W:0] in_g =
+        $signed({1'b0, s_g}) - $signed({{(DATA_W-7){1'b0}}, pedestal});
+    wire signed [DATA_W:0] in_b =
+        $signed({1'b0, s_b}) - $signed({{(DATA_W-7){1'b0}}, pedestal});
 
     reg               p1_valid, p1_sof;
     reg signed [PW-1:0] pr0, pr1, pr2, pg0, pg1, pg2, pb0, pb1, pb2;
@@ -65,9 +74,9 @@ module ccm #(
         end else begin
             p1_valid <= s_valid;
             p1_sof   <= s_valid && s_sof;
-            pr0 <= pmul(s_r, m00); pr1 <= pmul(s_g, m01); pr2 <= pmul(s_b, m02);
-            pg0 <= pmul(s_r, m10); pg1 <= pmul(s_g, m11); pg2 <= pmul(s_b, m12);
-            pb0 <= pmul(s_r, m20); pb1 <= pmul(s_g, m21); pb2 <= pmul(s_b, m22);
+            pr0 <= pmul(in_r, m00); pr1 <= pmul(in_g, m01); pr2 <= pmul(in_b, m02);
+            pg0 <= pmul(in_r, m10); pg1 <= pmul(in_g, m11); pg2 <= pmul(in_b, m12);
+            pb0 <= pmul(in_r, m20); pb1 <= pmul(in_g, m21); pb2 <= pmul(in_b, m22);
         end
     end
 
