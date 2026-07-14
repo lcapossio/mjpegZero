@@ -4,7 +4,7 @@
 # debayer_model.py — bit-exact golden model for the MHC 5x5 demosaic
 # ============================================================================
 # Malvar-He-Cutler gradient-corrected linear demosaic (ICASSP 2004) in exact
-# integer arithmetic — the contract for camera/rtl/isp/debayer.v:
+# integer arithmetic — the contract for streamline/camera/rtl/isp/debayer.v:
 #
 #   - all eight MHC kernels normalized to a common /16 scale so every
 #     interpolated sample is (acc + 8) >> 4, clamped to [0, 2^DATA_W - 1]

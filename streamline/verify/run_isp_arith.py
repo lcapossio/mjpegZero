@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 
 from isp_model import blc_frame, wb_frame, ccm_px  # noqa: E402
 
-ISP = os.path.join(PROJ, 'camera', 'rtl', 'isp')
+ISP = os.path.join(PROJ, 'streamline', 'camera', 'rtl', 'isp')
 
 
 def write_hex(path, vals, width=3):
