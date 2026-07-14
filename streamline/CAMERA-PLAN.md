@@ -26,14 +26,18 @@ The two standards from PLAN.md apply unchanged and extend to firmware:
 | C-G1 | IMX900C streams into the FPGA: CSI-2 frames received, unpacked, frame/line sync locked | Frame counter + CRC-checked capture of sensor test pattern |
 | C-G2 | Full ISP in our own Verilog: BLC → WB → debayer → CCM → gamma → CSC → 4:2:2 | Per-stage bit-exact match against the Python golden model |
 | C-G3 | UVC camera enumerates and streams MJPEG to stock hosts (Linux/macOS/Windows, no custom driver) | `v4l2-ctl`/QuickTime/Camera app playback at target mode |
-| C-G4 | Sustained 1920×1080 (center crop) at 30 fps end to end | Host-side frame-rate and drop-count measurement |
+| C-G4 | **Sustained 1920×1080 at 60 fps end to end — the stated objective** | Host-side frame-rate and drop-count measurement |
 | C-G5 | Control plane = our RV32I core + C firmware: sensor config, exposure/WB loops, UVC requests, JPEG rate control | Firmware unit tests + on-target behavior |
 | C-G6 | Every module we author passes the timelessness review and `verilator -Wall`; C compiles warning-free with `-Wall -Wextra` | Review gate per merge |
 | C-G7 | Fits LIFCL-33U with ≥ 15% LUT headroom | Radiant post-route utilization |
 | C-G8 | Image quality: gray-world neutral gray scenes, no visible fixed-pattern artifacts, decoded PSNR within 1 dB of the Python ISP+JPEG model on captured RAW | Golden-RAW replay comparison |
 
 Non-goals for v1: 4:2:0, scaling (crop only), H.264, USB UAC/audio, DPC/LSC
-(insertion points reserved), auto-focus.
+(insertion points reserved), auto-focus. **4K is out of scope permanently on
+this sensor**: the IMX900C's active array is ~2048×1536 (3.2 MP) and 4K
+needs 8.3 MP — no architecture choice changes that. The ceiling here is
+1080p60 (the objective) and, with the same throughput architecture,
+full-sensor 2048×1536 at roughly 45 fps.
 
 ## 2. The hardware/software split
 
@@ -88,20 +92,35 @@ back end.
 
 ## 4. Bandwidth and resource budget (verified at C0, tracked every phase)
 
-- **Pixel rates.** Full IMX900C region 2048×1536@30 ≈ 94 Mpx/s; encoder
-  input at 4:2:2 is 2 samples/pixel. v1 target is the 1920×1080 center crop:
-  62.2 Mpx/s → 124.4 Msample/s into the encoder, inside the 150 MHz,
-  1-sample/clock envelope the streamline back end already sustains. Full-3.2MP
-  encoding (needs ~189 Msample/s) is future work: either a dual-sample
-  datapath (PLAN.md future work) or reduced frame rate.
+- **Pixel rates.** The objective, 1920×1080@60, is 124.4 Mpx/s; the ISP
+  runs one pixel per clock and closes at ≥ 135 MHz. The JPEG coefficient
+  path carries 2 coefficients per pixel at 4:2:2 → **248.9 Mcoeff/s, beyond
+  any single 1-coefficient/clock path at a realistic Nexus-fabric clock**
+  (150 MHz sustains ~1080p36). See "Reaching 1080p60" below.
+- **Reaching 1080p60 — restart-interval parallelism.** Two JPEG encoder
+  cores encode alternating restart intervals of the same scan. T.81 makes
+  intervals fully independent: DC predictors reset at every restart marker
+  and each segment is byte-aligned, so a merger interleaves finished
+  segments byte-for-byte losslessly. Each core sees ~124 Mcoeff/s — inside
+  the envelope the streamline back end already sustains — and the same
+  structure yields full-sensor 2048×1536 at ~45 fps. Two consequences:
+  restart markers (DRI) are **mandatory in every frame**, so the packer's
+  restart-path correctness (RESULTS.md defect 2, fixed in streamline) is
+  load-bearing; and the interval length is chosen per mode so both cores'
+  workloads balance (one MCU row per interval is the starting point).
 - **USB.** 1080p30 MJPEG at typical quality ≈ 3–8 MB/s — far inside USB 3.2
   Gen 1; even worst-case Q95 frames fit with 10× margin. The frame-drop
   policy (§8, C5) exists for pathological frames, not steady state.
 - **LUT budget (rough, to be measured at C0 and re-baselined per phase):**
-  CSI-2 RX + unpack ~3k, ISP ~7k, JPEG core ~9k, UVC/FIFO ~3k, RV32 SoC ~4k,
-  glue/CDC ~1k → ~27k of 33k. This is tight: the Loeffler DCT (PLAN.md
-  Phase 2) and HUFF_BANKS=2 are load-bearing for C-G7, and every phase gate
-  includes a utilization check.
+  CSI-2 RX + unpack ~3k, ISP ~7k, **two** JPEG coefficient paths at ~6.5k
+  each (assumes the Loeffler DCT and HUFF_BANKS=2 land first — they are
+  prerequisites, not options), shared JFIF writer + segment merger ~1.5k,
+  UVC/FIFO ~3k, RV32 SoC ~4k, glue/CDC ~1k → ~31k of 33k. This is the
+  plan's tightest constraint and the reason C-G7's headroom target is 15%:
+  if the dual-core budget misses at the C5 gate, the fallbacks are, in
+  order, 4:2:0 (drops the coefficient rate to 186.7 Mcoeff/s — still
+  dual-core, but smaller line buffers elsewhere), reduced-height crop at
+  60 fps, or 1080p45 single-core while the budget is recovered.
 - **Multipliers.** LIFCL-33U DSP capacity is the scarcest resource: ISP
   (WB, CCM, debayer) and DCT compete. The budget table in RESULTS-CAM.md
   gets a DSP column from C0 onward.
@@ -159,7 +178,8 @@ per-frame; no firmware ever touches pixel data.
 | C2 | IMX900C bring-up: power/clock/reset, ROM-driven I2C sequencer, D-PHY/CSI-2 (Lattice baseline) adapted to IMX900 lane rate/count/format; frame_sync + raw_unpack (ours) | C-G1: CRC-checked sensor test-pattern frames captured; sequencer ROM generated from a reviewed register table |
 | C3 | RAW ISP (ours): black-level correction, WB gains, active-region extraction; golden model for each; stats block skeleton | Bit-exact vs model on replayed RAW; test-pattern image visually correct via debug path |
 | C4 | RGB ISP (ours): debayer (bilinear first, Malvar later), CCM, gamma LUT, full-range CSC with **filtered** 4:2:2 (not chroma drop), center crop | Bit-exact vs model per stage; Lattice debayer retired; first live color image via debug path |
-| C5 | JPEG + UVC datapath: streamline encoder integrated, MCU formatting via its input buffer, UVC packetizer + endpoint FIFOs (ours), descriptors from the generator, probe/commit in a minimal FSM, defined frame-drop policy | C-G3 at fixed quality: stock host plays live 1080p30 MJPEG |
+| C5 | JPEG + UVC datapath, single core first: streamline encoder integrated, MCU formatting via its input buffer, UVC packetizer + endpoint FIFOs (ours), descriptors from the generator, probe/commit in a minimal FSM, defined frame-drop policy | C-G3 at fixed quality: stock host plays live 1080p30 MJPEG |
+| C5b | Throughput doubling: second coefficient path + restart-interval splitter and byte-aligned segment merger; DRI on in every frame; sensor mode raised to 60 fps | **C-G4: sustained 1080p60 on a stock host**; merged stream byte-identical to a single-core encode of the same frame at the same DRI |
 | C6 | RV32I core + SoC + firmware: our CPU replaces the probe/commit FSM and takes over sensor control; AE/AWB loops on hardware statistics; JPEG rate control (per the encoder's frame-boundary quality contract) | C-G5; sequencer/FSM fallbacks still build; firmware unit tests green |
 | C7 | Image quality round: defective-pixel correction, lens-shading correction (coarse grid + bilinear), chroma filter improvements, tuned CCM/gamma from captures | C-G8; before/after captures archived |
 | C8 | Hardening: error injection (CSI errors, USB stalls, sensor dropout) recovers without power cycle; soak test; final timelessness review; RESULTS-CAM.md closure | All C-G goals; 24 h soak, zero lockups |
