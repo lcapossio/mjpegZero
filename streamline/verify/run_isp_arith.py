@@ -18,6 +18,8 @@ sys.path.insert(0, HERE)
 
 from isp_model import blc_frame, wb_frame, ccm_px  # noqa: E402
 
+PEDS = [0, 64]
+
 ISP = os.path.join(PROJ, 'streamline', 'rtl', 'isp')
 
 
@@ -60,19 +62,26 @@ def main():
 
     for (w, h, py, px) in [(32, 10, 0, 0), (21, 9, 1, 1)]:
         vals = frame_vals(w * h)
+        # Values straddling black +/- pedestal exercise the footroom path.
+        vals[8:16] = [30, 62, 65, 90, 100, 128, 130, 200]
         cfa = [vals[y*w:(y+1)*w] for y in range(h)]
 
-        blacks = [64, 60, 58, 72]
-        exp = [v for row in blc_frame(cfa, py, px, blacks) for v in row]
-        ok &= run(os.path.join(PROJ, 'build', 'isp', f'blc_{w}x{h}'),
-                  'BLC', w, h, 'blc.v', vals, exp,
-                  [py*2+px] + blacks)
+        for ped in PEDS:
+            blacks = [64, 60, 58, 72]
+            exp = [v for row in blc_frame(cfa, py, px, blacks, ped)
+                   for v in row]
+            ok &= run(os.path.join(PROJ, 'build', 'isp',
+                                   f'blc_{w}x{h}_p{ped}'),
+                      'BLC', w, h, 'blc.v', vals, exp,
+                      [py*2+px] + blacks + [ped])
 
-        gains = [420, 256, 260, 505]           # U4.8: 1.64, 1.0, 1.016, 1.97
-        exp = [v for row in wb_frame(cfa, py, px, gains) for v in row]
-        ok &= run(os.path.join(PROJ, 'build', 'isp', f'wb_{w}x{h}'),
-                  'WB', w, h, 'wb_gains.v', vals, exp,
-                  [py*2+px] + gains)
+            gains = [420, 256, 260, 505]       # U4.8: 1.64, 1.0, 1.016, 1.97
+            exp = [v for row in wb_frame(cfa, py, px, gains, ped)
+                   for v in row]
+            ok &= run(os.path.join(PROJ, 'build', 'isp',
+                                   f'wb_{w}x{h}_p{ped}'),
+                      'WB', w, h, 'wb_gains.v', vals, exp,
+                      [py*2+px] + gains + [ped])
 
     # CCM: pixel-wise; matrix with negative off-diagonals (typical shape).
     n = 600
@@ -82,10 +91,11 @@ def main():
     trips[2] = [4095, 0, 4095]
     m = [[430, -120, -54], [-90, 410, -64], [-30, -150, 436]]  # S4.8
     stim = [v for t in trips for v in t]
-    exp = [v for t in trips for v in ccm_px(t, m)]
-    params = [0] + [c & 0xFFFF for row in m for c in row]
-    ok &= run(os.path.join(PROJ, 'build', 'isp', 'ccm'),
-              'CCM', n, 1, 'ccm.v', stim, exp, params)
+    for ped in PEDS:
+        exp = [v for t in trips for v in ccm_px(t, m, ped)]
+        params = [0] + [c & 0xFFFF for row in m for c in row] + [ped]
+        ok &= run(os.path.join(PROJ, 'build', 'isp', f'ccm_p{ped}'),
+                  'CCM', n, 1, 'ccm.v', stim, exp, params)
 
     print('ALL PASS' if ok else 'SOME FAILED')
     return 0 if ok else 1
