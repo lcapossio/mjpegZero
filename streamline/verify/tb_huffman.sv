@@ -42,9 +42,17 @@ module tb_huffman;
         lfsr = {lfsr[30:0], lfsr[31] ^ lfsr[21] ^ lfsr[1] ^ lfsr[0]};
     endtask
 
+    reg [2:0] stall_left = 0;
     always @(posedge clk) begin
         lfsr_step;
-        out_ready <= (lfsr[1:0] != 2'b00);   // ~75% ready
+        if (stall_left != 0) begin
+            stall_left <= stall_left - 3'd1;
+            out_ready  <= 1'b0;
+        end else begin
+            out_ready <= 1'b1;
+            if (lfsr[2:0] == 3'b000)
+                stall_left <= {1'b0, lfsr[4:3]} + 3'd2;  // 2-5 cycle stalls
+        end
     end
 
     integer log_f;
@@ -83,6 +91,11 @@ module tb_huffman;
                 4'd7: coeff_at = (i == 0) ? -16'sd2047 : (i == 63) ? 16'sd1023 : (i == 1) ? -16'sd1023 : 16'sd0; // extremes
                 4'd8: coeff_at = $signed({12'd0, i[3:0]}) - 16'sd8;             // dense small
                 4'd9: coeff_at = 16'sd1;                                        // dense ones
+                4'd11: begin                                                    // dense large
+                    coeff_at = (data_lfsr[0]) ? $signed({5'd0, data_lfsr[10:1]} + 16'sd256)
+                                              : -$signed({5'd0, data_lfsr[10:1]} + 16'sd256);
+                end
+                4'd12: coeff_at = (i[1:0] == 2'd0) ? $signed({{5{data_lfsr[10]}}, data_lfsr[10:0]}) : 16'sd0; // gappy large
                 default: begin                                                  // random sparse
                     coeff_at = (data_lfsr[3:0] == 4'd0)
                              ? $signed({{6{data_lfsr[9]}}, data_lfsr[9:0]}) : 16'sd0;
@@ -122,7 +135,9 @@ module tb_huffman;
         repeat (2) @(posedge clk);
 
         for (blk = 0; blk < 60; blk = blk + 1) begin
-            pattern = (blk < 22) ? blk[3:0] % 11 : 4'd10;
+            pattern = (blk < 22) ? blk[3:0] % 11 :
+                      (blk[1:0] == 2'd1) ? 4'd11 :
+                      (blk[1:0] == 2'd2) ? 4'd12 : 4'd10;
             // Rotate through components like the real MCU order Y,Y,Cb,Cr
             send_block(pattern, (blk[1:0] == 2'd2) ? 2'd2 :
                                 (blk[1:0] == 2'd3) ? 2'd3 : 2'd0);

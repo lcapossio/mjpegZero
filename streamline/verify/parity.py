@@ -74,6 +74,8 @@ def run_encoder(tag, swaps, opts):
         defines += ['-DLITE_MODE', '-DLITE_QUALITY=%d' % opts.quality]
     else:
         defines += ['-DTEST_QUALITY=%d' % opts.quality]
+    if opts.tv:
+        defines += ['-DTV_HEX_FILE=\\"%s\\"' % opts.tv]
 
     vvp_file = os.path.join(workdir, 'sim.vvp')
     compile_cmd = (['iverilog', '-g2012', '-o', vvp_file] + defines
@@ -113,6 +115,9 @@ def main():
     p.add_argument('--quality', type=int, default=95)
     p.add_argument('--width', type=int, default=64)
     p.add_argument('--height', type=int, default=8)
+    p.add_argument('--tv', default='',
+                   help='test-vector hex file (relative to the run dir), '
+                        'for sizes other than the default 64x8')
     opts = p.parse_args()
 
     swaps = set(filter(None, opts.swap.split(',')))

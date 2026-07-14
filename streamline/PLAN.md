@@ -355,7 +355,7 @@ Verification is built **before** the first module lands (Phase 0), reusing
 | Phase | Content | Gate to pass |
 |-------|---------|--------------|
 | 0 | Verification harness, golden vectors, FuseSoC `streamline` target, this standard | Harness proves `rtl/` == `rtl/` (self-check); CI wired |
-| 1 | `quantizer`, `huffman_encoder`, `bitstream_packer` | **Byte-identical JPEGs**; dense-block ≤ 68 cyc; lint-clean |
+| 1 | `quantizer`, `huffman_encoder`, `bitstream_packer`, plus `zigzag_reorder` pulled forward (the faster back end exposes a data race in the rtl original) | **Byte-identical JPEGs** wherever the rtl baseline is itself correct; proven-correct stream + PSNR parity where it is not (Q = 100, see RESULTS.md defect 3); dense-block ≤ 68 cyc; lint-clean |
 | 2 | `dct_1d`, `dct_2d`, zigzag fusion decision | IEEE-1180-style accuracy; PSNR ≥ baseline − 0.05 dB; DSP count down |
 | 3 | `input_buffer`, `rgb_to_ycbcr` | Bit-exact streams; no address multipliers in sample path |
 | 4 | `jfif_writer`, top, wrapper, regs, bram | Full streamline encoder passes G1–G5; synth meets G3/G4 |
