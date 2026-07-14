@@ -77,6 +77,7 @@ top level is streamlined (Phase 4), reclaiming the LUTRAM ring.
 - Vivado elaboration of the constant-function table initializers
   (quantizer LITE mode) is untested here (iverilog/Verilator only) — check
   at the first synthesis gate (`run_all.py synth`).
-- `rtl/dct_2d.v`'s output transpose uses the same live-selector double
-  buffer as defect 3; its Phase 2 rewrite must use the latched-selector
-  form.
+- ~~`rtl/dct_2d.v`'s output transpose uses the same live-selector double
+  buffer as defect 3~~ — verified false on full read: both dct_2d buffers
+  latch their read selectors at block completion (the correct form).
+  Defect 3 is unique to `rtl/zigzag_reorder.v`.
