@@ -83,6 +83,8 @@ def run_encoder(tag, swaps, opts):
         defines += ['-DTEST_QUALITY=%d' % opts.quality]
     if opts.tv:
         defines += ['-DTV_HEX_FILE="%s"' % opts.tv]
+    if opts.huff_banks:
+        defines += ['-DTB_HUFF_BANKS=%d' % opts.huff_banks]
 
     vvp_file = os.path.join(workdir, 'sim.vvp')
     compile_cmd = (['iverilog', '-g2012', '-o', vvp_file] + defines
@@ -125,6 +127,8 @@ def main():
     p.add_argument('--tv', default='',
                    help='test-vector hex file (relative to the run dir), '
                         'for sizes other than the default 64x8')
+    p.add_argument('--huff-banks', type=int, default=0,
+                   help='override the Huffman ring depth (2, 4, or 8)')
     p.add_argument('--aan', action='store_true',
                    help='use the AAN matched set (dct_1d/dct_2d/quantizer '
                         '_aan variants) for the swapped side')

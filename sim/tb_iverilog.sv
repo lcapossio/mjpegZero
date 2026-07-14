@@ -101,6 +101,12 @@ module tb_iverilog;
     localparam TB_RANDOM_GAPS = 0;
 `endif
 
+`ifdef TB_HUFF_BANKS
+    localparam TB_HUFF_BANKS = `TB_HUFF_BANKS;
+`else
+    localparam TB_HUFF_BANKS = 8;
+`endif
+
     // ========================================================================
     // Signals
     // ========================================================================
@@ -153,7 +159,8 @@ module tb_iverilog;
         .EXIF_X_RES    (TB_EXIF_X_RES),
         .EXIF_Y_RES    (TB_EXIF_Y_RES),
         .EXIF_RES_UNIT (TB_EXIF_RES_UNIT),
-        .RGB_INPUT     (TB_RGB_INPUT)
+        .RGB_INPUT     (TB_RGB_INPUT),
+        .HUFF_BANKS    (TB_HUFF_BANKS)
     ) dut (
         .clk               (clk),
         .rst_n             (rst_n),
