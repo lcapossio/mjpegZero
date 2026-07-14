@@ -10,7 +10,7 @@
 # ideal inverse DCT), and compare decoded PSNR of the Loeffler pipeline
 # against the matrix pipeline at several qualities.
 #
-# Gate (PLAN.md Phase 2): Loeffler PSNR >= matrix PSNR - 0.05 dB at every
+# Gate (ENCODER-PLAN.md Phase 2): Loeffler PSNR >= matrix PSNR - 0.05 dB at every
 # tested quality.
 # ============================================================================
 

@@ -1,4 +1,4 @@
-# streamline/ — Plan for the Optimized MJPEG Encoder RTL
+# ENCODER-PLAN.md — Plan for the Optimized MJPEG Encoder RTL
 
 ## 1. Purpose
 
@@ -347,7 +347,7 @@ Verification is built **before** the first module lands (Phase 0), reusing
    ≤ 68 cycles; zero credit-stall cycles at steady state) so throughput
    regressions fail loudly, not silently.
 5. **Synthesis gates.** `run_all.py synth` + timing/resource checks after
-   Phases 1, 2, and 4; results recorded in `streamline/RESULTS.md` (metrics
+   Phases 1, 2, and 4; results recorded in `streamline/ENCODER-RESULTS.md` (metrics
    live there and in commit messages — never in the RTL, per §4).
 
 ## 8. Execution order and gates
@@ -355,11 +355,11 @@ Verification is built **before** the first module lands (Phase 0), reusing
 | Phase | Content | Gate to pass |
 |-------|---------|--------------|
 | 0 | Verification harness, golden vectors, FuseSoC `streamline` target, this standard | Harness proves `rtl/` == `rtl/` (self-check); CI wired |
-| 1 | `quantizer`, `huffman_encoder`, `bitstream_packer`, plus `zigzag_reorder` pulled forward (the faster back end exposes a data race in the rtl original) | **Byte-identical JPEGs** wherever the rtl baseline is itself correct; proven-correct stream + PSNR parity where it is not (Q = 100, see RESULTS.md defect 3); dense-block ≤ 68 cyc; lint-clean |
+| 1 | `quantizer`, `huffman_encoder`, `bitstream_packer`, plus `zigzag_reorder` pulled forward (the faster back end exposes a data race in the rtl original) | **Byte-identical JPEGs** wherever the rtl baseline is itself correct; proven-correct stream + PSNR parity where it is not (Q = 100, see ENCODER-RESULTS.md defect 3); dense-block ≤ 68 cyc; lint-clean |
 | 2 | `dct_1d`, `dct_2d`, zigzag fusion decision | IEEE-1180-style accuracy; PSNR ≥ baseline − 0.05 dB; DSP count down |
 | 3 | `input_buffer`, `rgb_to_ycbcr` | Bit-exact streams; no address multipliers in sample path |
 | 4 | `jfif_writer`, top, wrapper, regs, bram | Full streamline encoder passes G1–G5; synth meets G3/G4 |
-| 5 | Closure: RESULTS.md, resource/timing comparison table, final timelessness review of every file | All of G1–G8 |
+| 5 | Closure: ENCODER-RESULTS.md, resource/timing comparison table, final timelessness review of every file | All of G1–G8 |
 | 6 | `rtl/eth/*` | Same standards; RTP output validated against RFC 2435 |
 
 Order rationale: the back end (Phase 1) is where the measured bottleneck is
@@ -373,8 +373,8 @@ back end is locked in as the measuring stick.
 
 ```
 streamline/
-  PLAN.md                  — this document
-  RESULTS.md               — measured timing/resource/PSNR per phase (Phase 5)
+  ENCODER-PLAN.md                  — this document
+  ENCODER-RESULTS.md               — measured timing/resource/PSNR per phase (Phase 5)
   quantizer.v              — Phase 1
   huffman_encoder.v        — Phase 1
   bitstream_packer.v       — Phase 1
@@ -391,5 +391,5 @@ streamline/
 ```
 
 History, rationale-for-change, and comparisons against `rtl/` live in this
-file, in `RESULTS.md`, and in commit messages. The `.v` files contain none of
+file, in `ENCODER-RESULTS.md`, and in commit messages. The `.v` files contain none of
 it — they simply are what they are.

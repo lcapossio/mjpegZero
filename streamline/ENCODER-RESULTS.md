@@ -1,8 +1,8 @@
-# streamline/ — Measured Results
+# ENCODER-RESULTS.md — Measured Results (encoder rewrite)
 
 Phase-by-phase measurements against `rtl/` at identical parameters.
 Provenance and rationale live here and in commit messages — never in the
-`.v` files (PLAN.md §4).
+`.v` files (ENCODER-PLAN.md §4).
 
 ## Phase 0 — Verification harness (complete)
 

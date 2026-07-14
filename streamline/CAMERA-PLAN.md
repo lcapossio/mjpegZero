@@ -1,19 +1,19 @@
 # CAMERA-PLAN.md — IMX900C → ISP → MJPEG → UVC on CrossLinkU-NX
 
-Companion to [PLAN.md](PLAN.md), which governs the streamline rewrite of the
+Companion to [ENCODER-PLAN.md](ENCODER-PLAN.md), which governs the streamline rewrite of the
 JPEG encoder. This plan covers everything **around** that encoder needed to
 ship a complete camera: sensor control, MIPI/CSI-2 reception, the RAW and RGB
 ISP stages, a RISC-V control processor with C firmware, and UVC delivery over
 the CrossLinkU-NX hardened USB 3.2 Gen 1 interface. The pipeline inventory
 and stage rationale come from [SUMMARY.md](SUMMARY.md).
 
-The two standards from PLAN.md apply unchanged and extend to firmware:
+The two standards from ENCODER-PLAN.md apply unchanged and extend to firmware:
 
-1. **Timeless, blameless source** (PLAN.md §4) — for Verilog *and* C. C files
+1. **Timeless, blameless source** (ENCODER-PLAN.md §4) — for Verilog *and* C. C files
    state what they do and why, grounded in the datasheet, the USB/UVC specs,
    or the mathematics; no history, no tool anecdotes, no references to code
    they replaced.
-2. **Swap-and-verify** (PLAN.md §7) — proven on mjpegZero: begin from a
+2. **Swap-and-verify** (ENCODER-PLAN.md §7) — proven on mjpegZero: begin from a
    known-good baseline, replace one stage at a time behind a stable
    interface, and verify each swap against a golden model before the next.
    Here the baseline is the Lattice CrossLinkU-NX UVC reference design
@@ -86,7 +86,7 @@ camera/
 ```
 
 The JPEG encoder is consumed from `streamline/` as-is (it is
-drop-in-parameterized and already verified); its remaining phases (PLAN.md
+drop-in-parameterized and already verified); its remaining phases (ENCODER-PLAN.md
 Phases 2–4) proceed independently and this plan only assumes the Phase 1
 back end.
 
@@ -105,7 +105,7 @@ back end.
   the envelope the streamline back end already sustains — and the same
   structure yields full-sensor 2048×1536 at ~45 fps. Two consequences:
   restart markers (DRI) are **mandatory in every frame**, so the packer's
-  restart-path correctness (RESULTS.md defect 2, fixed in streamline) is
+  restart-path correctness (ENCODER-RESULTS.md defect 2, fixed in streamline) is
   load-bearing; and the interval length is chosen per mode so both cores'
   workloads balance (one MCU row per interval is the starting point).
 - **USB.** 1080p30 MJPEG at typical quality ≈ 3–8 MB/s — far inside USB 3.2
@@ -122,7 +122,7 @@ back end.
   dual-core, but smaller line buffers elsewhere), reduced-height crop at
   60 fps, or 1080p45 single-core while the budget is recovered.
 - **Multipliers.** LIFCL-33U DSP capacity is the scarcest resource: ISP
-  (WB, CCM, debayer) and DCT compete. The budget table in RESULTS-CAM.md
+  (WB, CCM, debayer) and DCT compete. The budget table in CAMERA-RESULTS.md
   gets a DSP column from C0 onward.
 
 ## 5. Verification strategy
@@ -148,7 +148,7 @@ The mjpegZero experience generalizes:
 5. **Hardware-in-loop.** The hardened USB path cannot be fully simulated;
    from C1 every phase ends with an on-board checkpoint (enumeration, then
    test-pattern streaming, then live video), with `dmesg`/`v4l2-ctl`
-   evidence recorded in RESULTS-CAM.md.
+   evidence recorded in CAMERA-RESULTS.md.
 
 ## 6. Sensor control detail (C on RV32; ROM sequencer at bring-up)
 
@@ -177,12 +177,12 @@ per-frame; no firmware ever touches pixel data.
 | C1 | Reference streaming checkpoint with its supported source (RPi CM2 sensor or internal test pattern) | Host plays reference video; we can rebuild it deterministically |
 | C2 | IMX900C bring-up: power/clock/reset, ROM-driven I2C sequencer, D-PHY/CSI-2 (Lattice baseline) adapted to IMX900 lane rate/count/format; frame_sync + raw_unpack (ours) | C-G1: CRC-checked sensor test-pattern frames captured; sequencer ROM generated from a reviewed register table |
 | C3 | RAW ISP (ours): black-level correction, WB gains, active-region extraction; golden model for each; stats block skeleton | Bit-exact vs model on replayed RAW; test-pattern image visually correct via debug path |
-| C4 | RGB ISP (ours): debayer (bilinear first, Malvar later), CCM, gamma LUT, full-range CSC with **filtered** 4:2:2 (not chroma drop), center crop | Bit-exact vs model per stage; Lattice debayer retired; first live color image via debug path |
+| C4 | RGB ISP (ours): debayer (**Malvar–He–Cutler 5×5 from the start** — see the C4 debayer note below), CCM, gamma LUT, full-range CSC with **filtered** 4:2:2 (not chroma drop), center crop | Bit-exact vs model per stage; Lattice debayer retired; first live color image via debug path |
 | C5 | JPEG + UVC datapath, single core first: streamline encoder integrated, MCU formatting via its input buffer, UVC packetizer + endpoint FIFOs (ours), descriptors from the generator, probe/commit in a minimal FSM, defined frame-drop policy | C-G3 at fixed quality: stock host plays live 1080p30 MJPEG |
 | C5b | Throughput doubling: second coefficient path + restart-interval splitter and byte-aligned segment merger; DRI on in every frame; sensor mode raised to 60 fps | **C-G4: sustained 1080p60 on a stock host**; merged stream byte-identical to a single-core encode of the same frame at the same DRI |
 | C6 | RV32I core + SoC + firmware: our CPU replaces the probe/commit FSM and takes over sensor control; AE/AWB loops on hardware statistics; JPEG rate control (per the encoder's frame-boundary quality contract) | C-G5; sequencer/FSM fallbacks still build; firmware unit tests green |
 | C7 | Image quality round: defective-pixel correction, lens-shading correction (coarse grid + bilinear), chroma filter improvements, tuned CCM/gamma from captures | C-G8; before/after captures archived |
-| C8 | Hardening: error injection (CSI errors, USB stalls, sensor dropout) recovers without power cycle; soak test; final timelessness review; RESULTS-CAM.md closure | All C-G goals; 24 h soak, zero lockups |
+| C8 | Hardening: error injection (CSI errors, USB stalls, sensor dropout) recovers without power cycle; soak test; final timelessness review; CAMERA-RESULTS.md closure | All C-G goals; 24 h soak, zero lockups |
 
 Order rationale: pixels first (C2) because nothing else is debuggable
 without them; ISP before USB because the debug path (capture-to-host over
@@ -190,13 +190,38 @@ the existing UART/JTAG or the reference USB pipe) lets each stage be seen;
 the CPU deliberately late (§2); image quality after the end-to-end path
 because tuning needs real captured frames flowing through the real encoder.
 
+### C4 debayer note — MHC 5×5 from day one (decided 2026-07)
+
+The debayer is built as **Malvar–He–Cutler 5×5 from the start; no bilinear
+product mode**. Rationale: the window engine (line buffers, 5×5 windowing,
+Bayer phase, boundary policy) is ~90% of a debayer and would have to be
+rebuilt when moving 3×3 → 5×5, so "bilinear first" does the hardest work
+twice; MHC's coefficients are integers over 8 (shift/add only, zero DSPs —
+which also softens §4's multiplier-budget pressure) for ≈5.5 dB PSNR over
+bilinear; and cleaner edges mean less false high-frequency energy through
+the DCT — better images *and* smaller frames at the same Q. Cost is
+4 line buffers (≈92 kb ≈ a few EBRs) and 2 lines of latency (~30 µs at
+1080p60).
+
+Debug risk is contained by the two-layer discipline: the **window engine**
+(emitting 5×5 neighborhood + 2-bit phase + mirror-2 boundary samples) is
+unit-verified against a Python window model *before any color math exists*;
+the **MHC kernel** is verified separately against a golden model
+cross-checked with OpenCV/scikit-image. A bilinear coefficient set may
+exist in the same 5×5 frame as a **testbench-only diagnostic**, never a
+product mode. Bayer phase is **runtime-configurable** (2 bits, x/y): the
+IMX900C's crop offsets determine which RGGB phase arrives first.
+
+Full decision record, requirements, and verification plan:
+[DEBAYER-PLAN.md](DEBAYER-PLAN.md).
+
 ## 9. Deliverables
 
 - `camera/` tree per §3, every module ours except the D-PHY electrical
-  primitives, all to the PLAN.md §4 standard
+  primitives, all to the ENCODER-PLAN.md §4 standard
 - `model/` golden ISP + the descriptor/register-table generators
 - `fw/` C firmware with host-runnable unit tests
-- `RESULTS-CAM.md` — per-phase measurements: utilization, fmax, frame rate,
+- `CAMERA-RESULTS.md` — per-phase measurements: utilization, fmax, frame rate,
   PSNR, capture evidence
-- Bring-up notes per phase in commit messages and RESULTS-CAM.md — never in
+- Bring-up notes per phase in commit messages and CAMERA-RESULTS.md — never in
   the source
