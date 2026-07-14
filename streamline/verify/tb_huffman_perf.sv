@@ -15,6 +15,11 @@
 module tb_huffman_perf;
 
     localparam NUM_BLOCKS = 40;
+`ifdef TB_HB
+    localparam HB = `TB_HB;
+`else
+    localparam HB = 4;
+`endif
 
     reg         clk = 0;
     reg         rst_n = 0;
@@ -28,7 +33,7 @@ module tb_huffman_perf;
     wire        out_sob;
     wire        out_eob;
 
-    huffman_encoder #(.HUFF_BANKS(4)) dut (
+    huffman_encoder #(.HUFF_BANKS(HB)) dut (
         .clk(clk), .rst_n(rst_n), .comp_id(comp_id), .restart(1'b0),
         .in_valid(in_valid), .in_data(in_data), .in_sob(in_sob),
         .out_valid(out_valid), .out_bits(out_bits), .out_len(out_len),
@@ -65,7 +70,7 @@ module tb_huffman_perf;
         repeat (2) @(posedge clk);
 
         while (fed < NUM_BLOCKS) begin
-            while (fed - eobs >= 3) @(negedge clk);   // in-flight < HUFF_BANKS-1
+            while (fed - eobs >= HB - 1) @(negedge clk);   // in-flight < HB
             for (i = 0; i < 64; i = i + 1) begin
                 @(negedge clk);
                 in_valid = 1;
@@ -80,8 +85,8 @@ module tb_huffman_perf;
 
         while (eobs < NUM_BLOCKS && cycle < 100000) @(posedge clk);
 
-        $display("RESULT: %0d dense blocks, steady-state max interval %0d cycles/block",
-                 eobs, max_interval);
+        $display("RESULT: HB=%0d, %0d dense blocks, steady-state max interval %0d cycles/block",
+                 HB, eobs, max_interval);
         $finish;
     end
 
