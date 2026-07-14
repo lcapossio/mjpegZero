@@ -140,6 +140,17 @@ RGB-conversion gains (and, in the legacy vectors, with unfiltered
 chroma-drop aliasing). Luma — the channel with no subsampling and the
 dominant perceptual weight — is unambiguously better.
 
+### Second-decoder evidence (ffmpeg, independent MJPEG codebase)
+
+Re-examining the same q95 streams with ffmpeg's native decoder inverts
+the finding's sign: **ffmpeg judges the AAN stream +0.08 dB better than
+baseline** where PIL/libjpeg judged it −0.28 dB worse (q100: +0.10 vs
++0.17, both positive). The deterministic sets (lossless, Loeffler) show
+decoder-consistent deltas at every quality, so the harness itself is
+sound: the q95 composite regression is a libjpeg-specific
+chroma-upsampling interaction, not a codec property — exactly what the
+luma/channel split indicated.
+
 ### Verdict
 
 The stated gate is the stated gate: **the AAN set does not replace the
