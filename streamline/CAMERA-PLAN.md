@@ -153,6 +153,25 @@ The mjpegZero experience generalizes:
    test-pattern streaming, then live video), with `dmesg`/`v4l2-ctl`
    evidence recorded in CAMERA-RESULTS.md.
 
+6. **Instruments (on hand) and what each owns.**
+   - **Cynthion** — USB protocol truth at Low/Full/**High** speed only (no
+     SuperSpeed capture). Owns: enumeration/descriptor/probe-commit traces
+     diffed baseline-vs-ours at the FIRMWARE-PLAN F2/F3 gates (force USB2
+     with a HS-only cable/hub — the control plane is identical at SS), and
+     UVC payload-header checks (FID/EOF) on the HS path.
+   - **Siglent SDS2104X Plus (100 MHz, 4 ch, I2C decode)** — owns the slow
+     electrical layer: IMX900 I2C register traffic (C2), 3V8/1V8 power
+     sequencing, INCK presence, reset/XVS/XHS/trigger timing, D-PHY
+     **LP-mode** state transitions, USB-C CC/VBUS on the custom carrier.
+     Explicitly not owned: D-PHY HS payloads (592+ Mbps) and USB2-HS/SS
+     signal integrity — beyond 100 MHz bandwidth.
+   - **Host-side tools** (`usbmon`/Wireshark, macOS Packet Logger, USB3CV)
+     — own SuperSpeed behavior, where Cynthion is blind.
+   - **Reveal + fabric counters** (frame/drop/CRC counters, FIFO
+     watermarks) — own everything inside the FPGA; the primary instrument
+     at SS streaming rates, which is why the observability counters are a
+     deliverable, not a debug afterthought.
+
 ## 6. Sensor control detail (C on RV32; ROM sequencer at bring-up)
 
 Firmware owns, in order of introduction: power/reset/clock sequencing
