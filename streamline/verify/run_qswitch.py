@@ -58,7 +58,7 @@ def run_sim(build, sched, w=64, h=8):
 
 def main():
     qa, qb = 75, 95
-    base = os.path.join(PROJ, 'build', 'qswitch')
+    base = os.path.join(PROJ, 'streamline', 'build', 'qswitch')
     pure_a = run_sim(os.path.join(base, 'pure_a'), [qa])[0]
     pure_b = run_sim(os.path.join(base, 'pure_b'), [qb])[0]
     mixed = run_sim(os.path.join(base, 'mixed'), [qa, qb, qa])

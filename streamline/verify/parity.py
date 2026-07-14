@@ -35,7 +35,7 @@ PROJ = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 RTL = os.path.join(PROJ, 'rtl')
 STREAMLINE = os.path.join(PROJ, 'streamline', 'rtl', 'encoder')
 SIM = os.path.join(PROJ, 'sim')
-BUILD = os.path.join(PROJ, 'build', 'parity')
+BUILD = os.path.join(PROJ, 'streamline', 'build', 'parity')
 
 # Compile order matches the FuseSoC rtl fileset (mjpegzero.core).
 MODULES = [
@@ -153,7 +153,7 @@ def main():
         import numpy as np
         from PIL import Image
         src = np.asarray(Image.open(os.path.join(
-            PROJ, 'python', 'test_images', 'mandrill_720p.png'))
+            PROJ, 'streamline', 'verify', 'test_images', 'mandrill_720p.png'))
             .convert('RGB'))[0:opts.height, 0:opts.width].astype(np.float64)
 
         def psnr(path):

@@ -78,7 +78,7 @@ def psnr_for(plane, dct1d, qtable):
 
 def main():
     img = Image.open(os.path.join(os.path.dirname(__file__),
-                     '..', '..', 'python', 'test_images',
+                     'test_images',
                      'mandrill_720p.png')).convert('L')
     # Luma plane, cropped to a multiple of 8 and subsampled for runtime
     plane = np.asarray(img)[0:352, 0:448]

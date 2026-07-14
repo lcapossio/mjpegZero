@@ -56,7 +56,7 @@ def run_case(w, h, py, px, rgb, build):
 
 def main():
     quick = '--quick' in sys.argv
-    img = Image.open(os.path.join(PROJ, 'python', 'test_images',
+    img = Image.open(os.path.join(PROJ, 'streamline', 'verify', 'test_images',
                                   'mandrill_720p.png')).convert('RGB')
     rgb = np.asarray(img)[64:128, 128:224].astype(np.int64)
     # Overlay a ramp so flat regions still exercise distinct codes.
@@ -71,7 +71,7 @@ def main():
 
     ok = True
     for i, (w, h, py, px) in enumerate(cases):
-        build = os.path.join(PROJ, 'build', 'debayer', f'case{i}')
+        build = os.path.join(PROJ, 'streamline', 'build', 'debayer', f'case{i}')
         ok &= run_case(w, h, py, px, rgb, build)
     print('ALL PASS' if ok else 'SOME FAILED')
     return 0 if ok else 1

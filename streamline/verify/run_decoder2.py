@@ -65,15 +65,15 @@ def run_parity(swap, quality, aan=False):
     if aan:
         cmd.append('--aan')
     subprocess.run(cmd, capture_output=True, text=True)
-    return (os.path.join(PROJ, 'build', 'parity', 'baseline', 'sim_output.jpg'),
-            os.path.join(PROJ, 'build', 'parity', 'swapped', 'sim_output.jpg'))
+    return (os.path.join(PROJ, 'streamline', 'build', 'parity', 'baseline', 'sim_output.jpg'),
+            os.path.join(PROJ, 'streamline', 'build', 'parity', 'swapped', 'sim_output.jpg'))
 
 
 def main():
     src = np.asarray(Image.open(os.path.join(
-        PROJ, 'python', 'test_images', 'mandrill_720p.png'))
+        PROJ, 'streamline', 'verify', 'test_images', 'mandrill_720p.png'))
         .convert('RGB'))[0:8, 0:64].astype(np.float64)
-    build = os.path.join(PROJ, 'build', 'decoder2')
+    build = os.path.join(PROJ, 'streamline', 'build', 'decoder2')
     os.makedirs(build, exist_ok=True)
 
     ok = True
@@ -114,7 +114,7 @@ def main():
                       f'{" (finding, recorded)" if name == "aan" and not match else ""}')
 
     # DRI stream through the second decoder
-    dri_jpg = os.path.join(PROJ, 'build', 'dri', 'sl_dri1', 'frame_0.jpg')
+    dri_jpg = os.path.join(PROJ, 'streamline', 'build', 'dri', 'sl_dri1', 'frame_0.jpg')
     if os.path.isfile(dri_jpg):
         png = os.path.join(build, 'dri1.png')
         ff, err = ffmpeg_decode(dri_jpg, png)
@@ -122,7 +122,7 @@ def main():
             print(f'  DRI=1 stream: FFMPEG DECODE FAILED: {err}')
             ok = False
         else:
-            ref = pil_decode(os.path.join(PROJ, 'build', 'dri',
+            ref = pil_decode(os.path.join(PROJ, 'streamline', 'build', 'dri',
                                           'sl_dri0', 'frame_0.jpg'))
             same = bool((ff == np.asarray(
                 Image.open(png).convert('RGB'))).all())

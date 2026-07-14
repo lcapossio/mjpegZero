@@ -70,7 +70,7 @@ def main():
             blacks = [64, 60, 58, 72]
             exp = [v for row in blc_frame(cfa, py, px, blacks, ped)
                    for v in row]
-            ok &= run(os.path.join(PROJ, 'build', 'isp',
+            ok &= run(os.path.join(PROJ, 'streamline', 'build', 'isp',
                                    f'blc_{w}x{h}_p{ped}'),
                       'BLC', w, h, 'blc.v', vals, exp,
                       [py*2+px] + blacks + [ped])
@@ -78,7 +78,7 @@ def main():
             gains = [420, 256, 260, 505]       # U4.8: 1.64, 1.0, 1.016, 1.97
             exp = [v for row in wb_frame(cfa, py, px, gains, ped)
                    for v in row]
-            ok &= run(os.path.join(PROJ, 'build', 'isp',
+            ok &= run(os.path.join(PROJ, 'streamline', 'build', 'isp',
                                    f'wb_{w}x{h}_p{ped}'),
                       'WB', w, h, 'wb_gains.v', vals, exp,
                       [py*2+px] + gains + [ped])
@@ -94,7 +94,7 @@ def main():
     for ped in PEDS:
         exp = [v for t in trips for v in ccm_px(t, m, ped)]
         params = [0] + [c & 0xFFFF for row in m for c in row] + [ped]
-        ok &= run(os.path.join(PROJ, 'build', 'isp', f'ccm_p{ped}'),
+        ok &= run(os.path.join(PROJ, 'streamline', 'build', 'isp', f'ccm_p{ped}'),
                   'CCM', n, 1, 'ccm.v', stim, exp, params)
 
     print('ALL PASS' if ok else 'SOME FAILED')
