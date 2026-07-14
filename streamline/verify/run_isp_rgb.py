@@ -54,7 +54,7 @@ def main():
              for v in range(4096)]
     exp = [t >> 4 for tri in trips for t in tri] \
         + [curve[t] for tri in trips for t in tri]
-    build = os.path.join(PROJ, 'build', 'isp', 'gamma')
+    build = os.path.join(PROJ, 'streamline', 'build', 'isp', 'gamma')
     os.makedirs(build, exist_ok=True)
     whex(os.path.join(build, 'stim.hex'), trips.flatten(), 3)
     whex(os.path.join(build, 'exp.hex'), exp, 4)
@@ -71,7 +71,7 @@ def main():
         trips[3] = [0, 0, 255]
         rgb = [[tuple(trips[y*w + x]) for x in range(w)] for y in range(h)]
         exp = csc_422_frame(rgb)
-        build = os.path.join(PROJ, 'build', 'isp', f'csc_{w}x{h}')
+        build = os.path.join(PROJ, 'streamline', 'build', 'isp', f'csc_{w}x{h}')
         os.makedirs(build, exist_ok=True)
         whex(os.path.join(build, 'stim.hex'), trips.flatten(), 3)
         whex(os.path.join(build, 'exp.hex'), exp, 4)

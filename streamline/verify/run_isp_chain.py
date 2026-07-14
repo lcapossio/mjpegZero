@@ -87,7 +87,7 @@ def run_case(w, h, py, px, rgb, build):
 
 
 def main():
-    img = Image.open(os.path.join(PROJ, 'python', 'test_images',
+    img = Image.open(os.path.join(PROJ, 'streamline', 'verify', 'test_images',
                                   'mandrill_720p.png')).convert('RGB')
     rgb = np.asarray(img)[32:96, 96:192].astype(np.int64)
     ramp = (np.arange(rgb.shape[0])[:, None] * 5
@@ -97,7 +97,7 @@ def main():
     ok = True
     for i, (w, h, py, px) in enumerate(
             [(48, 16, 0, 0), (48, 16, 1, 1), (26, 12, 0, 1)]):
-        build = os.path.join(PROJ, 'build', 'isp_chain', f'case{i}')
+        build = os.path.join(PROJ, 'streamline', 'build', 'isp_chain', f'case{i}')
         ok &= run_case(w, h, py, px, rgb, build)
     print('ALL PASS' if ok else 'SOME FAILED')
     return 0 if ok else 1

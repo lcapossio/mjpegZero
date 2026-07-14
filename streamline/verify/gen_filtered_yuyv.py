@@ -24,7 +24,7 @@ def main():
     w = int(sys.argv[2]) if len(sys.argv) > 2 else 64
     h = int(sys.argv[3]) if len(sys.argv) > 3 else 8
     img = np.asarray(Image.open(os.path.join(
-        os.path.dirname(__file__), '..', '..', 'python', 'test_images',
+        os.path.dirname(__file__), 'test_images',
         'mandrill_720p.png')).convert('RGB'))
     crop = img[0:h, 0:w].astype(np.int64)
     rgb = [[tuple(crop[y][x]) for x in range(w)] for y in range(h)]

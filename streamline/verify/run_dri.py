@@ -97,7 +97,7 @@ def decode(data):
 
 def main():
     import numpy as np
-    base = os.path.join(PROJ, 'build', 'dri')
+    base = os.path.join(PROJ, 'streamline', 'build', 'dri')
     ok = True
 
     ref = run_sim(os.path.join(base, 'sl_dri0'), 0, SL)

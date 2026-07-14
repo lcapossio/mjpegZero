@@ -125,8 +125,7 @@ def main():
     from PIL import Image
     from colour_demosaicing import demosaicing_CFA_Bayer_Malvar2004
 
-    img = Image.open(os.path.join(os.path.dirname(__file__), '..', '..',
-                                  'python', 'test_images',
+    img = Image.open(os.path.join(os.path.dirname(__file__),                                   'test_images',
                                   'mandrill_720p.png')).convert('RGB')
     rgb = np.asarray(img)[100:228, 200:392].astype(np.int64)  # 128x192 crop
     h, w, _ = rgb.shape
