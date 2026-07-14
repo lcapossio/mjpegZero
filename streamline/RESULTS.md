@@ -1,0 +1,82 @@
+# streamline/ — Measured Results
+
+Phase-by-phase measurements against `rtl/` at identical parameters.
+Provenance and rationale live here and in commit messages — never in the
+`.v` files (PLAN.md §4).
+
+## Phase 0 — Verification harness (complete)
+
+- `verify/parity.py`: two-run byte-exact compare of full-encoder JPEG output
+  (iverilog + `sim/tb_iverilog.sv`), any subset of modules swapped to
+  `streamline/`. Self-check (rtl vs rtl) byte-identical in runtime-quality
+  and LITE modes.
+- Module torture benches: `tb_packer.sv` (+ Python T.81 golden model),
+  `tb_huffman.sv` (two-run transaction diff), `tb_huffman_perf.sv`
+  (cycle-accurate throughput).
+
+## Phase 1 — Quantizer, Huffman encoder, bitstream packer (complete)
+
+Zigzag reorder was pulled forward from Phase 2: the faster back end runs
+blocks gaplessly, which exposes a data-corrupting race in
+`rtl/zigzag_reorder.v` (see defect 3). All four modules are drop-in
+replacements, `verilator --lint-only -Wall` clean.
+
+### Correctness
+
+| Configuration | Result |
+|---|---|
+| Full-encoder parity, runtime mode, Q = 1, 9, 25, 50, 75, 95 | byte-identical |
+| Full-encoder parity, LITE mode, Q = 2, 50, 75, 95 | byte-identical |
+| Full-encoder, Q = 100 (both modes) | rtl baseline is corrupted by defect 3 (proven below); streamline output is the correct stream; decoded PSNR 38.09 dB vs baseline 38.10 dB (within the G6 margin) |
+| Packer vs T.81 golden: 3000 codes, 0xFF chains, 81 restarts (unaligned tails), 25% output stalls | exact (5069/5069 bytes) |
+| Huffman vs rtl, transaction diff: 60 blocks — run boundaries 15/16/17/32/47, DC-only, lone-tail, ±2047 extremes, dense large (cat ≤ 11), restart pulses, bursty stalls | identical (1097/1097 words) |
+| Quantizer parity swept alone across 10 mode/quality configs | byte-identical |
+
+### Throughput (worst case: dense all-nonzero blocks, output unstalled)
+
+| Implementation | Cycles/block, steady state |
+|---|---|
+| rtl Huffman encoder | 321 |
+| streamline Huffman encoder | **67** (4.8x; front-end feed rate is 64) |
+
+The packer accepts with up to 32 bits pending (rtl: 7), so codes averaging
+≤ 8 bits stream at one per clock. `HUFF_BANKS` can drop from 8 to 2 once the
+top level is streamlined (Phase 4), reclaiming the LUTRAM ring.
+
+### Source size
+
+| Module | rtl lines | streamline lines |
+|---|---|---|
+| quantizer | 673 | 439 |
+| bitstream_packer | 270 | 249 |
+| huffman_encoder | 809 | 748 |
+| zigzag_reorder | 144 | 138 |
+
+### rtl/ defects found (all verified by directed test)
+
+1. **Packer ready is not truthful.** `bp_ready` omits the output-slot term
+   its accept path requires, so under output backpressure a compliant
+   sender sees ready, advances, and the code is silently lost (~14% of
+   torture-stream bytes). Not reachable in the shipped encoder only because
+   the rtl Huffman encoder's emit protocol never offers during the window.
+2. **Packer restart padding drops bits.** A restart arriving with ≥ 8 bits
+   pending drains whole bytes, then discards the 1-7 bit tail instead of
+   padding it (S_RST_PAD pads only when bit_cnt < 8).
+3. **Zigzag reorder corrupts back-to-back blocks.** The read mux uses the
+   live write-side buffer selector; when block N+1 completes during block
+   N's final read cycle, coefficient 63 of block N is read from block N+1's
+   buffer. Standalone proof: two gapless blocks with distinct final
+   coefficients — rtl emits block 1's value inside block 0. Latent in rtl
+   because the slow back end inserts credit gaps, and invisible below
+   Q ≈ 100 because trailing coefficients quantize to zero.
+4. *(Known, scheduled Phase 2)* `dct_1d` claims Loeffler but implements a
+   64-multiply matrix product per row.
+
+### Open items
+
+- Vivado elaboration of the constant-function table initializers
+  (quantizer LITE mode) is untested here (iverilog/Verilator only) — check
+  at the first synthesis gate (`run_all.py synth`).
+- `rtl/dct_2d.v`'s output transpose uses the same live-selector double
+  buffer as defect 3; its Phase 2 rewrite must use the latched-selector
+  form.
