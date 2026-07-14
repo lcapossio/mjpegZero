@@ -118,6 +118,10 @@ def main():
     p.add_argument('--tv', default='',
                    help='test-vector hex file (relative to the run dir), '
                         'for sizes other than the default 64x8')
+    p.add_argument('--psnr', action='store_true',
+                   help='judge by decoded PSNR vs the source crop instead '
+                        'of byte identity (for swaps that legitimately '
+                        'change rounding, e.g. the DCT); needs numpy+Pillow')
     opts = p.parse_args()
 
     swaps = set(filter(None, opts.swap.split(',')))
@@ -129,6 +133,26 @@ def main():
 
     base_jpg = run_encoder('baseline', set(), opts)
     test_jpg = run_encoder('swapped' if swaps else 'baseline2', swaps, opts)
+
+    if opts.psnr:
+        import io
+        import numpy as np
+        from PIL import Image
+        src = np.asarray(Image.open(os.path.join(
+            PROJ, 'python', 'test_images', 'mandrill_720p.png'))
+            .convert('RGB'))[0:opts.height, 0:opts.width].astype(np.float64)
+
+        def psnr(path):
+            img = np.asarray(Image.open(io.BytesIO(open(path, 'rb').read()))
+                             .convert('RGB')).astype(np.float64)
+            mse = np.mean((src - img) ** 2)
+            return 10 * np.log10(255**2 / mse)
+
+        pb, pt = psnr(base_jpg), psnr(test_jpg)
+        ok = pt >= pb - 0.05
+        print(f'PSNR baseline {pb:.3f} dB, swapped {pt:.3f} dB, '
+              f'delta {pt-pb:+.4f} dB -> {"PASS" if ok else "FAIL"}')
+        return 0 if ok else 1
 
     if filecmp.cmp(base_jpg, test_jpg, shallow=False):
         size = os.path.getsize(base_jpg)

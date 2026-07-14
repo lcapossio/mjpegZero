@@ -17,6 +17,13 @@
 //   selector is latched when a block completes, so the write side's buffer
 //   swap — which can occur during the final read cycles of the previous
 //   block — cannot redirect an in-progress readout.
+//
+// Position
+//   Encoder coefficient path:
+//   input_buffer → dct_2d → quantizer → [zigzag_reorder] →
+//   huffman_encoder → bitstream_packer → jfif_writer
+//   May fuse into dct_2d's output stage (ZIGZAG_OUT) once the streamline
+//   top exists; this standalone module covers until then.
 // -----------------------------------------------------------------------------
 
 module zigzag_reorder (

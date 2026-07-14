@@ -1,8 +1,8 @@
-# streamline/ — Measured Results
+# ENCODER-RESULTS.md — Measured Results (encoder rewrite)
 
 Phase-by-phase measurements against `rtl/` at identical parameters.
 Provenance and rationale live here and in commit messages — never in the
-`.v` files (PLAN.md §4).
+`.v` files (ENCODER-PLAN.md §4).
 
 ## Phase 0 — Verification harness (complete)
 
@@ -72,11 +72,37 @@ top level is streamlined (Phase 4), reclaiming the LUTRAM ring.
 4. *(Known, scheduled Phase 2)* `dct_1d` claims Loeffler but implements a
    64-multiply matrix product per row.
 
+## Phase 2 — Loeffler DCT (complete)
+
+- **Models first:** bit-exact Python contracts (`verify/dct_model.py`,
+  `verify/dct2d_psnr.py`). The Loeffler/LLM factorization with orthonormal
+  constants folded to Q12 needs 14 constant multiplies per 8-point
+  transform (measured, not asserted) vs 64 in the direct form, with the
+  same per-pass normalization — either dct_1d drops into either dct_2d.
+- **Model accuracy:** peak 1.53 LSB vs float reference (matrix: 1.31) over
+  20k random rows; end-to-end block-level PSNR delta vs the matrix
+  pipeline at Q50/75/95/100: worst 0.0016 dB (gate 0.05).
+- **`dct_1d.v`:** the 14 products time-share **2 physical multipliers**
+  (vs 8 always busy) on a static 7-cycle schedule — 16 → 4 multipliers for
+  the 2-D pair. Bit-exact vs model: 16,176/16,176 coefficients across
+  directed extremes + 2000 random rows, back-to-back and gapped.
+- **`dct_2d.v`:** same row-column architecture (rtl's buffer latching was
+  already correct), unified buffer arrays, streamline standard. Bit-exact
+  vs model: 26,304/26,304 coefficients across 411 blocks.
+- **Full-encoder PSNR gate** (`parity.py --psnr`, all six streamline
+  modules swapped): worst delta −0.0081 dB across runtime Q50/75/95/100
+  and LITE Q75 (gate 0.05); at Q50/75 the delta is exactly 0.
+- **Zigzag fusion decision:** deferred to Phase 4 as a `ZIGZAG_OUT`
+  parameter on dct_2d (default raster, preserving drop-in), adopted when
+  the streamline top exists to use it; the standalone race-free
+  zigzag_reorder covers until then.
+
 ### Open items
 
 - Vivado elaboration of the constant-function table initializers
   (quantizer LITE mode) is untested here (iverilog/Verilator only) — check
   at the first synthesis gate (`run_all.py synth`).
-- `rtl/dct_2d.v`'s output transpose uses the same live-selector double
-  buffer as defect 3; its Phase 2 rewrite must use the latched-selector
-  form.
+- ~~`rtl/dct_2d.v`'s output transpose uses the same live-selector double
+  buffer as defect 3~~ — verified false on full read: both dct_2d buffers
+  latch their read selectors at block completion (the correct form).
+  Defect 3 is unique to `rtl/zigzag_reorder.v`.

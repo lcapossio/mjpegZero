@@ -28,6 +28,11 @@
 //   Sustained throughput is therefore limited only by the 8 bits/clock
 //   output rate, not by accept/drain alternation: code words whose long-run
 //   average length is at most 8 bits stream at one code per clock.
+//
+// Position
+//   Encoder coefficient path:
+//   input_buffer → dct_2d → quantizer → zigzag_reorder →
+//   huffman_encoder → [bitstream_packer] → jfif_writer
 // -----------------------------------------------------------------------------
 
 module bitstream_packer (
