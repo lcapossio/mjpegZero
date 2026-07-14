@@ -40,7 +40,7 @@ def run_case(w, h, py, px, rgb, build):
     r = subprocess.run(
         ['iverilog', '-g2012', '-o', vvp,
          f'-DTB_W={w}', f'-DTB_H={h}', f'-DTB_PHASE=2\'d{phase}',
-         os.path.join(PROJ, 'camera', 'rtl', 'isp', 'debayer.v'),
+         os.path.join(PROJ, 'streamline', 'camera', 'rtl', 'isp', 'debayer.v'),
          os.path.join(HERE, 'tb_debayer.sv')],
         capture_output=True, text=True)
     if r.returncode != 0:

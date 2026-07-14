@@ -70,7 +70,7 @@ replaced by ours in Phases C3–C4 via swap-and-verify.
 ## 3. Repository layout
 
 ```
-camera/
+streamline/camera/
   rtl/
     ctrl/    i2c_master.v  seq_rom.v  csr_fabric.v
     csi/     dphy_byte_align.v  csi2_rx.v  raw_unpack.v  frame_sync.v
