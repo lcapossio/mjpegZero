@@ -32,7 +32,11 @@ module tb_iverilog;
 `else
     localparam IMG_WIDTH  = 64;   // 4 MCUs wide
 `endif
+`ifdef TB_IMG_HEIGHT
+    localparam IMG_HEIGHT = `TB_IMG_HEIGHT;
+`else
     localparam IMG_HEIGHT = 8;    // 1 MCU row
+`endif
     localparam NUM_PIXELS = IMG_WIDTH * IMG_HEIGHT;
 
 `ifdef LITE_MODE
@@ -419,7 +423,9 @@ module tb_iverilog;
             fail_cnt = fail_cnt + 1;
         end
 
-        if (output_byte_cnt > 100 && output_byte_cnt < 10000) begin
+        // Headers alone are a few hundred bytes; 3 bytes/pixel bounds
+        // any baseline-JPEG output regardless of frame size.
+        if (output_byte_cnt > 100 && output_byte_cnt < 700 + 3*NUM_PIXELS) begin
             $display("PASS: Output size %0d bytes is reasonable", output_byte_cnt);
             pass_cnt = pass_cnt + 1;
         end else begin

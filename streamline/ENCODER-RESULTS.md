@@ -97,6 +97,60 @@ top level is streamlined (Phase 4), reclaiming the LUTRAM ring.
   the streamline top exists to use it; the standalone race-free
   zigzag_reorder covers until then.
 
+## AAN scaled DCT + folded quantizer (complete; option, not default)
+
+The Arai-Agui-Nakajima matched set (`rtl/encoder/dct_1d_aan.v`,
+`dct_2d_aan.v`, `quantizer_aan.v` — same module names, `_aan` filenames,
+selected by `parity.py --aan`) computes the DCT in **5 constant multiplies
+per 8-point transform** (Loeffler: 14, direct form: 64) on **one**
+time-shared multiplier per instance, folding the per-coefficient scale
+correction and one DCT guard fraction bit into the quantizer's reciprocal
+tables at zero datapath cost. The DQT the decoder sees is unchanged.
+
+### Verified
+
+- Bit-exact vs `verify/dct_aan_model.py`: 12,096 (1-D) + 19,456 (2-D)
+  coefficients including the tight-bound worst-case (1,1)-aligned block;
+  in-system streams (DCT input/output, quantizer output) dumped from the
+  full encoder match the model exactly; fold tables dumped from
+  elaboration match the fold formula exactly. `verilator -Wall` clean.
+- Range analysis: over the encoder's input domain (-128..127) the doubled
+  scaled output peaks at 25.9K < 2^15 (u = 1 axis maximizes the per-axis
+  gain-basis product at 10.05); folded reciprocals fit 16 bits.
+- Full-encoder decode quality vs the all-rtl baseline: **q50 +0.04, q75
+  −0.03, q100 +0.17 dB (pass); q95 −0.28 dB composite (fail)**.
+
+### The q95 finding, channel-split
+
+Every direct measure of codec fidelity at q95 says the AAN set is equal
+or better; the composite RGB-vs-source number is worse:
+
+| Measure (q95) | Baseline | AAN | Delta |
+|---|---|---|---|
+| Block-domain reconstruction, actual encoder blocks | 42.430 | 42.617 | **+0.19** |
+| Y vs encoder input (64×8, filtered chroma vectors) | 44.317 | 44.747 | **+0.43** |
+| Y vs source, 720p | 45.263 | 45.608 | **+0.35** |
+| Cb at sited pixels vs input | 37.683 | 37.922 | **+0.24** |
+| Cr at sited pixels vs input | 40.567 | 40.321 | −0.25 |
+| RGB vs source, 720p (the gate) | 37.773 | 37.618 | −0.16 |
+
+The composite loss lives entirely in the chroma path: the coding
+differences interact with the decoder's chroma upsampling and the
+RGB-conversion gains (and, in the legacy vectors, with unfiltered
+chroma-drop aliasing). Luma — the channel with no subsampling and the
+dominant perceptual weight — is unambiguously better.
+
+### Verdict
+
+The stated gate is the stated gate: **the AAN set does not replace the
+Loeffler set as the default.** Loeffler passes every gate and already
+meets the 1080p60 budget (4 multipliers per 2-D pair). The AAN set is
+retained as a verified drop-in option — a further 4→2 multiplier
+reduction per 2-D pair — to be re-evaluated at camera image-quality
+time (CAMERA-PLAN.md C7) on real captures through the filtered csc_422
+chroma path at the camera's operating qualities, where the channel
+analysis above predicts it wins outright.
+
 ### Open items
 
 - Vivado elaboration of the constant-function table initializers

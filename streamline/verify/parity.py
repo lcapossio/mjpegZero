@@ -45,12 +45,19 @@ MODULES = [
 ]
 
 
-def source_list(swaps):
-    """Return the .v file list with swapped modules taken from streamline/."""
+AAN_SET = {'dct_1d', 'dct_2d', 'quantizer'}
+
+
+def source_list(swaps, aan=False):
+    """Return the .v file list with swapped modules taken from streamline/.
+    With aan=True, swapped members of the matched set use their _aan
+    variants (same module names, scaled-DCT + folded-quantizer pairing)."""
     files = []
     for mod in MODULES:
         tree = STREAMLINE if mod in swaps else RTL
-        path = os.path.join(tree, mod + '.v')
+        name = mod + ('_aan' if aan and mod in AAN_SET and mod in swaps
+                      else '') + '.v'
+        path = os.path.join(tree, name)
         if not os.path.isfile(path):
             sys.exit(f'ERROR: {path} does not exist')
         files.append(path)
@@ -75,11 +82,11 @@ def run_encoder(tag, swaps, opts):
     else:
         defines += ['-DTEST_QUALITY=%d' % opts.quality]
     if opts.tv:
-        defines += ['-DTV_HEX_FILE=\\"%s\\"' % opts.tv]
+        defines += ['-DTV_HEX_FILE="%s"' % opts.tv]
 
     vvp_file = os.path.join(workdir, 'sim.vvp')
     compile_cmd = (['iverilog', '-g2012', '-o', vvp_file] + defines
-                   + source_list(swaps)
+                   + source_list(swaps, opts.aan)
                    + [os.path.join(SIM, 'tb_iverilog.sv')])
     print(f'[{tag}] compiling ({len(swaps) or "no"} swapped: '
           f'{", ".join(sorted(swaps)) or "-"})')
@@ -118,6 +125,9 @@ def main():
     p.add_argument('--tv', default='',
                    help='test-vector hex file (relative to the run dir), '
                         'for sizes other than the default 64x8')
+    p.add_argument('--aan', action='store_true',
+                   help='use the AAN matched set (dct_1d/dct_2d/quantizer '
+                        '_aan variants) for the swapped side')
     p.add_argument('--psnr', action='store_true',
                    help='judge by decoded PSNR vs the source crop instead '
                         'of byte identity (for swaps that legitimately '
