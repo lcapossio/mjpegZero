@@ -29,6 +29,11 @@
 //   never offered earlier than two clocks after the previous block's final
 //   word is accepted, which keeps restart requests — which arrive relative
 //   to accepted final words — ordered ahead of the next block's coding.
+//
+// Position
+//   Encoder coefficient path:
+//   input_buffer → dct_2d → quantizer → zigzag_reorder →
+//   [huffman_encoder] → bitstream_packer → jfif_writer
 // -----------------------------------------------------------------------------
 
 module huffman_encoder #(

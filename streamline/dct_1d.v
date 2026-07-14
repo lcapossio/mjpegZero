@@ -23,6 +23,11 @@
 //   Output cannot overflow 16 bits: |x| <= 2048 gives |X| <= sqrt(8)*2048
 //   (+/-1 rounding) <= 5794. Intermediate widths below carry the proof at
 //   each stage.
+//
+// Position
+//   Not a standalone stage: instantiated twice inside dct_2d, once for the
+//   row pass and once for the column pass of the 8x8 row-column
+//   decomposition.
 // -----------------------------------------------------------------------------
 
 module dct_1d (

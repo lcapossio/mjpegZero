@@ -23,6 +23,11 @@
 //   are double-buffered halves of one array with the read-side half
 //   latched at block completion, so a write-side swap during the final
 //   read cycles of a block cannot redirect an in-progress readout.
+//
+// Position
+//   Encoder coefficient path:
+//   input_buffer → [dct_2d (dct_1d ×2)] → quantizer → zigzag_reorder →
+//   huffman_encoder → bitstream_packer → jfif_writer
 // -----------------------------------------------------------------------------
 
 module dct_2d (

@@ -28,6 +28,12 @@
 //   is held stable from header emission to the frame's last block, which the
 //   register interface provides by applying quality writes between frames.
 //   In LITE_MODE=1 the tables are fixed at elaboration from LITE_QUALITY.
+//
+// Position
+//   Encoder coefficient path:
+//   input_buffer → dct_2d → [quantizer] → zigzag_reorder →
+//   huffman_encoder → bitstream_packer → jfif_writer
+//   Side tap: the qt_rd port serves the jfif_writer's DQT segments.
 // -----------------------------------------------------------------------------
 
 module quantizer #(
