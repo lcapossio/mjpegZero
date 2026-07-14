@@ -7,8 +7,8 @@
 //   standard Chapter 9 requests (descriptor delivery, configuration,
 //   interface alt-settings), VideoControl and VideoStreaming class requests,
 //   and the Probe/Commit negotiation state machine (UVC 1.5 §4.3.1.1).
-//   Descriptor tables are consumed from the generated descriptor source
-//   (one Python truth -> C structs; nothing hand-packed here).
+//   Descriptor tables are consumed as a uvc_descriptors_t bundle (typed
+//   structs, byte-gated against the verified baseline — uvc_descriptors.c).
 //
 // Interface
 //   Pure with respect to hardware: all state lives in the caller's
@@ -94,8 +94,18 @@ struct uvc_class;   // opaque; storage owned by the caller
 
 // ---- Lifecycle ----------------------------------------------------------------
 
-// Bind the class to a transport and descriptor bundle. Registers itself
-// for the transport's on_setup/on_reset/on_connect_done events.
+// The transport callback table this class implements. Wiring order:
+//
+//     struct uvc_class ctx;
+//     usb23_init(&u, BASE, uvc_class_callbacks(), &ctx, evt_buf, len);
+//     uvc_class_init(&ctx, &u, &uvc_descriptors_yuy2, &events, &vsrc);
+//
+// The HAL receives this table at its init; each callback recovers the
+// uvc_class context via usb23_user().
+const usb23_dev_callbacks_t *uvc_class_callbacks(void);
+
+// Bind the class to its (already-initialized) transport, descriptor
+// bundle, and stream-event sink.
 int uvc_class_init(struct uvc_class *c, struct usb23 *u,
                    const uvc_descriptors_t *desc,
                    const uvc_stream_events_t *events, void *events_ctx);

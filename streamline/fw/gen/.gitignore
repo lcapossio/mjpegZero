@@ -1,4 +1,4 @@
 build/
 build_check
 build_dump_baseline
-dump_baseline
+golden/.stamp

@@ -27,7 +27,7 @@
 #define DEV_CLK_HZ      100000000u  // VC header dwClockFrequency
 
 #define BPP             16          // YUY2 bits per pixel
-#define FRAME_IVAL      0x00017406u // baseline: 105.48 Hz nominal, 100 ns units
+#define FRAME_IVAL      0x00017406u // baseline: 9.5238 ms (105.0 Hz), 100 ns units
 #define FRAME_IVAL_STEP 0x000186A0u // baseline: 10 ms
 #define MAX_FRAME(w, h) ((uint32_t)(w) * (h) * BPP / 8 + 2)
 
