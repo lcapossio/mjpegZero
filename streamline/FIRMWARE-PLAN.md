@@ -26,6 +26,14 @@ fw/usb23_hal.h      DWC3/USB23 device driver: core init, event buffer,
 fw/video_source.h   Producer contract (buffer credits, frame delimiters)
                     between the pixel pipeline / UVC packetizer and USB.
                     Rule: firmware moves pointers and credits, never bytes.
+
+Supporting: fw/usb_desc_types.h + fw/uvc_desc_types.h (wire-format structs
+with per-type size proofs), fw/uvc_descriptors.{h,c} (this device's
+descriptor set, byte-gated by fw/gen/ against the baseline golden bytes).
+
+Wiring order (who initializes whom):
+    usb23_init(&u, BASE, uvc_class_callbacks(), &uvc_ctx, evt, len);
+    uvc_class_init(&uvc_ctx, &u, &uvc_descriptors_yuy2, &events, &vsrc);
 ```
 
 The headers are the deliverable of record — contracts first, in the house
