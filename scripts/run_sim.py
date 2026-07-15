@@ -110,6 +110,12 @@ def main():
     defines = []
     if lite_mode:    defines += ['-d', 'LITE_MODE']
     if dump_vcd:     defines += ['-d', 'DUMP_VCD']
+    # The testbench defaults to a 50ms watchdog / 200ms EOI wait tuned for the
+    # tiny 64x8 vector.  A real-resolution frame takes far longer to encode, so
+    # without TB_720P the watchdog kills the run mid-scan (no EOI, garbage tail).
+    # Select the long timeouts (1500ms watchdog / 600ms EOI) for any large frame.
+    if img_width * img_height > 64 * 8:
+        defines += ['-d', 'TB_720P']
     vh = os.path.join(BUILD_DIR, 'sim_defines.vh')
     with open(vh, 'w') as f:
         f.write(f'`define TB_IMG_WIDTH {img_width}\n')
