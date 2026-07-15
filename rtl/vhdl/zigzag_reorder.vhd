@@ -52,6 +52,7 @@ architecture rtl of zigzag_reorder is
 
     signal rd_cnt    : unsigned(5 downto 0) := (others => '0');
     signal rd_active : std_logic := '0';
+    signal rd_sel    : std_logic := '0';   -- latched buffer selector for the block being read
 
     signal out_valid_r : std_logic := '0';
     signal out_data_r  : std_logic_vector(15 downto 0) := (others => '0');
@@ -102,6 +103,7 @@ begin
             if rst_n = '0' then
                 rd_cnt <= (others => '0');
                 rd_active <= '0';
+                rd_sel <= '0';
                 out_valid_r <= '0';
                 out_sob_r <= '0';
             else
@@ -116,7 +118,12 @@ begin
                         out_sob_r <= '0';
                     end if;
 
-                    if buf_sel = '1' then
+                    -- Read from the buffer latched at block start.  MUST NOT use
+                    -- the live buf_sel: with gapless block arrival the write side
+                    -- toggles buf_sel one cycle before this reader fetches
+                    -- coefficient 63, so a live-buf_sel mux would serve block N's
+                    -- last coefficient from block N+1's buffer.
+                    if rd_sel = '1' then
                         out_data_r <= buf0(to_integer(rd_cnt));
                     else
                         out_data_r <= buf1(to_integer(rd_cnt));
@@ -131,6 +138,7 @@ begin
                 if wr_block_done = '1' then
                     rd_active <= '1';
                     rd_cnt <= (others => '0');
+                    rd_sel <= buf_sel;   -- freeze selector for the whole readout
                 end if;
             end if;
         end if;

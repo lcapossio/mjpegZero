@@ -62,7 +62,11 @@ module bitstream_packer (
     // Must ensure bit_cnt < 8 so Priority 2 (byte drain) won't take precedence
     // in the else-if chain.  Old condition (bit_cnt <= 32) allowed the Huffman
     // encoder to see acceptance while the packer was actually draining bytes.
-    assign bp_ready = (state == S_NORMAL) && (bit_cnt < 7'd8) && !need_stuff;
+    // The (!out_valid || out_ready) term MUST match the Priority 3 accept guard
+    // below: without it bp_ready can be high while output backpressure blocks the
+    // accept, so a producer that trusts ready would drop the offered code.
+    assign bp_ready = (state == S_NORMAL) && (bit_cnt < 7'd8) && !need_stuff &&
+                      (!out_valid || out_ready);
 
     // ========================================================================
     // Main logic
@@ -165,6 +169,22 @@ module bitstream_packer (
                             bit_cnt    <= bit_cnt - 7'd8;
                             byte_count <= byte_count + 32'd1;
                             if (bit_buf[63:56] == 8'hFF)
+                                need_stuff <= 1'b1;
+                        end else if (bit_cnt > 7'd0) begin
+                            // Pad the final 1-7 leftover bits to a byte boundary
+                            // with 1s and emit them as the last entropy byte
+                            // before the marker.  Reached when the restart arrived
+                            // with >=8 bits pending (S_RST_PAD only pads a wholly
+                            // sub-byte residual); without this the leftover bits
+                            // were dropped.  Stay in S_RST_DRAIN with bit_cnt=0 so
+                            // the need_stuff check above emits an 0x00 next cycle
+                            // if the padded byte is 0xFF.
+                            out_valid  <= 1'b1;
+                            out_data   <= bit_buf[63:56] | (8'hFF >> bit_cnt[2:0]);
+                            byte_count <= byte_count + 32'd1;
+                            bit_buf    <= 64'd0;
+                            bit_cnt    <= 7'd0;
+                            if ((bit_buf[63:56] | (8'hFF >> bit_cnt[2:0])) == 8'hFF)
                                 need_stuff <= 1'b1;
                         end else begin
                             state <= S_RST_FF;
