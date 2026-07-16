@@ -54,7 +54,11 @@ architecture rtl of bitstream_packer is
 
 begin
 
-    bp_ready <= '1' when state_r = S_NORMAL and bit_cnt_r < to_unsigned(8, 7) and need_stuff_r = '0' else '0';
+    -- The (out_valid_r='0' or out_ready='1') term MUST match the Priority 3 accept
+    -- guard below: without it bp_ready can be high while output backpressure blocks
+    -- the accept, so a producer that trusts ready would drop the offered code.
+    bp_ready <= '1' when state_r = S_NORMAL and bit_cnt_r < to_unsigned(8, 7) and need_stuff_r = '0'
+                         and (out_valid_r = '0' or out_ready = '1') else '0';
     out_valid <= out_valid_r;
     out_data <= out_data_r;
     out_last <= out_last_r;
@@ -145,6 +149,22 @@ begin
                                 bit_cnt_r <= bit_cnt_r - 8;
                                 byte_count_r <= byte_count_r + 1;
                                 if bit_buf_r(63 downto 56) = x"FF" then
+                                    need_stuff_r <= '1';
+                                end if;
+                            elsif bit_cnt_r > 0 then
+                                -- Pad the final 1-7 leftover bits to a byte boundary
+                                -- with 1s and emit them as the last entropy byte
+                                -- before the marker (reached when the restart arrived
+                                -- with >=8 bits pending).  Stay in S_RST_DRAIN with
+                                -- bit_cnt=0 so the need_stuff check above emits an
+                                -- 0x00 next cycle if the padded byte is 0xFF.
+                                padded_byte := bit_buf_r(63 downto 56) or pad_mask(bit_cnt_r);
+                                out_valid_r <= '1';
+                                out_data_r <= padded_byte;
+                                byte_count_r <= byte_count_r + 1;
+                                bit_buf_r <= (others => '0');
+                                bit_cnt_r <= (others => '0');
+                                if padded_byte = x"FF" then
                                     need_stuff_r <= '1';
                                 end if;
                             else

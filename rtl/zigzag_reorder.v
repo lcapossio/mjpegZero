@@ -101,11 +101,13 @@ module zigzag_reorder (
     // Read side - sequential readout of zigzag-ordered block
     reg [5:0]  rd_cnt;
     reg        rd_active;
+    reg        rd_sel;   // Latched buffer selector for the block being read.
 
     always @(posedge clk) begin
         if (!rst_n) begin
             rd_cnt <= 6'd0;
             rd_active <= 1'b0;
+            rd_sel <= 1'b0;
             out_valid <= 1'b0;
             out_sob <= 1'b0;
         end else begin
@@ -119,8 +121,12 @@ module zigzag_reorder (
                 out_valid <= 1'b1;
                 out_sob <= (rd_cnt == 6'd0);
 
-                // Read from the buffer that's NOT being written to
-                if (buf_sel)
+                // Read from the buffer latched at block start.  MUST NOT use the
+                // live buf_sel: with gapless block arrival the write side toggles
+                // buf_sel one cycle before this reader fetches coefficient 63, so
+                // a live-buf_sel mux would serve block N's last coefficient from
+                // block N+1's buffer.  rd_sel is frozen for the whole readout.
+                if (rd_sel)
                     out_data <= buf0[rd_cnt];
                 else
                     out_data <= buf1[rd_cnt];
@@ -134,9 +140,14 @@ module zigzag_reorder (
             // Start reading when a block write completes.
             // MUST come after rd_active block so its NBA (rd_active=1)
             // wins over end-of-read NBA (rd_active=0) on collision.
+            // Latch buf_sel here: at this point it already points at the
+            // just-completed buffer (the write side toggled it on the same
+            // edge that raised wr_block_done), so it selects the correct
+            // buffer for the entire readout regardless of later toggles.
             if (wr_block_done) begin
                 rd_active <= 1'b1;
                 rd_cnt <= 6'd0;
+                rd_sel <= buf_sel;
             end
         end
     end
