@@ -583,7 +583,14 @@ begin
                         out_valid_i <= '0';
                         out_sob <= '0';
                         out_eob <= '0';
-                        if restart_pending = '1' then
+                        -- Apply pending restart. Also honor a LIVE restart this
+                        -- cycle: a mid-frame restart_trigger lands exactly as the
+                        -- FSM enters S_IDLE (both registered off the same block-3
+                        -- EOB), so waiting for the latched restart_pending (set
+                        -- next cycle) would miss this S_IDLE and code the next
+                        -- MCU's DC against the stale predictor — a desync vs the
+                        -- decoder, which resets DC at the RSTn marker.
+                        if restart_pending = '1' or restart = '1' then
                             prev_dc_y <= (others => '0');
                             prev_dc_cb <= (others => '0');
                             prev_dc_cr <= (others => '0');
