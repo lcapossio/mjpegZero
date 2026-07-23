@@ -199,8 +199,11 @@ def main():
             f.write(f"{b:02X}\n")
     print(f"Exported reference JPEG for {num_test_mcus} MCUs ({len(jpeg_data)} bytes)")
 
-    # Generate reference JPEGs for other quality levels used by verify_rtl_sim.py
-    for extra_q in [50, 75]:
+    # Generate reference JPEGs for other quality levels used by verify_rtl_sim.py.
+    # Q=100 (near-lossless: quant tables all 1s) is the corner where the gapless
+    # zigzag double-buffer bug stops being masked — trailing high-freq coeffs no
+    # longer quantize to zero — so it is a deliberate regression guard.
+    for extra_q in [50, 75, 100]:
         extra_data = encode_jpeg(crop, quality=extra_q,
                                  output_path=os.path.join(out_dir, f'reference_4mcu_q{extra_q}.jpg'))
         print(f"Exported reference JPEG Q={extra_q} ({len(extra_data)} bytes)")

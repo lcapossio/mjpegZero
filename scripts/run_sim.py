@@ -110,16 +110,28 @@ def main():
     defines = []
     if lite_mode:    defines += ['-d', 'LITE_MODE']
     if dump_vcd:     defines += ['-d', 'DUMP_VCD']
-    # The testbench defaults to a 50ms watchdog / 200ms EOI wait tuned for the
-    # tiny 64x8 vector.  A real-resolution frame takes far longer to encode, so
-    # without TB_720P the watchdog kills the run mid-scan (no EOI, garbage tail).
-    # Select the long timeouts (1500ms watchdog / 600ms EOI) for any large frame.
-    if img_width * img_height > 64 * 8:
-        defines += ['-d', 'TB_720P']
+
+    # Pick the input vector for this resolution and hand it to the TB via
+    # TV_HEX_FILE. The TB's yuyv_data array is sized to NUM_PIXELS, so the vector
+    # MUST have exactly W*H pixels — a shorter file leaves the tail uninitialized
+    # (X) and the encoder streams garbage (the old TB_720P failure mode). The TB
+    # scales its watchdog/EOI timeouts from NUM_PIXELS, so no size define is left.
+    if (img_width, img_height) == (1280, 720):
+        tv_hex = 'yuyv_720p.hex'
+    elif (img_width, img_height) == (64, 8):
+        tv_hex = 'yuyv_input.hex'
+    else:
+        tv_hex = f'yuyv_{img_width}x{img_height}.hex'
+    if not os.path.isfile(os.path.join(TV_DIR, tv_hex)):
+        sys.exit(f'ERROR: no input vector "{tv_hex}" for {img_width}x{img_height}. '
+                 f'Supported out of the box: 1280x720 (720p) and 64x8 (default); '
+                 f'generate {tv_hex} in {TV_DIR} to sim other sizes.')
+
     vh = os.path.join(BUILD_DIR, 'sim_defines.vh')
     with open(vh, 'w') as f:
         f.write(f'`define TB_IMG_WIDTH {img_width}\n')
         f.write(f'`define TB_IMG_HEIGHT {img_height}\n')
+        f.write(f'`define TV_HEX_FILE "test_vectors/{tv_hex}"\n')
         if lite_quality:
             f.write(f'`define LITE_QUALITY {lite_quality}\n')
     defines += ['-d', 'HAVE_DEFINES']

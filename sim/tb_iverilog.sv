@@ -97,6 +97,14 @@ module tb_iverilog;
     localparam TB_RANDOM_GAPS = 0;
 `endif
 
+// Restart interval (DRI): >0 emits a DRI segment + RST markers every N MCUs.
+// Exercises the packer's restart pad/drain path (tail-bit padding before RSTn).
+`ifdef RESTART_INTERVAL
+    localparam TB_RESTART_INTERVAL = `RESTART_INTERVAL;
+`else
+    localparam TB_RESTART_INTERVAL = 0;
+`endif
+
     // ========================================================================
     // Signals
     // ========================================================================
@@ -348,6 +356,7 @@ module tb_iverilog;
 
         axi_write(5'h00, 32'h1);             // CTRL: enable=1
         axi_write(5'h0C, TB_TEST_QUALITY);  // Quality (full mode only; ignored in LITE_MODE)
+        axi_write(5'h10, TB_RESTART_INTERVAL); // Restart interval (DRI); 0 = off
 
         repeat(600) @(posedge clk); // Wait for Q-table update
 
