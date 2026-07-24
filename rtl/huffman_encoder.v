@@ -596,7 +596,7 @@ module huffman_encoder #(
                     // the same block-3 EOB), so waiting for the latched
                     // restart_pending (set next cycle) would miss this S_IDLE and
                     // the next MCU's DC would be coded against the stale predictor
-                    // — a desync vs the decoder, which resets DC at the RSTn marker.
+                    // - a desync vs the decoder, which resets DC at the RSTn marker.
                     if (restart_pending || restart) begin
                         prev_dc_y  <= 16'd0;
                         prev_dc_cb <= 16'd0;
