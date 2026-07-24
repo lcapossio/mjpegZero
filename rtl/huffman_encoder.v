@@ -590,8 +590,14 @@ module huffman_encoder #(
                     out_sob <= 1'b0;
                     out_eob <= 1'b0;
 
-                    // Apply pending restart
-                    if (restart_pending) begin
+                    // Apply pending restart. Also honor a LIVE restart that
+                    // arrives this very cycle: a mid-frame restart_trigger lands
+                    // exactly as the FSM enters S_IDLE (both are registered off
+                    // the same block-3 EOB), so waiting for the latched
+                    // restart_pending (set next cycle) would miss this S_IDLE and
+                    // the next MCU's DC would be coded against the stale predictor
+                    // - a desync vs the decoder, which resets DC at the RSTn marker.
+                    if (restart_pending || restart) begin
                         prev_dc_y  <= 16'd0;
                         prev_dc_cb <= 16'd0;
                         prev_dc_cr <= 16'd0;

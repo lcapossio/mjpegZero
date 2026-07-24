@@ -24,16 +24,12 @@ module tb_mjpegzero_enc;
 
 `ifdef TB_IMG_WIDTH
     localparam IMG_WIDTH  = `TB_IMG_WIDTH;
-`elsif TB_720P
-    localparam IMG_WIDTH  = 1280;
 `else
     localparam IMG_WIDTH  = 64;   // default: 4 MCUs (fast sim)
 `endif
 
 `ifdef TB_IMG_HEIGHT
     localparam IMG_HEIGHT = `TB_IMG_HEIGHT;
-`elsif TB_720P
-    localparam IMG_HEIGHT = 720;
 `else
     localparam IMG_HEIGHT = 8;
 `endif
@@ -42,6 +38,15 @@ module tb_mjpegzero_enc;
     // Generous size bounds: small smoke frames can fit below 1 KB.
     localparam MIN_BYTES   = (NUM_PIXELS <= 512) ? 500 : 1000;
     localparam MAX_BYTES   = IMG_WIDTH * IMG_HEIGHT * 3;
+
+    // Timeouts scale with frame size so ANY resolution gets enough time to
+    // finish encoding (a hand-set define no longer decides this). ~50 cyc/pixel
+    // is >10x the measured serial-Huffman throughput (720p encodes in ~2.3M
+    // cycles); the floor covers fixed pipeline latency on tiny smoke frames.
+    // Cycle counts (not ns) keep the values inside 32-bit up to ~4K.
+    localparam integer EOI_TIMEOUT_CYCLES =
+        (NUM_PIXELS * 50 > 2_000_000) ? (NUM_PIXELS * 50) : 2_000_000;
+    localparam integer WATCHDOG_CYCLES = EOI_TIMEOUT_CYCLES * 2;
 
     // LITE_MODE: compile with -d LITE_MODE to test lite variant
 `ifdef LITE_MODE
@@ -157,8 +162,11 @@ module tb_mjpegzero_enc;
     reg [15:0] yuyv_data [0:NUM_PIXELS-1];
 
     initial begin
-`ifdef TB_720P
-        $readmemh("test_vectors/yuyv_720p.hex", yuyv_data);
+        // Input vector must match NUM_PIXELS: loading a smaller file leaves the
+        // tail of yuyv_data uninitialized (X) and the encoder streams garbage.
+        // run_sim.py sets TV_HEX_FILE to the vector for the requested resolution.
+`ifdef TV_HEX_FILE
+        $readmemh(`TV_HEX_FILE, yuyv_data);
 `else
         $readmemh("test_vectors/yuyv_input.hex", yuyv_data);
 `endif
@@ -399,11 +407,7 @@ module tb_mjpegzero_enc;
                 wait (saw_eoi == 1);
             end
             begin : wait_timeout
-`ifdef TB_720P
-                repeat(60_000_000) @(posedge clk);  // 600ms for 720p
-`else
-                repeat(20_000_000) @(posedge clk);  // 200ms for small frames
-`endif
+                repeat(EOI_TIMEOUT_CYCLES) @(posedge clk);
                 $display("WARNING: timeout waiting for EOI");
             end
         join_any
@@ -648,11 +652,7 @@ module tb_mjpegzero_enc;
     // Watchdog timer
     // ========================================================================
     initial begin
-`ifdef TB_720P
-        #1_500_000_000;  // 1500ms for 720p full frame
-`else
-        #50_000_000;     // 50ms for small test vectors
-`endif
+        repeat(WATCHDOG_CYCLES) @(posedge clk);
         $display("WATCHDOG TIMEOUT - design may be stuck");
         $display("Output bytes so far: %0d", output_byte_cnt);
         $finish;

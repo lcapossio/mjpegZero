@@ -433,6 +433,82 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
 
 
 # ---------------------------------------------------------------------------
+# Restart-interval (DRI) test: encode with restart markers ON and OFF, decode
+# both with libjpeg (Pillow), require pixel-identical output. Restart markers
+# only add resync points — a correct stream reconstructs the SAME image — so any
+# difference means corruption (e.g. the packer dropping tail bits before a RSTn
+# marker when >=8 bits are still pending).
+# ---------------------------------------------------------------------------
+def _compile_and_sim(iverilog, vvp, build_dir, lite_mode, quality, restart_interval, tag):
+    defines = {'TEST_QUALITY': quality}
+    if lite_mode:
+        defines['LITE_MODE'] = 1
+        defines['LITE_QUALITY'] = quality
+    if restart_interval:
+        defines['RESTART_INTERVAL'] = restart_interval
+    vvp_out = os.path.join(build_dir, f'sim_{tag}.vvp')
+    if not compile_rtl(iverilog, vvp_out, defines):
+        return None
+    ok, _ = run_simulation(vvp, vvp_out, build_dir)
+    if not ok:
+        return None
+    default_out = os.path.join(build_dir, 'sim_output.jpg')
+    out_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
+    if os.path.exists(default_out):
+        os.replace(default_out, out_jpg)
+    return out_jpg if os.path.exists(out_jpg) else None
+
+
+def run_restart_test(iverilog, vvp, build_dir, lite_mode, quality, restart_interval):
+    from PIL import Image
+    mode = 'LITE' if lite_mode else 'FULL'
+    tag = mode.lower()
+    print(f'\n{"-" * 65}')
+    print(f'  Test: {mode} Q={quality} RESTART_INTERVAL={restart_interval}')
+    print(f'{"-" * 65}')
+
+    ref_jpg = _compile_and_sim(iverilog, vvp, build_dir, lite_mode, quality, 0,
+                               f'{tag}_q{quality}_norst')
+    rst_jpg = _compile_and_sim(iverilog, vvp, build_dir, lite_mode, quality,
+                               restart_interval, f'{tag}_q{quality}_rst{restart_interval}')
+    if not ref_jpg or not rst_jpg:
+        print('  ERROR: simulation failed')
+        return False
+
+    with open(rst_jpg, 'rb') as f:
+        rst_bytes = f.read()
+    # The restart output MUST actually carry a DRI segment + RST markers, or the
+    # test is not exercising the restart path at all.
+    has_dri = b'\xff\xdd' in rst_bytes
+    has_rst = any(bytes([0xFF, 0xD0 + n]) in rst_bytes for n in range(8))
+    if not (has_dri and has_rst):
+        print(f'  FAIL: restart output missing markers (DRI={has_dri} RST={has_rst})')
+        return False
+    print(f'    restart output: {len(rst_bytes)} bytes, DRI + RST markers present')
+
+    try:
+        ref_px = Image.open(ref_jpg).convert('YCbCr').tobytes()
+        rst_img = Image.open(rst_jpg).convert('YCbCr')
+        rst_px = rst_img.tobytes()
+    except Exception as e:
+        print(f'  FAIL: libjpeg (Pillow) decode error: {e}')
+        return False
+
+    if len(ref_px) != len(rst_px):
+        print(f'  FAIL: decoded size differs (norst={len(ref_px)} rst={len(rst_px)})')
+        return False
+    if ref_px != rst_px:
+        ndiff = sum(1 for a, b in zip(ref_px, rst_px) if a != b)
+        maxd = max((abs(a - b) for a, b in zip(ref_px, rst_px)), default=0)
+        print(f'  FAIL: restart decode differs from no-restart — {ndiff} samples '
+              f'differ (max |diff|={maxd}); tail bits likely dropped before a RSTn')
+        return False
+
+    print('    restart vs no-restart decode: pixel-identical')
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -451,6 +527,14 @@ def main():
                         help='Encode N frames of identical input and compare the LAST '
                              'frame to golden (multi-frame regression: catches a DC '
                              'predictor not reset per start-of-scan). Default 1.')
+    parser.add_argument('--quality', type=int, default=None,
+                        help='Test only this quality instead of 50/75/95. Q=100 (all-1s '
+                             'quant tables) is the corner that unmasks the gapless zigzag '
+                             'double-buffer bug, so it makes a good regression guard.')
+    parser.add_argument('--restart', type=int, default=None, metavar='N',
+                        help='Encode with restart_interval=N (DRI + RST markers) and '
+                             'require the decoded image to be pixel-identical to the '
+                             'no-restart encode. Guards the packer restart tail-bit drop.')
     args = parser.parse_args()
     unisims_dir = None
 
@@ -505,7 +589,13 @@ def main():
 
     results = {}
 
-    if args.min_width:
+    if args.restart is not None:
+        q = args.quality if args.quality else 95
+        label = f'{"LITE" if args.lite else "FULL"} Q={q} restart={args.restart}'
+        passed = run_restart_test(iverilog, vvp, BUILD_DIR, args.lite, q, args.restart)
+        results[label] = passed
+        print(f'  >> {"PASS" if passed else "FAIL"}  [{label}]')
+    elif args.min_width:
         # Minimum-width 16x8 (1 MCU) — single quality is sufficient
         q = 95
         label = f'{"LITE" if args.lite else "FULL"} Q={q} 16x8'
@@ -520,7 +610,10 @@ def main():
     else:
         # Standard or special-mode tests
         single_q = args.rgb or args.gaps  # single quality sufficient for structural tests
-        test_quals = [95] if single_q else TEST_QUALITIES
+        if args.quality is not None:
+            test_quals = [args.quality]
+        else:
+            test_quals = [95] if single_q else TEST_QUALITIES
         for q in test_quals:
             extras = []
             if args.rgb:  extras.append('RGB_INPUT=1')

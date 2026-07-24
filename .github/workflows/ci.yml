@@ -194,6 +194,12 @@ jobs:
       - name: Generate test image (download mandrill or synthetic fallback)
         run: python python/test_encoder.py
 
+      # Entropy-path unit benches: deterministic guards for the gapless zigzag
+      # cross-block leak, the packer bp_ready backpressure drop, and the restart
+      # tail-bit drop — bugs the full-encoder golden does not reliably exercise.
+      - name: RTL unit benches (zigzag gapless / packer backpressure / restart)
+        run: python python/run_unit_benches.py
+
       # NOTE: the core golden (full/lite, single frame) is owned by the Verilator
       # job (rtl-verilator-sim) and the cocotb-dual job. This iverilog job runs
       # only what those don't: the multi-frame regression and the RGB / gaps /
@@ -226,6 +232,27 @@ jobs:
 
       - name: RTL simulation — minimum width 16x8 (lite mode)
         run: python python/verify_rtl_sim.py --lite --min-width
+
+      # Q=100 gapless golden: all-1s quant tables keep trailing high-freq
+      # coefficients, so this is the quality corner that unmasks the gapless
+      # zigzag double-buffer cross-block leak (also guarded by the unit bench,
+      # in-context here at the full-encoder level).
+      - name: RTL simulation — Q=100 gapless golden (full mode)
+        run: python python/verify_rtl_sim.py --quality 100
+
+      - name: RTL simulation — Q=100 gapless golden (lite mode)
+        run: python python/verify_rtl_sim.py --lite --quality 100
+
+      # Restart-interval (DRI) end-to-end: encode with RST markers every N MCUs
+      # and require the libjpeg-decoded image to be pixel-identical to the
+      # no-restart encode. Guards the packer tail-bit drop AND the Huffman
+      # DC-predictor reset at each RSTn boundary (a mid-frame reset that raced
+      # the next MCU and desynced against the decoder before it was fixed).
+      - name: RTL simulation — restart-interval golden (full mode)
+        run: python python/verify_rtl_sim.py --restart 1
+
+      - name: RTL simulation — restart-interval golden (lite mode)
+        run: python python/verify_rtl_sim.py --lite --restart 1
 
       - name: EXIF metadata simulation (full mode, 72 DPI)
         run: python python/verify_exif.py
