@@ -178,7 +178,7 @@ how closely the RTL matches the reference encoder, not the original image).
 
 **Hardware verification — Mandrill 1280×720, Q75** (Original | HW output | RTL sim | Diff×8):
 
-![HW vs Sim comparison](assets/hw_comparison.png)
+[![HW vs Sim comparison](assets/hw_comparison.png)](assets/hw_comparison.png)
 
 HW and RTL simulation outputs are byte-exact. The current Arty A7-100T
 post-fcapz Verilog and VHDL bitstreams both pass the Mandrill 720p Q75
