@@ -41,6 +41,10 @@ STD_QUANT_TABLE_CHROMA = np.array([
 def scale_quant_table(base_table, quality):
     """Scale quantization table by quality factor (1-100).
     Quality 50 = use table as-is. Higher = less quantization = better quality.
+
+    Canonical source for the JPEG quality-scale formula. It is mirrored in the RTL
+    (quantizer.v/.vhd, jfif_writer.v/.vhd); python/verify_quality_scale.py fails CI
+    if any copy drifts from this one.
     """
     if quality <= 0:
         quality = 1

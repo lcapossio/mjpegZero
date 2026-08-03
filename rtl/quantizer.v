@@ -116,7 +116,10 @@ if (LITE_MODE == 0) begin : g_full_quality
     /* verilator coverage_on */
 
     // ------------------------------------------------------------------
-    // Scale factor ROM: quality -> scale factor
+    // Scale factor ROM: quality -> scale factor.
+    // Quality-scale formula (Q<50 entries = floor(5000/Q)) is mirrored in the
+    // lite path below, jfif_writer.v/.vhd, quantizer.vhd, and python/jpeg_common.py;
+    // kept in lockstep by python/verify_quality_scale.py.
     // ------------------------------------------------------------------
     reg [12:0] scale_factor;
     reg [12:0] scale_factor_comb;
@@ -128,22 +131,22 @@ if (LITE_MODE == 0) begin : g_full_quality
             case (quality)
                 7'd1:  scale_factor_comb = 13'd5000;
                 7'd2:  scale_factor_comb = 13'd2500;
-                7'd3:  scale_factor_comb = 13'd1667;
+                7'd3:  scale_factor_comb = 13'd1666;
                 7'd4:  scale_factor_comb = 13'd1250;
                 7'd5:  scale_factor_comb = 13'd1000;
                 7'd6:  scale_factor_comb = 13'd833;
                 7'd7:  scale_factor_comb = 13'd714;
                 7'd8:  scale_factor_comb = 13'd625;
-                7'd9:  scale_factor_comb = 13'd556;
+                7'd9:  scale_factor_comb = 13'd555;
                 7'd10: scale_factor_comb = 13'd500;
-                7'd11: scale_factor_comb = 13'd455;
-                7'd12: scale_factor_comb = 13'd417;
-                7'd13: scale_factor_comb = 13'd385;
+                7'd11: scale_factor_comb = 13'd454;
+                7'd12: scale_factor_comb = 13'd416;
+                7'd13: scale_factor_comb = 13'd384;
                 7'd14: scale_factor_comb = 13'd357;
                 7'd15: scale_factor_comb = 13'd333;
-                7'd16: scale_factor_comb = 13'd313;
+                7'd16: scale_factor_comb = 13'd312;
                 7'd17: scale_factor_comb = 13'd294;
-                7'd18: scale_factor_comb = 13'd278;
+                7'd18: scale_factor_comb = 13'd277;
                 7'd19: scale_factor_comb = 13'd263;
                 7'd20: scale_factor_comb = 13'd250;
                 7'd21: scale_factor_comb = 13'd238;
@@ -153,25 +156,25 @@ if (LITE_MODE == 0) begin : g_full_quality
                 7'd25: scale_factor_comb = 13'd200;
                 7'd26: scale_factor_comb = 13'd192;
                 7'd27: scale_factor_comb = 13'd185;
-                7'd28: scale_factor_comb = 13'd179;
+                7'd28: scale_factor_comb = 13'd178;
                 7'd29: scale_factor_comb = 13'd172;
-                7'd30: scale_factor_comb = 13'd167;
+                7'd30: scale_factor_comb = 13'd166;
                 7'd31: scale_factor_comb = 13'd161;
                 7'd32: scale_factor_comb = 13'd156;
-                7'd33: scale_factor_comb = 13'd152;
+                7'd33: scale_factor_comb = 13'd151;
                 7'd34: scale_factor_comb = 13'd147;
-                7'd35: scale_factor_comb = 13'd143;
-                7'd36: scale_factor_comb = 13'd139;
+                7'd35: scale_factor_comb = 13'd142;
+                7'd36: scale_factor_comb = 13'd138;
                 7'd37: scale_factor_comb = 13'd135;
-                7'd38: scale_factor_comb = 13'd132;
+                7'd38: scale_factor_comb = 13'd131;
                 7'd39: scale_factor_comb = 13'd128;
                 7'd40: scale_factor_comb = 13'd125;
-                7'd41: scale_factor_comb = 13'd122;
+                7'd41: scale_factor_comb = 13'd121;
                 7'd42: scale_factor_comb = 13'd119;
                 7'd43: scale_factor_comb = 13'd116;
-                7'd44: scale_factor_comb = 13'd114;
+                7'd44: scale_factor_comb = 13'd113;
                 7'd45: scale_factor_comb = 13'd111;
-                7'd46: scale_factor_comb = 13'd109;
+                7'd46: scale_factor_comb = 13'd108;
                 7'd47: scale_factor_comb = 13'd106;
                 7'd48: scale_factor_comb = 13'd104;
                 7'd49: scale_factor_comb = 13'd102;
@@ -386,6 +389,7 @@ end else begin : g_lite_quality
         integer scale, scaled_q, recip_val;
 
         // Compute scale factor: Q>=50 -> 200-2*Q, Q<50 -> 5000/Q
+        // (mirrored across the RTL/VHDL/Python copies; guarded by python/verify_quality_scale.py)
         if (LITE_QUALITY >= 50)
             scale = 200 - 2 * LITE_QUALITY;
         else if (LITE_QUALITY >= 1)

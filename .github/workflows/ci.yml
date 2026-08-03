@@ -41,6 +41,9 @@ jobs:
       - name: Verify LITE_QUALITY tables
         run: python python/verify_lite_quality.py
 
+      - name: Verify quality-scale formula agrees across RTL/VHDL/Python
+        run: python python/verify_quality_scale.py
+
       - name: Python reference encoder test (PSNR check)
         run: python python/test_encoder.py
 

@@ -683,6 +683,8 @@ end else begin : g_lite_header
         integer scale, sq;
 
         // Compute quality scale factor (standard JPEG formula)
+        // (mirrored across quantizer.v/.vhd, jfif_writer.vhd, python/jpeg_common.py;
+        //  guarded by python/verify_quality_scale.py)
         if (LITE_QUALITY >= 50)
             scale = 200 - 2 * LITE_QUALITY;
         else if (LITE_QUALITY >= 1)
