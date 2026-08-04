@@ -84,28 +84,30 @@ architecture rtl of quantizer is
         return r;
     end function;
 
+    -- Quality-scale formula (Q<50 case = floor(5000/Q)); mirrored in quantizer.v,
+    -- jfif_writer.v/.vhd, python/jpeg_common.py; guarded by python/verify_quality_scale.py.
     function scale_full(q : natural) return natural is
     begin
         if q >= 50 then
             return 200 - 2 * q;
         elsif q >= 1 then
             case q is
-                when 1 => return 5000; when 2 => return 2500; when 3 => return 1667;
+                when 1 => return 5000; when 2 => return 2500; when 3 => return 1666;
                 when 4 => return 1250; when 5 => return 1000; when 6 => return 833;
-                when 7 => return 714;  when 8 => return 625;  when 9 => return 556;
-                when 10 => return 500; when 11 => return 455; when 12 => return 417;
-                when 13 => return 385; when 14 => return 357; when 15 => return 333;
-                when 16 => return 313; when 17 => return 294; when 18 => return 278;
+                when 7 => return 714;  when 8 => return 625;  when 9 => return 555;
+                when 10 => return 500; when 11 => return 454; when 12 => return 416;
+                when 13 => return 384; when 14 => return 357; when 15 => return 333;
+                when 16 => return 312; when 17 => return 294; when 18 => return 277;
                 when 19 => return 263; when 20 => return 250; when 21 => return 238;
                 when 22 => return 227; when 23 => return 217; when 24 => return 208;
                 when 25 => return 200; when 26 => return 192; when 27 => return 185;
-                when 28 => return 179; when 29 => return 172; when 30 => return 167;
-                when 31 => return 161; when 32 => return 156; when 33 => return 152;
-                when 34 => return 147; when 35 => return 143; when 36 => return 139;
-                when 37 => return 135; when 38 => return 132; when 39 => return 128;
-                when 40 => return 125; when 41 => return 122; when 42 => return 119;
-                when 43 => return 116; when 44 => return 114; when 45 => return 111;
-                when 46 => return 109; when 47 => return 106; when 48 => return 104;
+                when 28 => return 178; when 29 => return 172; when 30 => return 166;
+                when 31 => return 161; when 32 => return 156; when 33 => return 151;
+                when 34 => return 147; when 35 => return 142; when 36 => return 138;
+                when 37 => return 135; when 38 => return 131; when 39 => return 128;
+                when 40 => return 125; when 41 => return 121; when 42 => return 119;
+                when 43 => return 116; when 44 => return 113; when 45 => return 111;
+                when 46 => return 108; when 47 => return 106; when 48 => return 104;
                 when 49 => return 102; when others => return 100;
             end case;
         else

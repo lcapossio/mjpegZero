@@ -41,6 +41,9 @@ jobs:
       - name: Verify LITE_QUALITY tables
         run: python python/verify_lite_quality.py
 
+      - name: Verify quality-scale formula agrees across RTL/VHDL/Python
+        run: python python/verify_quality_scale.py
+
       - name: Python reference encoder test (PSNR check)
         run: python python/test_encoder.py
 
@@ -168,6 +171,50 @@ jobs:
 
       - name: Lint shared behavioral BRAM
         run: verilator --lint-only -Wall --bbox-unsup rtl/bram_sdp.v
+
+  # ---------------------------------------------------------------------------
+  # VHDL lint — GHDL analysis. Parallels the Verilator rtl-lint job for the VHDL
+  # port. -Wall + --warn-error promotes every GHDL warning to a hard error;
+  # --syn-binding suppresses only the default-binding notice (components are
+  # bound in the real elaboration flow). Covers all 15 VHDL sources, including
+  # demo_jpeg_buffer.vhd and synth_timing_wrapper.vhd, which the cocotb-dual
+  # job does not compile — so this is their only CI check.
+  # ---------------------------------------------------------------------------
+  vhdl-lint:
+    name: VHDL lint (GHDL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GHDL
+        run: |
+          sudo apt-get update
+          # Prefer the GCC backend (see cocotb-dual for the ghdl-llvm soname bug).
+          sudo apt-get install -y --no-install-recommends ghdl-gcc \
+            || sudo apt-get install -y --no-install-recommends ghdl-mcode \
+            || sudo apt-get install -y --no-install-recommends ghdl
+          ghdl --version
+
+      - name: Analyze all VHDL sources (-Wall --warn-error, dependency order)
+        run: |
+          mkdir -p build/ghdl_lint
+          ghdl -a --std=93 --syn-binding -Wall --warn-error --workdir=build/ghdl_lint \
+            rtl/vhdl/mjpegzero_pkg.vhd \
+            rtl/vhdl/axi4_lite_regs.vhd \
+            rtl/vhdl/bram_sdp.vhd \
+            rtl/vhdl/input_buffer.vhd \
+            rtl/vhdl/dct_1d.vhd \
+            rtl/vhdl/dct_2d.vhd \
+            rtl/vhdl/quantizer.vhd \
+            rtl/vhdl/huffman_encoder.vhd \
+            rtl/vhdl/bitstream_packer.vhd \
+            rtl/vhdl/rgb_to_ycbcr.vhd \
+            rtl/vhdl/zigzag_reorder.vhd \
+            rtl/vhdl/jfif_writer.vhd \
+            rtl/vhdl/mjpegzero_enc_top.vhd \
+            rtl/vhdl/demo_jpeg_buffer.vhd \
+            rtl/vhdl/synth_timing_wrapper.vhd
 
   # ---------------------------------------------------------------------------
   # RTL variant tests — iverilog (multi-frame + RGB / gaps / min-width / EXIF /

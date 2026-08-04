@@ -154,6 +154,8 @@ architecture rtl of jfif_writer is
         end case;
     end function;
 
+    -- Quality-scale formula; mirrored in quantizer.v/.vhd, jfif_writer.v,
+    -- python/jpeg_common.py; guarded by python/verify_quality_scale.py.
     function scale_lite(q : natural) return natural is
     begin
         if q >= 50 then
