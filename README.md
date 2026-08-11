@@ -192,27 +192,48 @@ The numbers below are for the `mjpegzero_enc_top` encoder core only. They are
 example synthesis presets, not definitions of full/lite mode. They do not
 include board wrappers, debug bridges, ELAs, or demo readback buffers.
 Synthesized by `scripts/synth/amd/run_core_synth.tcl` for an XC7A100T at
-150 MHz. The Verilog core uses `HUFF_BANKS=8` (8-deep Huffman input ring for
-throughput, ~+400 LUTRAM); its WNS is **post-route** (synth-only over-reports
-the ring path). The VHDL core uses the original 2-bank buffer.
+150 MHz. Both cores use the default `HUFF_BANKS=8` (8-deep Huffman input ring
+for throughput); the script overrides no banking generic, so the two languages
+build the same configuration. WNS is **post-synthesis** for every row.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,506 | 1,028 | 16 | 23 | +0.258 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,146 | 1,031 | 16 | 23 | +0.326 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,250 | 982 | 11 | 21 | +0.237 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 1,821 | 973 | 11 | 21 | +0.326 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,584 | 1,029 | 16 | 23 | +0.516 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,570 | 1,036 | 16 | 23 | +0.326 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,344 | 983 | 11 | 21 | +0.516 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,331 | 982 | 11 | 21 | +0.326 ns |
+
+**Verilog and VHDL are equivalent in area.** The two builds land within 14 LUTs
+(0.5%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
+FFs within 1%. Per-module deltas run in both directions and come from frontend
+and retiming choices on identical RTL, not from any structural difference — for
+example Vivado packs three of the `input_buffer` delay chains into SRL16s from
+the Verilog source but leaves them as FFs from the VHDL source.
 
 **Full vs lite is the quality path only** (runtime-programmable vs
 synthesis-fixed); the rest of the pipeline is identical. At the **same
-resolution** the delta is small — full vs lite at 720p is **+250 LUT / +65 FF /
-+0 BRAM / +2 DSP** (the runtime-quality update FSM, reciprocal LUT, and Q-scaling
-multiply). The rows above use different resolution presets, so their
+resolution** the delta is small — full vs lite at 720p is **+234 LUT / +65 FF /
++0 BRAM / +2 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT, and
+Q-scaling multiply). The rows above use different resolution presets, so their
 larger BRAM (16 vs 11) is the wider line buffers — **BRAM scales with image
 width, not with full/lite**.
 
 Use `python scripts/check_core_resources.py --run-synth` to regenerate the
-Verilog/VHDL apples-to-apples comparison.
+Verilog/VHDL apples-to-apples comparison. Note that it builds full mode at the
+720p default, so it checks equivalence rather than reproducing the 1080p rows
+above; for those, run both languages explicitly:
+
+```bash
+vivado -mode batch -source scripts/synth/amd/run_core_synth.tcl -tclargs verilog full 1080p
+vivado -mode batch -source scripts/synth/amd/run_core_synth.tcl -tclargs vhdl    full 1080p
+```
+
+**Always regenerate both languages together.** Comparing a report built from one
+commit against one built from another produces a large bogus gap.
+`check_core_resources.py` guards against this: it refuses to compare a report
+that predates the last change to the RTL it describes, whether that change was
+committed or is still uncommitted in the working tree. Pass `--allow-stale` to
+override, but the resulting comparison is not meaningful.
 
 <a id="pipeline-modules"></a>
 ## Pipeline Modules <sub>[↑ Top](#top)</sub>
