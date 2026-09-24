@@ -10,10 +10,20 @@ The port was done top-down:
    tests.
 
 The current top-level is `mjpegzero_enc_top.vhd`, a VHDL structural top. The
-top-level regression uses VHDL for the encoder hierarchy and reuses the
-existing SystemVerilog testbench as the driver/checker. The Arty A7-100T demo
-also has a VHDL encoder bitstream path in
+Arty A7-100T demo also has a VHDL encoder bitstream path in
 `example_proj/arty_a7_100t/scripts/create_project_vhdl.tcl`.
+
+Verification:
+
+- **CI (GHDL):** `sim/cocotb/test_runner.py` runs one cocotb testbench against
+  both the Verilog (Icarus) and VHDL (GHDL) tops and golden-checks each output
+  (`cocotb-dual` job). The `vhdl-lint` job analyzes every source here with
+  `-Wall --warn-error`.
+- **Local (Vivado xsim):** `scripts/run_vhdl_top_sim.py` drives the VHDL
+  hierarchy from the existing SystemVerilog testbench.
+
+Unlike the Verilog top, `VID_DATA_W` is a free generic: set it to 24 when
+`RGB_INPUT=1` and leave it at 16 for YUYV input.
 
 Source list:
 
@@ -32,6 +42,7 @@ Source list:
 | `rgb_to_ycbcr.vhd` | Optional RGB input conversion |
 | `bram_sdp.vhd` | Vendor-neutral inferred simple dual-port RAM |
 | `synth_timing_wrapper.vhd` | Core synthesis timing wrapper |
+| `demo_jpeg_buffer.vhd` | Tiled JPEG output buffer for the board demo shell (not part of the core) |
 
 `bram_sdp.vhd` is the vendor-neutral core RAM. It uses behavioral VHDL and has
 the same two-cycle read latency as `../bram_sdp.v`.

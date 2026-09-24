@@ -79,14 +79,15 @@ python example_proj/common/python/demo.py \
 | `0x0200_0000` | DEMO_STATUS | R | `[0]`=enc_done, `[1]`=overflow, `[2]`=axi_error, `[3]`=running, `[4]`=armed |
 | `0x0200_0004` | JPEG_SIZE | R | `[18:0]`=byte count |
 | `0x0200_0008` | JPEG_CAPACITY | R | JPEG buffer capacity in bytes |
-| `0x0300_0000–0x0301_FFFF` | JPEG_PORT | R | Compressed JPEG (burst) |
+| `0x0300_0000–0x0303_FFFF` | JPEG_PORT | R | Compressed JPEG (burst); 256 KB = `JPEG_WORDS`×4 with `JPEG_WORDS=65536` |
 
 ---
 
 ## Resource Utilisation
 
-Latest post-route fcapz demo builds at 150 MHz (Verilog encoder uses
-`HUFF_BANKS=8`, the throughput ring; VHDL uses the 2-bank buffer):
+Latest post-route fcapz demo builds at 150 MHz. The Verilog row uses
+`HUFF_BANKS=8`, the throughput ring. The VHDL row predates the VHDL top's
+switch to the same `HUFF_BANKS=8` default and is pending a rebuild:
 
 | HDL | LUT | FF | BRAM tiles | DSP48E1 | WNS |
 |-----|----:|---:|-----------:|--------:|----:|

@@ -21,7 +21,8 @@
 //                                                    [2]=axi_error [3]=running
 //                                                    [4]=armed
 //   0x0200_0004                 JPEG_SIZE   (read)   [18:0]=byte count
-//   0x0300_0000 – 0x0301_FFFF  JPEG_PORT   (read only, burst)
+//   0x0300_0000 + JPEG_WORDS*4-1  JPEG_PORT (read only, burst)
+//                                (A7: 0x0303_FFFF, S7: 0x0300_FFFF)
 //                                32-bit LE words; valid data = JPEG_SIZE bytes
 //
 // Encoder: LITE_MODE=1, LITE_QUALITY=75, 1280x720

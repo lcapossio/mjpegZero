@@ -133,7 +133,7 @@ output and the sink.
 | `EXIF_X_RES`    | 72      | EXIF XResolution numerator (DPI when `EXIF_RES_UNIT=2`)         |
 | `EXIF_Y_RES`    | 72      | EXIF YResolution numerator                                      |
 | `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
-| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default) |
+| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default). VHDL: also set `VID_DATA_W` to 24 (RGB) or 16 (YUYV) |
 | `HUFF_BANKS`    | 8       | Huffman input-ring depth = blocks in flight: **2, 4, or 8 only** (asserted at elaboration); higher = more throughput, more LUTRAM |
 
 <a id="capabilities"></a>
@@ -376,7 +376,7 @@ Coverage data is written to `build/coverage/`. LCOV info at
 ```bash
 python scripts/run_sim.py 720p           # no waveforms
 python scripts/run_sim.py 720p vcd       # + VCD dump → build/sim/tb_mjpegzero_enc.vcd
-python scripts/run_sim.py lite vcd       # lite mode with VCD
+python scripts/run_sim.py lite 720p vcd  # lite mode with VCD
 ```
 
 Output JPEG is written to `build/sim/sim_output.jpg`. Verified PSNR vs original: **37.77 dB**.
@@ -391,29 +391,33 @@ The core is described in [`mjpegzero.core`](mjpegzero.core) (CAPI2 format).
 # Add core to local library
 fusesoc library add mjpegzero .
 
-# Run simulation (icarus, full mode)
-fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc
+# Simulation smoke test (icarus, 64x8 frame, writes sim_output.jpg).
+# The input vector is generated, so create it once first:
+python python/generate_test_vectors.py
+fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc        # full mode
+fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc   # lite mode
 
-# Run simulation (lite mode)
-fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc
-
-# Lint with Verilator
-fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc
-
-# Synthesize for AMD/Xilinx Arty A7-100T
-fusesoc run --target synth_amd bard0-design:mjpegzero:mjpegzero_enc
-
-# Override parameters
+# Testbench settings: quality (full mode), frame count, restart interval
 fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc \
-  --LITE_MODE 0 --IMG_WIDTH 1920 --IMG_HEIGHT 1080
+  --TEST_QUALITY 50 --NUM_FRAMES 2 --RESTART_INTERVAL 1
+
+# Lint with Verilator (core defaults: LITE_MODE=1)
+fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
+
+# Synthesize for AMD/Xilinx Arty A7-100T (full / lite mode)
+fusesoc run --target synth_amd bard0-design:mjpegzero:mjpegzero_enc \
+  --IMG_WIDTH 1920 --IMG_HEIGHT 1080
+fusesoc run --target synth_amd_lite bard0-design:mjpegzero:mjpegzero_enc
 ```
 
 Available targets: `sim`, `sim_lite`, `lint`, `synth_amd`, `synth_amd_lite`.
+The sim targets are a smoke test (SOI/EOI/size); for golden-checked runs use
+`python python/verify_rtl_sim.py`.
 
 To use mjpegZero as a dependency in your own FuseSoC project, add to your `.core` file:
 ```yaml
 depend:
-  - bard0-design:mjpegzero:mjpegzero_enc:0.1.0
+  - bard0-design:mjpegzero:mjpegzero_enc:0.2.0
 ```
 
 <a id="litex-integration"></a>
@@ -623,7 +627,6 @@ for available BRAM.
 mjpegZero/
   rtl/              Synthesizable Verilog 2001 source
     vhdl/           Native VHDL-1993 encoder sources
-    vendor/         Board-specific BRAM wrappers (AMD, Altera, Lattice, ...)
   sim/              SystemVerilog testbench and test vectors
   python/           Reference encoder, verification, test vector generation
   scripts/          Vivado TCL scripts and Python runner

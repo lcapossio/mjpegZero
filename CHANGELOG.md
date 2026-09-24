@@ -7,13 +7,31 @@ All notable changes to mjpegZero are documented here.
 ## [Unreleased]
 
 ### Added
+- **Native VHDL-1993 port** (`rtl/vhdl/`, 15 sources) mirroring the Verilog
+  core module for module, with AMD synthesis/post-synthesis scripts, an Arty A7
+  VHDL build, a GHDL `-Wall --warn-error` lint job, and a core-resource
+  equivalence check (`check_core_resources.py`).
+- **cocotb dual-language harness** (`sim/cocotb/`) - one testbench,
+  golden-checked on Icarus (Verilog) and GHDL (VHDL) in CI.
+- **`HUFF_BANKS` parameter** (2/4/8, default 8) - Huffman input ring depth /
+  blocks in flight; raised Arty A7 720p throughput from 11.3 to 65.8 fps.
+- **Ethernet RTP/JPEG streaming demo** (`example_proj/arty_a7_100t_eth/`) -
+  RFC 2435 over UDP through the `emaczero/` MAC submodule, with host opcode
+  control, adaptive rate control and stream diagnostics.
+- **vtpgZero moving-pattern demo** (`vtpgzero/` submodule) - test pattern
+  generator -> encoder -> RTP/JPEG, with keyboard control over UDP.
+- **LiteX integration wrapper** (`integrations/litex/`).
+- **Regression coverage** - multi-frame DC-predictor, Q100 gapless and
+  restart-interval goldens, standalone zigzag/packer/restart unit benches
+  (`run_unit_benches.py`), and a quality-scale drift guard
+  (`verify_quality_scale.py`).
 - **fpgacapZero submodule** (`fcapz/`, pinned to `main`) — vendor-agnostic
   EJTAG-AXI bridge and ELA used by the board demos. The Xilinx `jtag_axi_0`
   Vivado IP is gone; `fcapz_ejtagaxi_xilinx7` (USER4, FIFO_DEPTH=256) and
   `fcapz_ela_xilinx7` (USER1/USER2) take its place.
 - **Arty A7-100T post-fcapz build** — `LITE_MODE=1, LITE_QUALITY=75,
   IMG_WIDTH=1280, IMG_HEIGHT=720, JPEG_WORDS=65536`. Closes timing at 150 MHz
-  (WNS +0.108 ns post-route). Final ELA config: `SAMPLE_W=16, DEPTH=512,
+  (latest `HUFF_BANKS=8` build: WNS +0.342 ns post-route). Final ELA config: `SAMPLE_W=16, DEPTH=512,
   INPUT_PIPE=1, no decimation, no timestamps`.
 - **Arty S7-50 example project scaffold** — `example_proj/arty_s7_50/` with
   shared `demo_top.v`, board-specific XDC, and `pre_write_bitstream.tcl`
@@ -57,9 +75,13 @@ All notable changes to mjpegZero are documented here.
   asserts once and holds until `m_bready` (matches AXI4 protocol).
 - `m_bvalid` / `m_rresp` now reflect SLVERR for invalid transactions instead
   of always 2'b00.
-- Top-level [`README.md`](README.md) `Resource Usage` section now shows the
-  `mjpegzero_enc_top` slice extracted from the post-route A7 demo build,
-  with the full demo total + WNS noted alongside.
+- Top-level [`README.md`](README.md) `Resource Usage` section now shows
+  standalone core synthesis (`run_core_synth.tcl`, XC7A100T) for Verilog and
+  VHDL, full and lite; board demo totals live in the board READMEs.
+- Single behavioral BRAM (`rtl/bram_sdp.v`) replaces the per-vendor
+  `rtl/vendor/` wrappers.
+- Quality mode (`LITE_MODE`) is decoupled from resolution
+  (`IMG_WIDTH`/`IMG_HEIGHT`).
 - Tested-Hardware table in [`README.md`](README.md) and the new-board
   template in [`CONTRIBUTING.md`](CONTRIBUTING.md) reflect the
   `common/` shared layout (each board only contributes constraints + scripts).
@@ -72,6 +94,15 @@ All notable changes to mjpegZero are documented here.
   the Xilinx JTAG-to-AXI Master IP is no longer instantiated.
 
 ### Fixed
+- Restart-interval output: Huffman `S_IDLE` now honors a live restart, so the
+  DC predictor resets in sync with each RSTn (Verilog + VHDL).
+- Zigzag corruption under gapless input, packer `bp_ready` backpressure, and
+  restart tail-bit padding (Verilog + VHDL).
+- Per-frame DC predictor reset (multi-frame luma wash), driven from
+  `frame_done`.
+- YUYV chroma phase at start of frame in `rgb_to_ycbcr`.
+- Full-mode Q<50 scale LUT: 16 rounded/typo entries now floor, matching lite
+  mode and the Python reference (Verilog + VHDL).
 - Multi-driver `axi_error` reg in `demo_top.v` / `demo_top_bare.v` — the
   AR FSM and AW FSM both wrote it directly, producing undefined synth
   behavior. Now serialised through `axi_rd_error_pulse`.
@@ -103,9 +134,6 @@ All notable changes to mjpegZero are documented here.
 - **Full-mode EXIF test** in CI (previously only tested in lite mode).
 - **Vendor BRAM stub lint** — CI now lints all vendor BRAM wrappers.
 - **Lint LITE_MODE=0, RGB_INPUT=1** — new CI lint combination.
-- **Makefile** — convenience targets for verify, lint, sim, coverage, and clean.
-- **`docs/ARCHITECTURE.md`** — design rationale covering subsampling, pipeline
-  stages, quality scaling, no-backpressure decision, and full vs. lite mode.
 - **`python/requirements.txt`** — declared Python dependencies.
 - **FuseSoC** — `EXIF_ENABLE`, `EXIF_X_RES`, `EXIF_Y_RES`, `EXIF_RES_UNIT`,
   `RGB_INPUT` parameters added to all targets; `rgb_to_ycbcr.v` added to RTL
@@ -129,6 +157,6 @@ First public release.
 
 ---
 
-[Unreleased]: https://github.com/bard0-design/mjpegZero/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/bard0-design/mjpegZero/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/bard0-design/mjpegZero/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lcapossio/mjpegZero/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lcapossio/mjpegZero/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/lcapossio/mjpegZero/releases/tag/v0.1.0
