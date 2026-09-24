@@ -5,7 +5,7 @@
 # ============================================================================
 # Vivado Implementation Script for mjpegZero
 # Runs place & route on the synthesized design
-# Target: AMD/Xilinx Spartan-7 XC7S50, 150 MHz (6.897 ns period)
+# Target: AMD/Xilinx Spartan-7 XC7S50, 150 MHz (6.667 ns period)
 # Usage: vivado -mode batch -source scripts/synth/amd/run_impl.tcl
 # ============================================================================
 
@@ -47,7 +47,7 @@ write_checkpoint -force $output_dir/post_route.dcp
 
 # Print summary
 puts "======================================================================"
-puts "IMPLEMENTATION COMPLETE - Target: 150 MHz (6.897 ns)"
+puts "IMPLEMENTATION COMPLETE - Target: 150 MHz (6.667 ns)"
 puts "======================================================================"
 
 # Extract WNS (tabular format: header, dashes, value row)
@@ -81,13 +81,13 @@ foreach line $lines {
 
 if {$wns ne ""} {
     puts "Post-Route WNS: $wns ns"
-    set fmax_mhz [expr {1000.0 / (6.897 - $wns)}]
+    set fmax_mhz [expr {1000.0 / (6.667 - $wns)}]
     puts [format "Estimated Fmax: %.1f MHz" $fmax_mhz]
     if {$wns >= 0} {
         puts "TIMING MET at 150 MHz!"
     } else {
         puts "TIMING VIOLATION at 150 MHz: WNS = $wns ns"
-        set actual_period [expr {6.897 - $wns}]
+        set actual_period [expr {6.667 - $wns}]
         set actual_fmax [expr {1000.0 / $actual_period}]
         puts [format "Achievable Fmax: %.1f MHz (period: %.3f ns)" $actual_fmax $actual_period]
     }

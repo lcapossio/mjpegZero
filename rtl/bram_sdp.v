@@ -33,6 +33,7 @@ module bram_sdp #(
     localparam ADDR_W     = $clog2(DEPTH);
     localparam SEL_BITS   = (N_TILES <= 1) ? 1 : $clog2(N_TILES);
     localparam INNER_W    = (N_TILES <= 1) ? ADDR_W : (ADDR_W - SEL_BITS);
+    localparam integer TILE_WORDS = 2 ** INNER_W;   // < TILE_DEPTH only for a small single tile
 
     wire [SEL_BITS-1:0] rsel_now;
     reg  [SEL_BITS-1:0] rsel_d1;
@@ -60,7 +61,7 @@ module bram_sdp #(
     genvar gi;
     generate
         for (gi = 0; gi < N_TILES; gi = gi + 1) begin : g_tile
-            reg [WIDTH-1:0] mem [0:TILE_DEPTH-1];
+            reg [WIDTH-1:0] mem [0:TILE_WORDS-1];
             reg [WIDTH-1:0] rdata_r;
             reg [WIDTH-1:0] rdata_q;
 

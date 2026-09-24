@@ -44,10 +44,13 @@ module input_buffer #(
     output reg         blk_sof,        // Start of frame (first sample of first block)
     output reg         blk_sob,        // Start of block
     output reg  [1:0]  blk_comp,       // Component: 0=Y0, 1=Y1, 2=Cb, 3=Cr
-    input  wire        blk_ready,      // Downstream ready
+    input  wire        blk_ready,      // Downstream ready (per sample)
+    input  wire        blk_start,      // May begin a new block (checked at each block's first sample)
 
     // Lines-done pulse (8 lines written, blocks ready to read)
-    output wire        lines_done
+    output wire        lines_done,
+    // A strip is buffered and the read side is waiting to issue / issuing it
+    output wire        blk_avail
 );
 
     initial begin
@@ -65,6 +68,14 @@ module input_buffer #(
     // Derived parameters
     // ========================================================================
     localparam MCU_COLS = IMG_WIDTH / 16;
+    // Counter widths follow IMG_WIDTH (fixed 11-bit x / 7-bit MCU column
+    // counters silently wrapped above 2048 pixels and hung the encoder).
+    localparam X_W   = (IMG_WIDTH > 1) ? $clog2(IMG_WIDTH) : 1;
+    localparam COL_W = (MCU_COLS  > 1) ? $clog2(MCU_COLS)  : 1;
+    localparam integer     X_LAST_I   = IMG_WIDTH - 1;
+    localparam integer     COL_LAST_I = MCU_COLS - 1;
+    localparam [X_W-1:0]   X_LAST     = X_LAST_I[X_W-1:0];
+    localparam [COL_W-1:0] COL_LAST   = COL_LAST_I[COL_W-1:0];
 
     // Buffer sizes per bank (8 lines)
     localparam Y_BANK_SIZE  = 8 * IMG_WIDTH;      // 8 lines of full-res luma
@@ -127,25 +138,39 @@ module input_buffer #(
     // missed and the read side stalls forever.
     reg lines_done_pending;
     reg rd_bank_pending;
+    reg rd_first_pending;     // the pending strip is the first of a frame
 
     // ========================================================================
     // Write side state machine
     // ========================================================================
     reg wr_bank;
-    reg [10:0] wr_x;          // Pixel x position (0..IMG_WIDTH-1)
+    reg [X_W-1:0] wr_x;       // Pixel x position (0..IMG_WIDTH-1)
     reg [2:0]  wr_line;       // Line within 8-line group (0..7)
-    reg [6:0]  wr_mcu_row;    // MCU row
     reg        wr_phase;      // 0 = Y+Cb word, 1 = Y+Cr word
     reg        wr_frame_active;
+    reg        wr_strip_first; // strip being written is the first of a frame
     reg        wr_8lines_done;
+    reg        wr_done_first;  // qualifies wr_8lines_done: that strip was a frame's first
+
+    // Write-side ready: the write bank is not being read (double-buffer
+    // protection). Do NOT gate with blk_ready, because the write side must fill
+    // 8 lines before blocks can be read out. Before the first start-of-frame,
+    // words are accepted and discarded so a source that starts mid-frame
+    // cannot stall forever.
+    assign s_axis_tready = (wr_bank != rd_bank) || !rd_active;
+    assign lines_done = wr_8lines_done;
 
     wire wr_accept = s_axis_tvalid && s_axis_tready;
-
-    // Write-side ready: accept data when frame is active and the write bank
-    // is not being read (double-buffer protection). Do NOT gate with blk_ready,
-    // because the write side must fill 8 lines before blocks can be read out.
-    assign s_axis_tready = wr_frame_active && (wr_bank != rd_bank || !rd_active);
-    assign lines_done = wr_8lines_done;
+    // A start-of-frame word is the frame's pixel (0,0) on line 0 of the current
+    // write bank. The bank is NOT reset: ping-pong continues across frames, so a
+    // new frame never overwrites the previous frame's last strip while it is
+    // still being read out.
+    wire wr_sof   = wr_accept && s_axis_tuser;
+    wire wr_take  = wr_accept && (wr_frame_active || s_axis_tuser);
+    wire [X_W-1:0] px_x     = wr_sof ? {X_W{1'b0}} : wr_x;
+    wire [2:0]     px_line  = wr_sof ? 3'd0 : wr_line;
+    wire           px_phase = wr_sof ? 1'b0 : wr_phase;
+    wire           px_first = wr_sof ? 1'b1 : wr_strip_first;
 
     // Power-on initialisation (synthesisable on Xilinx FPGAs via INIT attrs).
     // Required for synchronous-reset style: prevents X propagation through
@@ -153,12 +178,13 @@ module input_buffer #(
     initial begin
         // Write-side
         wr_bank         = 1'b0;
-        wr_x            = 11'd0;
+        wr_x            = {X_W{1'b0}};
         wr_line         = 3'd0;
-        wr_mcu_row      = 7'd0;
         wr_phase        = 1'b0;
         wr_frame_active = 1'b0;
+        wr_strip_first  = 1'b0;
         wr_8lines_done  = 1'b0;
+        wr_done_first   = 1'b0;
         y_buf_we        = 1'b0;
         cb_buf_we       = 1'b0;
         cr_buf_we       = 1'b0;
@@ -167,18 +193,20 @@ module input_buffer #(
         rd_active            = 1'b0;
         lines_done_pending   = 1'b0;
         rd_bank_pending      = 1'b0;
+        rd_first_pending     = 1'b0;
         rd_valid_pipe        = 1'b0;
     end
 
     always @(posedge clk) begin
         if (!rst_n) begin
             wr_bank <= 1'b0;
-            wr_x <= 11'd0;
+            wr_x <= {X_W{1'b0}};
             wr_line <= 3'd0;
-            wr_mcu_row <= 7'd0;
             wr_phase <= 1'b0;
             wr_frame_active <= 1'b0;
+            wr_strip_first <= 1'b0;
             wr_8lines_done <= 1'b0;
+            wr_done_first <= 1'b0;
             y_buf_we <= 1'b0;
             cb_buf_we <= 1'b0;
             cr_buf_we <= 1'b0;
@@ -188,32 +216,26 @@ module input_buffer #(
             cr_buf_we <= 1'b0;
             wr_8lines_done <= 1'b0;
 
-            if (s_axis_tvalid && s_axis_tuser) begin
+            if (wr_take) begin
                 wr_frame_active <= 1'b1;
-                wr_x <= 11'd0;
-                wr_line <= 3'd0;
-                wr_mcu_row <= 7'd0;
-                wr_phase <= 1'b0;
-                wr_bank <= 1'b0;
-            end
+                wr_strip_first  <= px_first;
 
-            if (wr_accept && wr_frame_active) begin
                 // Y sample (always present)
                 y_buf_we <= 1'b1;
                 /* verilator lint_off WIDTHEXPAND */
                 y_buf_waddr <= wr_bank * Y_BANK_SIZE[Y_ADDR_W-1:0]
-                             + {1'b0, wr_line} * IMG_WIDTH[Y_ADDR_W-1:0]
-                             + wr_x;
+                             + {1'b0, px_line} * IMG_WIDTH[Y_ADDR_W-1:0]
+                             + px_x;
                 /* verilator lint_on WIDTHEXPAND */
                 y_buf_wdata <= s_axis_tdata[7:0];
 
-                if (!wr_phase) begin
+                if (!px_phase) begin
                     // Even pixel: Cb
                     cb_buf_we <= 1'b1;
                     /* verilator lint_off WIDTHEXPAND */
                     cb_buf_waddr <= wr_bank * CB_BANK_SIZE[CB_ADDR_W-1:0]
-                                 + {1'b0, wr_line} * CHROMA_WIDTH[CB_ADDR_W-1:0]
-                                 + wr_x[10:1];
+                                 + {1'b0, px_line} * CHROMA_WIDTH[CB_ADDR_W-1:0]
+                                 + px_x[X_W-1:1];
                     /* verilator lint_on WIDTHEXPAND */
                     cb_buf_wdata <= s_axis_tdata[15:8];
                 end else begin
@@ -221,26 +243,28 @@ module input_buffer #(
                     cr_buf_we <= 1'b1;
                     /* verilator lint_off WIDTHEXPAND */
                     cr_buf_waddr <= wr_bank * CR_BANK_SIZE[CR_ADDR_W-1:0]
-                                 + {1'b0, wr_line} * CHROMA_WIDTH[CR_ADDR_W-1:0]
-                                 + wr_x[10:1];
+                                 + {1'b0, px_line} * CHROMA_WIDTH[CR_ADDR_W-1:0]
+                                 + px_x[X_W-1:1];
                     /* verilator lint_on WIDTHEXPAND */
                     cr_buf_wdata <= s_axis_tdata[15:8];
                 end
 
-                wr_phase <= ~wr_phase;
-                wr_x <= wr_x + 11'd1;
+                wr_phase <= ~px_phase;
+                wr_x     <= px_x + 1'b1;
+                wr_line  <= px_line;
 
                 // End of line
-                if (wr_x == IMG_WIDTH[10:0] - 11'd1 || s_axis_tlast) begin
-                    wr_x <= 11'd0;
+                if (px_x == X_LAST || s_axis_tlast) begin
+                    wr_x <= {X_W{1'b0}};
                     wr_phase <= 1'b0;
-                    if (wr_line == 3'd7) begin
+                    if (px_line == 3'd7) begin
                         wr_line <= 3'd0;
                         wr_8lines_done <= 1'b1;
+                        wr_done_first  <= px_first;
+                        wr_strip_first <= 1'b0;
                         wr_bank <= ~wr_bank;
-                        wr_mcu_row <= wr_mcu_row + 7'd1;
                     end else begin
-                        wr_line <= wr_line + 3'd1;
+                        wr_line <= px_line + 3'd1;
                     end
                 end
             end
@@ -251,11 +275,10 @@ module input_buffer #(
     // Read side state machine - outputs 8x8 blocks in MCU order
     // ========================================================================
     // rd_bank and rd_active declared above (forward declarations)
-    reg [6:0] rd_mcu_col;
+    reg [COL_W-1:0] rd_mcu_col;
     reg [1:0] rd_comp;
     reg [2:0] rd_row;
     reg [2:0] rd_col;
-    reg       rd_started;
     reg       rd_sof_pending;
 
     // rd_valid_pipe declared above (forward declaration for BRAM clock enable)
@@ -267,15 +290,22 @@ module input_buffer #(
                RD_READ = 2'd1;
     reg [1:0] rd_state;
 
+    assign blk_avail = (rd_state == RD_READ);
+
+    // Issue a sample when downstream is ready; a block's first sample also
+    // needs blk_start, so admission is decided on block boundaries only and a
+    // block, once started, is never cut short by the admission gate.
+    wire rd_blk_first = (rd_row == 3'd0) && (rd_col == 3'd0);
+    wire rd_issue     = blk_ready && (!rd_blk_first || blk_start);
+
     always @(posedge clk) begin
         if (!rst_n) begin
             rd_bank <= 1'b0;
-            rd_mcu_col <= 7'd0;
+            rd_mcu_col <= {COL_W{1'b0}};
             rd_comp <= 2'd0;
             rd_row <= 3'd0;
             rd_col <= 3'd0;
             rd_active <= 1'b0;
-            rd_started <= 1'b0;
             rd_sof_pending <= 1'b0;
             rd_state <= RD_IDLE;
             rd_valid_pipe <= 1'b0;
@@ -283,6 +313,7 @@ module input_buffer #(
             rd_sof_pipe <= 1'b0;
             lines_done_pending <= 1'b0;
             rd_bank_pending <= 1'b0;
+            rd_first_pending <= 1'b0;
         end else begin
             rd_valid_pipe <= 1'b0;
             rd_sob_pipe <= 1'b0;
@@ -295,6 +326,7 @@ module input_buffer #(
             if (wr_8lines_done && rd_state == RD_READ) begin
                 lines_done_pending <= 1'b1;
                 rd_bank_pending    <= ~wr_bank;
+                rd_first_pending   <= wr_done_first;
             end
 
             case (rd_state)
@@ -302,21 +334,18 @@ module input_buffer #(
                     if (wr_8lines_done || lines_done_pending) begin
                         rd_active   <= 1'b1;
                         rd_bank     <= wr_8lines_done ? ~wr_bank : rd_bank_pending;
-                        rd_mcu_col  <= 7'd0;
+                        rd_sof_pending <= wr_8lines_done ? wr_done_first : rd_first_pending;
+                        rd_mcu_col  <= {COL_W{1'b0}};
                         rd_comp     <= 2'd0;
                         rd_row      <= 3'd0;
                         rd_col      <= 3'd0;
                         rd_state    <= RD_READ;
                         lines_done_pending <= 1'b0;
-                        if (!rd_started) begin
-                            rd_sof_pending <= 1'b1;
-                            rd_started     <= 1'b1;
-                        end
                     end
                 end
 
                 RD_READ: begin
-                    if (blk_ready) begin
+                    if (rd_issue) begin
                         rd_valid_pipe <= 1'b1;
                         rd_comp_pipe <= rd_comp;
 
@@ -367,8 +396,8 @@ module input_buffer #(
                                 rd_comp <= rd_comp + 2'd1;
                                 if (rd_comp == 2'd3) begin
                                     rd_comp <= 2'd0;
-                                    rd_mcu_col <= rd_mcu_col + 7'd1;
-                                    if (rd_mcu_col == MCU_COLS[6:0] - 7'd1) begin
+                                    rd_mcu_col <= rd_mcu_col + 1'b1;
+                                    if (rd_mcu_col == COL_LAST) begin
                                         rd_state <= RD_IDLE;
                                         rd_active <= 1'b0;
                                     end
@@ -380,14 +409,6 @@ module input_buffer #(
 
                 default: rd_state <= RD_IDLE;
             endcase
-
-            // Reset on SOF
-            if (s_axis_tvalid && s_axis_tuser) begin
-                rd_started         <= 1'b0;
-                rd_state           <= RD_IDLE;
-                lines_done_pending <= 1'b0;
-                rd_active <= 1'b0;
-            end
         end
     end
 

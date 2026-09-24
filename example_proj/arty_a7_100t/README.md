@@ -85,14 +85,13 @@ python example_proj/common/python/demo.py \
 
 ## Resource Utilisation
 
-Latest post-route fcapz demo builds at 150 MHz. The Verilog row uses
-`HUFF_BANKS=8`, the throughput ring. The VHDL row predates the VHDL top's
-switch to the same `HUFF_BANKS=8` default and is pending a rebuild:
+Latest post-route fcapz demo builds at 150 MHz (pipelined Huffman, per-frame
+control, `HUFF_BANKS=8`), both rebuilt from the same commit:
 
 | HDL | LUT | FF | BRAM tiles | DSP48E1 | WNS |
 |-----|----:|---:|-----------:|--------:|----:|
-| Verilog | 5,454 | 5,255 | 78 | 21 | +0.342 ns |
-| VHDL    | 5,348 | 5,258 | 78 | 21 | +0.167 ns |
+| Verilog | 5,780 | 5,395 | 78 | 21 | +0.275 ns |
+| VHDL    | 5,805 | 5,413 | 78 | 21 | +0.196 ns |
 
 Both builds use vanilla fcapz `da892ca` with a minimized 16-bit, 512-sample ELA
 (`INPUT_PIPE=1`, no timestamps, no decimation) plus the EJTAG-AXI bridge used by

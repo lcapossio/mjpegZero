@@ -238,32 +238,36 @@ module tb_mjpegzero_enc;
     // ========================================================================
     // AXI-Lite write task
     // ========================================================================
+    // Drive on negedge, sample handshakes on posedge (race-free against the
+    // DUT's combinational AWREADY/WREADY).
     task axi_write(input [4:0] addr, input [31:0] data);
+        reg aw_done, w_done, b_done;
         begin
-            @(posedge clk);
+            @(negedge clk);
             s_axi_awaddr = addr;
             s_axi_awvalid = 1;
             s_axi_wdata = data;
             s_axi_wstrb = 4'hF;
             s_axi_wvalid = 1;
             s_axi_bready = 1;
+            aw_done = 0;
+            w_done  = 0;
+            b_done  = 0;
 
-            // Wait for handshake
-            fork
-                begin: aw_wait
-                    wait(s_axi_awready);
-                    @(posedge clk);
-                    s_axi_awvalid = 0;
-                end
-                begin: w_wait
-                    wait(s_axi_wready);
-                    @(posedge clk);
-                    s_axi_wvalid = 0;
-                end
-            join
+            while (!(aw_done && w_done)) begin
+                @(posedge clk);
+                if (s_axi_awvalid && s_axi_awready) aw_done = 1;
+                if (s_axi_wvalid  && s_axi_wready)  w_done  = 1;
+                @(negedge clk);
+                if (aw_done) s_axi_awvalid = 0;
+                if (w_done)  s_axi_wvalid  = 0;
+            end
 
-            wait(s_axi_bvalid);
-            @(posedge clk);
+            while (!b_done) begin
+                @(posedge clk);
+                if (s_axi_bvalid && s_axi_bready) b_done = 1;
+            end
+            @(negedge clk);
             s_axi_bready = 0;
         end
     endtask
@@ -351,12 +355,13 @@ module tb_mjpegzero_enc;
                         dbg_cnt == 800 || dbg_cnt == 900 || dbg_cnt == 1000 ||
                         dbg_cnt == 1200 || dbg_cnt == 1500 || dbg_cnt == 2000 ||
                         dbg_cnt == 3000 || dbg_cnt == 5000 || dbg_cnt == 10000) begin
-                        $display("[%0t] DBG clk=%0d: lines_done=%b ibuf_blk_valid=%b ibuf_blk_ready=%b headers_done=%b",
+                        $display("[%0t] DBG clk=%0d: blk_avail=%b ibuf_blk_valid=%b ibuf_blk_start=%b headers_done=%b fstate=%0d",
                             $time, dbg_cnt,
-                            dut.ibuf_lines_done,
+                            dut.ibuf_blk_avail,
                             dut.ibuf_blk_valid,
-                            dut.ibuf_blk_ready,
-                            dut.jfif_headers_done);
+                            dut.ibuf_blk_start,
+                            dut.jfif_headers_done,
+                            dut.fstate);
                         $display("  jfif_state=%0d frame_start=%b frame_done=%b frame_active=%b mcu_count=%0d",
 `ifdef LITE_MODE
                             dut.u_jfif.g_lite_header.state,

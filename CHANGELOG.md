@@ -102,6 +102,14 @@ All notable changes to mjpegZero are documented here.
   template in [`CONTRIBUTING.md`](CONTRIBUTING.md) reflect the
   `common/` shared layout (each board only contributes constraints + scripts).
 
+- **Back-to-back stream test** (`python/verify_stream.py`, iverilog and
+  cocotb/GHDL): multi-row frames fed back to back with QUALITY / ENABLE
+  changes mid-frame, restart wrap, gaps, RGB, EXIF and HUFF_BANKS 2/4;
+  every frame decoded restart-aware and header-checked, VHDL byte-compared
+  against Verilog. Wired into CI and `run_ci_local.py`.
+- **VHDL `VID_DATA_W` derived from `RGB_INPUT`** (`vid_data_w()`), as in
+  Verilog; the free generic is gone.
+
 ### Removed
 - `example_proj/common/python/host.tcl` — Vivado Hardware Manager script
   superseded by the fcapz Python host.
@@ -110,6 +118,30 @@ All notable changes to mjpegZero are documented here.
   the Xilinx JTAG-to-AXI Master IP is no longer instantiated.
 
 ### Fixed
+- **Frame control** (Verilog + VHDL): a new frame arriving before the last one
+  finished corrupted the encoder; the SOF word of frame 2+ was written to the
+  wrong bank/column; `frame_start` could be lost during EOI and the in-flight
+  counter could wrap, hanging the encoder. The top now runs one frame at a
+  time (exactly `TOTAL_BLOCKS` blocks, block-granular admission) and the input
+  buffer ping-pongs across frames.
+- **ENABLE = 0** now stalls the input instead of accepting and dropping pixels.
+- **QUALITY / RESTART latched per frame** (a mid-frame write no longer
+  desyncs tables and headers); QUALITY 0 and 101–127 clamp to 1 / 100.
+- **Exact Q-table divide by 100** in full mode (the reciprocal approximation
+  rounded some Q<50 entries up, e.g. 130 instead of 129).
+- **Widths above 2048** hung the encoder (fixed 11-bit x / 7-bit MCU column
+  counters); counter widths now follow `IMG_WIDTH`.
+- **FRAME_SIZE** reported a running total across frames; it is now the byte
+  count of the last frame.
+- **AXI4-Lite**: ready signals follow the handshake rules, AW/W are captured
+  independently, and `WSTRB` is honored.
+- Scripts that reported success on failure: `run_sim.py` /
+  `run_vhdl_top_sim.py` (no JPEG or failed checks), `run_all.py` (timing
+  VIOLATED), `hw_test_mandrill.py` (stale sim/HW JPEGs), and the verify
+  scripts (stale outputs). AMD synth/impl scripts now constrain 6.667 ns
+  (150 MHz) instead of 6.897 ns.
+- CI Verilator lint passed `LITE_MODE`/`RGB_INPUT` as `-D` defines (ignored);
+  now `-G` parameters, so all four top-level configurations are linted.
 - Restart-interval output: Huffman `S_IDLE` now honors a live restart, so the
   DC predictor resets in sync with each RSTn (Verilog + VHDL).
 - Zigzag corruption under gapless input, packer `bp_ready` backpressure, and

@@ -117,7 +117,16 @@ output and the sink.
 | 0x08   | FRAME_CNT  | RO     | Completed frame count                  |
 | 0x0C   | QUALITY    | R/W    | JPEG quality factor (1–100, default 95)|
 | 0x10   | RESTART    | R/W    | Restart interval in MCUs (0 = disabled)|
-| 0x14   | FRAME_SIZE | RO     | Byte count of last completed frame     |
+| 0x14   | FRAME_SIZE | RO     | JPEG size in bytes (SOI..EOI) of the last completed frame |
+
+- **ENABLE = 0** stalls the video input (`s_axis_vid_tready` low); pixels are
+  never accepted and dropped. A frame already admitted finishes encoding.
+- **QUALITY and RESTART are latched per frame**, when the encoder starts a
+  frame. A write during a frame applies from the next frame, so the headers
+  always match the scan. QUALITY 0 is treated as 1 and 101–127 as 100.
+- Writes honor `WSTRB`; AW and W may arrive in any order.
+- Frames may be sent back to back: the next frame's start-of-frame can arrive
+  while the previous frame is still being encoded.
 
 <a id="parameters"></a>
 ## Parameters <sub>[↑ Top](#top)</sub>
@@ -133,7 +142,7 @@ output and the sink.
 | `EXIF_X_RES`    | 72      | EXIF XResolution numerator (DPI when `EXIF_RES_UNIT=2`)         |
 | `EXIF_Y_RES`    | 72      | EXIF YResolution numerator                                      |
 | `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
-| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default). VHDL: also set `VID_DATA_W` to 24 (RGB) or 16 (YUYV) |
+| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default). The video port width follows it in both Verilog and VHDL |
 | `HUFF_BANKS`    | 8       | Huffman input-ring depth = blocks in flight: **2, 4, or 8 only** (asserted at elaboration); higher = more throughput, more LUTRAM |
 
 <a id="capabilities"></a>
@@ -198,23 +207,23 @@ build the same configuration. WNS is **post-synthesis** for every row.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,834 | 1,163 | 16 | 23 | +0.171 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,839 | 1,177 | 16 | 23 | +0.191 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,556 | 1,117 | 11 | 21 | +0.171 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,572 | 1,123 | 11 | 21 | +0.309 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,917 | 1,254 | 16 | 24 | +0.171 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,921 | 1,266 | 16 | 24 | +0.191 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,600 | 1,199 | 11 | 21 | +0.171 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,618 | 1,203 | 11 | 21 | +0.309 ns |
 
-**Verilog and VHDL are equivalent in area.** The two builds land within 16 LUTs
-(0.6%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
-FFs within 1.5%. Per-module deltas run in both directions and come from frontend
+**Verilog and VHDL are equivalent in area.** The two builds land within 18 LUTs
+(0.7%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
+FFs within 1%. Per-module deltas run in both directions and come from frontend
 and retiming choices on identical RTL, not from any structural difference — for
 example Vivado packs three of the `input_buffer` delay chains into SRL16s from
 the Verilog source but leaves them as FFs from the VHDL source.
 
 **Full vs lite is the quality path only** (runtime-programmable vs
 synthesis-fixed); the rest of the pipeline is identical. At the **same
-resolution** the delta is small — full vs lite at 720p is **+272 LUT / +65 FF /
-+0 BRAM / +2 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT, and
-Q-scaling multiply). The rows above use different resolution presets, so their
+resolution** the delta is small — full vs lite at 720p is **+309 LUT / +72 FF /
++0 BRAM / +3 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT,
+Q-scaling multiply and exact divide-by-100). The rows above use different resolution presets, so their
 larger BRAM (16 vs 11) is the wider line buffers — **BRAM scales with image
 width, not with full/lite**.
 

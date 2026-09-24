@@ -29,7 +29,11 @@ entity quantizer is
 
         qt_rd_addr      : in  std_logic_vector(5 downto 0);
         qt_rd_is_chroma : in  std_logic;
-        qt_rd_data      : out std_logic_vector(7 downto 0)
+        qt_rd_data      : out std_logic_vector(7 downto 0);
+
+        -- High while the Q tables do not yet match `quality` (full mode: the
+        -- update FSM is pending or running; lite mode: never)
+        tables_busy     : out std_logic
     );
 end entity;
 
@@ -167,7 +171,8 @@ architecture rtl of quantizer is
         return r;
     end function;
 
-    type upd_state_t is (UPD_IDLE, UPD_SCALE, UPD_ADD, UPD_DIV, UPD_RECIP);
+    -- UPD_LOAD registers the base-table read off the DSP input
+    type upd_state_t is (UPD_IDLE, UPD_LOAD, UPD_SCALE, UPD_ADD, UPD_DIV, UPD_RECIP);
 
     signal recip_luma    : u16_array64 := recip_init(BASE_LUMA, LITE_MODE, LITE_QUALITY);
     signal recip_chroma  : u16_array64 := recip_init(BASE_CHROMA, LITE_MODE, LITE_QUALITY);
@@ -186,8 +191,9 @@ architecture rtl of quantizer is
     signal upd_pos       : unsigned(5 downto 0) := (others => '0');
     signal last_quality  : unsigned(6 downto 0) := (others => '0');
     signal scale_factor  : unsigned(12 downto 0) := (others => '0');
+    signal upd_base      : unsigned(7 downto 0) := (others => '0');
     signal scaled_raw    : unsigned(20 downto 0) := (others => '0');
-    signal scaled_plus50 : unsigned(20 downto 0) := (others => '0');
+    signal scaled_plus50 : unsigned(14 downto 0) := (others => '0');  -- n + 50, saturated to 25600
     signal div100_product : unsigned(31 downto 0) := (others => '0');
 
     signal coeff_idx : unsigned(5 downto 0) := (others => '0');
@@ -212,10 +218,13 @@ architecture rtl of quantizer is
     signal p3_sob     : std_logic := '0';
     signal p3_sign    : std_logic := '0';
 begin
+    tables_busy <= '1' when LITE_MODE = 0 and
+                            (upd_state /= UPD_IDLE or unsigned(quality) /= last_quality)
+                   else '0';
+
     process (clk)
         variable div_result : natural;
         variable pos : natural;
-        variable base_q : unsigned(7 downto 0);
     begin
         if rising_edge(clk) then
             if LITE_MODE = 0 then
@@ -226,12 +235,12 @@ begin
                     upd_pos <= (others => '0');
                 else
                     pos := to_integer(upd_pos);
-                    if div100_product(31 downto 17) > to_unsigned(255, 15) then
+                    if div100_product(31 downto 22) > to_unsigned(255, 10) then
                         div_result := 255;
-                    elsif div100_product(31 downto 17) < to_unsigned(1, 15) then
+                    elsif div100_product(31 downto 22) < to_unsigned(1, 10) then
                         div_result := 1;
                     else
-                        div_result := to_integer(div100_product(24 downto 17));
+                        div_result := to_integer(div100_product(29 downto 22));
                     end if;
 
                     case upd_state is
@@ -241,24 +250,33 @@ begin
                                 scale_factor <= to_unsigned(scale_full(to_integer(unsigned(quality))), 13);
                                 upd_is_chroma <= '0';
                                 upd_pos <= (others => '0');
-                                upd_state <= UPD_SCALE;
+                                upd_state <= UPD_LOAD;
                             end if;
 
-                        when UPD_SCALE =>
+                        when UPD_LOAD =>
                             if upd_is_chroma = '1' then
-                                base_q := to_unsigned(BASE_CHROMA(pos), 8);
+                                upd_base <= to_unsigned(BASE_CHROMA(pos), 8);
                             else
-                                base_q := to_unsigned(BASE_LUMA(pos), 8);
+                                upd_base <= to_unsigned(BASE_LUMA(pos), 8);
                             end if;
-                            scaled_raw <= resize(base_q * scale_factor, scaled_raw'length);
+                            upd_state <= UPD_SCALE;
+
+                        when UPD_SCALE =>
+                            scaled_raw <= resize(upd_base * scale_factor, scaled_raw'length);
                             upd_state <= UPD_ADD;
 
                         when UPD_ADD =>
-                            scaled_plus50 <= scaled_raw + to_unsigned(50, scaled_plus50'length);
+                            if scaled_raw >= to_unsigned(25550, scaled_raw'length) then
+                                scaled_plus50 <= to_unsigned(25600, 15);
+                            else
+                                scaled_plus50 <= scaled_raw(14 downto 0) + to_unsigned(50, 15);
+                            end if;
                             upd_state <= UPD_DIV;
 
                         when UPD_DIV =>
-                            div100_product <= resize(scaled_plus50 * to_unsigned(1311, 11), div100_product'length);
+                            -- Exact floor(n/100): (n * 41944) >> 22 for n < 43690;
+                            -- n >= 25600 is saturated in UPD_ADD (quotient clamps to 255 anyway).
+                            div100_product <= resize(scaled_plus50 * to_unsigned(41944, 16), div100_product'length);
                             upd_state <= UPD_RECIP;
 
                         when UPD_RECIP =>
@@ -276,11 +294,11 @@ begin
                                     upd_state <= UPD_IDLE;
                                 else
                                     upd_is_chroma <= '1';
-                                    upd_state <= UPD_SCALE;
+                                    upd_state <= UPD_LOAD;
                                 end if;
                             else
                                 upd_pos <= upd_pos + 1;
-                                upd_state <= UPD_SCALE;
+                                upd_state <= UPD_LOAD;
                             end if;
                     end case;
                 end if;

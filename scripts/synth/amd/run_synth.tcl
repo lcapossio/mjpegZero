@@ -18,7 +18,7 @@ set lite_quality 95
 set img_width 1280
 set img_height 720
 set target_mhz 150
-set target_period 6.897
+set target_period 6.667
 foreach raw_arg $argv {
     set arg [string tolower $raw_arg]
     if {$arg eq "lite" || $arg eq "fixed"} {

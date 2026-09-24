@@ -19,11 +19,15 @@ Verification:
   both the Verilog (Icarus) and VHDL (GHDL) tops and golden-checks each output
   (`cocotb-dual` job). The `vhdl-lint` job analyzes every source here with
   `-Wall --warn-error`.
+- **Streams (GHDL):** `python/verify_stream.py --sim cocotb-vhdl --xcheck`
+  feeds back-to-back frames (restart, RGB, EXIF, gaps, QUALITY/ENABLE changes)
+  and requires every frame to be byte-identical to the Verilog testbench.
 - **Local (Vivado xsim):** `scripts/run_vhdl_top_sim.py` drives the VHDL
   hierarchy from the existing SystemVerilog testbench.
 
-Unlike the Verilog top, `VID_DATA_W` is a free generic: set it to 24 when
-`RGB_INPUT=1` and leave it at 16 for YUYV input.
+As in the Verilog top, the video input width follows `RGB_INPUT`
+(`vid_data_w()` in `mjpegzero_pkg.vhd`): 24 bits for RGB, 16 for YUYV. There is
+no separate `VID_DATA_W` generic.
 
 Source list:
 

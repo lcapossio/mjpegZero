@@ -102,10 +102,10 @@ jobs:
           verilator --lint-only -Wall --bbox-unsup rtl/bram_sdp.v rtl/input_buffer.v
 
       - name: Lint quantizer (LITE_MODE=0)
-        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 rtl/quantizer.v
+        run: verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 rtl/quantizer.v
 
       - name: Lint quantizer (LITE_MODE=1)
-        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 rtl/quantizer.v
+        run: verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 rtl/quantizer.v
 
       - name: Lint huffman_encoder
         run: verilator --lint-only -Wall --bbox-unsup rtl/huffman_encoder.v
@@ -115,7 +115,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=0, RGB_INPUT=0)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -131,7 +131,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=1, RGB_INPUT=0)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -147,7 +147,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=1, RGB_INPUT=1)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 -DRGB_INPUT=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 -GRGB_INPUT=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -163,7 +163,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=0, RGB_INPUT=1)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 -DRGB_INPUT=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 -GRGB_INPUT=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -325,6 +325,29 @@ jobs:
       - name: AXI register coverage (lite mode, 2 frames)
         run: python python/verify_axi_regs.py --lite
 
+      # Back-to-back multi-row streams of DIFFERENT frames (next SOF arrives
+      # while the previous frame is still encoding). Every frame is decoded
+      # restart-aware and checked against the Python reference (SOF/DRI/DQT/DHT
+      # bytes, RST sequence, +/-1 coefficients). Guards per-frame QUALITY /
+      # RESTART latching, ENABLE stalling (not dropping) input, QUALITY clamp,
+      # FRAME_SIZE, the SOF bank handling and widths above 2048.
+      - name: Stream — back-to-back frames (full, 128x24 x3)
+        run: python python/verify_stream.py
+      - name: Stream — QUALITY change mid-frame (clamped 120 -> 100) + restart wrap
+        run: python python/verify_stream.py --quality2 120 --restart 2
+      - name: Stream — Q<50, HUFF_BANKS=4, random gaps
+        run: python python/verify_stream.py --quality 30 --huff-banks 4 --gaps
+      - name: Stream — lite, ENABLE toggled mid-frame, HUFF_BANKS=2
+        run: python python/verify_stream.py --lite --toggle-enable --huff-banks 2
+      - name: Stream — QUALITY=0 clamps to 1
+        run: python python/verify_stream.py --quality 10 --quality2 0
+      - name: Stream — lite Q95, restart 3, gaps
+        run: python python/verify_stream.py --lite --quality 95 --restart 3 --gaps
+      - name: Stream — RGB input + EXIF
+        run: python python/verify_stream.py --rgb --exif --restart 3
+      - name: Stream — width 4096 (> 2048 counter widths)
+        run: python python/verify_stream.py --width 4096 --height 8 --frames 2
+
       - name: Upload simulation artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -484,6 +507,20 @@ jobs:
 
       - name: cocotb - VHDL/GHDL (multi-frame, full Q95 x2)
         run: python sim/cocotb/test_runner.py vhdl full 95 2
+
+      # VHDL port through the same back-to-back stream checks as the Verilog
+      # rtl-sim job, plus --xcheck: the Verilog iverilog testbench runs the same
+      # input and every VHDL frame must be byte-identical to it.
+      - name: Stream VHDL — QUALITY change, restart wrap, gaps (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --quality2 30 --restart 3 --gaps
+      - name: Stream VHDL — lite, restart 1, ENABLE toggle (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --lite --quality 95 --restart 1 --toggle-enable
+      - name: Stream VHDL — RGB input, HUFF_BANKS=2, restart 5 (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --rgb --huff-banks 2 --restart 5
+      - name: Stream VHDL — EXIF, Q100 -> QUALITY=0 clamp, HUFF_BANKS=4 (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --exif --quality 100 --quality2 0 --huff-banks 4
+      - name: Stream VHDL — lite RGB + EXIF + gaps (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --lite --rgb --exif --gaps
 
       # Demo JPEG output path (capture -> buffer -> RTP), Icarus-only. Self-
       # contained: builds a synthetic JPEG, no test vectors/ffmpeg needed.

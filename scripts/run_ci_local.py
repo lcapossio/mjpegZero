@@ -190,9 +190,9 @@ def _lint_top(lite_mode, rgb_input):
         'rtl/huffman_encoder.v', 'rtl/bitstream_packer.v', 'rtl/jfif_writer.v',
         'rtl/axi4_lite_regs.v', 'rtl/rgb_to_ycbcr.v', 'rtl/mjpegzero_enc_top.v',
     ]
-    defs = [f'-DLITE_MODE={lite_mode}']
+    defs = [f'-GLITE_MODE={lite_mode}']
     if rgb_input:
-        defs.append('-DRGB_INPUT=1')
+        defs.append('-GRGB_INPUT=1')
     return ['verilator', '--lint-only', '-Wall', '--bbox-unsup'] + defs + rtl
 
 
@@ -214,10 +214,10 @@ def job_rtl_lint():
           'rtl/bram_sdp.v', 'rtl/input_buffer.v']),
         ('lint quantizer LITE_MODE=0',
          ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
-          '-DLITE_MODE=0', 'rtl/quantizer.v']),
+          '-GLITE_MODE=0', 'rtl/quantizer.v']),
         ('lint quantizer LITE_MODE=1',
          ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
-          '-DLITE_MODE=1', 'rtl/quantizer.v']),
+          '-GLITE_MODE=1', 'rtl/quantizer.v']),
         ('lint huffman_encoder',
          ['verilator', '--lint-only', '-Wall', '--bbox-unsup',
           'rtl/huffman_encoder.v']),
@@ -277,8 +277,35 @@ def job_rtl_sim():
                                               '--x-res', '96', '--y-res', '96', '--res-unit', '2')),
             ('verify_axi_regs full',        py('python/verify_axi_regs.py')),
             ('verify_axi_regs lite',        py('python/verify_axi_regs.py', '--lite')),
+        ] + [
+            (f'verify_stream {" ".join(a) or "default"}', py('python/verify_stream.py', *a))
+            for a in STREAM_VERILOG
         ],
     )
+
+
+# Back-to-back stream variants (mirrors the ci.yml rtl-sim "Stream" steps)
+STREAM_VERILOG = [
+    (),
+    ('--quality2', '120', '--restart', '2'),
+    ('--quality', '30', '--huff-banks', '4', '--gaps'),
+    ('--lite', '--toggle-enable', '--huff-banks', '2'),
+    ('--quality', '10', '--quality2', '0'),
+    ('--lite', '--quality', '95', '--restart', '3', '--gaps'),
+    ('--rgb', '--exif', '--restart', '3'),
+    ('--width', '4096', '--height', '8', '--frames', '2'),
+]
+
+# VHDL stream variants, byte-compared against the Verilog testbench
+# (mirrors the ci.yml cocotb-dual "Stream VHDL" steps)
+_VS = ('--sim', 'cocotb-vhdl', '--xcheck', '--width', '64', '--height', '16')
+STREAM_VHDL = [
+    _VS + ('--quality2', '30', '--restart', '3', '--gaps'),
+    _VS + ('--lite', '--quality', '95', '--restart', '1', '--toggle-enable'),
+    _VS + ('--rgb', '--huff-banks', '2', '--restart', '5'),
+    _VS + ('--exif', '--quality', '100', '--quality2', '0', '--huff-banks', '4'),
+    _VS + ('--lite', '--rgb', '--exif', '--gaps'),
+]
 
 
 def job_rtl_verilator_sim():
@@ -321,6 +348,10 @@ def job_cocotb_dual():
             ('cocotb VHDL full Q95', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '1')),
             ('cocotb VHDL lite Q75', py('sim/cocotb/test_runner.py', 'vhdl', 'lite', '75', '1')),
             ('cocotb VHDL full Q95 x2', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '2')),
+        ] + [
+            (f'stream VHDL {" ".join(a[6:])}', py('python/verify_stream.py', *a))
+            for a in STREAM_VHDL
+        ] + [
             ('cocotb demo JPEG path',
              py('example_proj/arty_a7_100t_eth/sim/cocotb/run_jpeg_path.py')),
         ],

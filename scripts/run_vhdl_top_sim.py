@@ -173,6 +173,9 @@ def main():
          '-timescale', '1ns/1ps'], cwd=build_dir)
 
     print('\nStep 4: Running simulation...')
+    out_jpg = os.path.join(build_dir, 'sim_output.jpg')
+    if os.path.isfile(out_jpg):
+        os.remove(out_jpg)   # never report a stale JPEG from an earlier run
     if dump_vcd:
         wave_tcl = os.path.join(build_dir, 'wave.tcl')
         with open(wave_tcl, 'w') as f:
@@ -182,11 +185,10 @@ def main():
     else:
         run_checked_sim([xsim, 'sim_vhdl_top_snapshot', '-R', '-onfinish', 'quit'], cwd=build_dir)
 
-    out_jpg = os.path.join(build_dir, 'sim_output.jpg')
     if os.path.isfile(out_jpg):
         print(f'\nOutput: {out_jpg} ({os.path.getsize(out_jpg)} bytes)')
     else:
-        print('\nWARNING: No sim_output.jpg produced')
+        sys.exit('ERROR: simulation produced no sim_output.jpg')
 
 
 if __name__ == '__main__':

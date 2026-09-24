@@ -5,20 +5,21 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use work.mjpegzero_pkg.all;
+
 entity synth_timing_wrapper is
     generic (
         LITE_MODE    : natural := 1;
         LITE_QUALITY : natural := 95;
         IMG_WIDTH    : natural := 1280;
         IMG_HEIGHT   : natural := 720;
-        RGB_INPUT    : natural := 0;
-        VID_DATA_W   : natural := 16
+        RGB_INPUT    : natural := 0
     );
     port (
         clk   : in  std_logic;
         rst_n : in  std_logic;
 
-        vid_tdata  : in  std_logic_vector(VID_DATA_W-1 downto 0);
+        vid_tdata  : in  std_logic_vector(vid_data_w(RGB_INPUT)-1 downto 0);
         vid_tvalid : in  std_logic;
         vid_tready : out std_logic;
         vid_tlast  : in  std_logic;
@@ -60,14 +61,13 @@ architecture rtl of synth_timing_wrapper is
             EXIF_X_RES    : natural := 72;
             EXIF_Y_RES    : natural := 72;
             EXIF_RES_UNIT : natural := 2;
-            RGB_INPUT     : natural := 0;
-            VID_DATA_W    : natural := 16
+            RGB_INPUT     : natural := 0
         );
         port (
             clk   : in  std_logic;
             rst_n : in  std_logic;
 
-            s_axis_vid_tdata  : in  std_logic_vector(VID_DATA_W - 1 downto 0);
+            s_axis_vid_tdata  : in  std_logic_vector(vid_data_w(RGB_INPUT) - 1 downto 0);
             s_axis_vid_tvalid : in  std_logic;
             s_axis_vid_tready : out std_logic;
             s_axis_vid_tlast  : in  std_logic;
@@ -97,7 +97,7 @@ architecture rtl of synth_timing_wrapper is
         );
     end component;
 
-    signal vid_tdata_r  : std_logic_vector(VID_DATA_W-1 downto 0);
+    signal vid_tdata_r  : std_logic_vector(vid_data_w(RGB_INPUT)-1 downto 0);
     signal vid_tvalid_r : std_logic;
     signal vid_tlast_r  : std_logic;
     signal vid_tuser_r  : std_logic;
@@ -171,8 +171,7 @@ begin
             IMG_HEIGHT => IMG_HEIGHT,
             LITE_MODE => LITE_MODE,
             LITE_QUALITY => LITE_QUALITY,
-            RGB_INPUT => RGB_INPUT,
-            VID_DATA_W => VID_DATA_W
+            RGB_INPUT => RGB_INPUT
         )
         port map (
             clk => clk,

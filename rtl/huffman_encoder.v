@@ -501,7 +501,9 @@ module huffman_encoder #(
     /* verilator coverage_off */
     reg [5:0]    coeff_wr_idx;
     reg [1:0]    coeff_comp_id;
-    reg [63:1]   nz_acc;              // nonzero map of the block being written
+    /* verilator lint_off UNUSEDSIGNAL */
+    reg [63:1]   nz_acc;              // nonzero map of the block being written ([63] only feeds bank_nz)
+    /* verilator lint_on UNUSEDSIGNAL */
     reg          nz_any;              // any nonzero AC so far in that block
     reg [BW:0]   wr_count;            // block write pointer (BW+1 bits)
     reg [BW:0]   rd_count;            // block read  pointer (BW+1 bits)
@@ -598,7 +600,9 @@ module huffman_encoder #(
     reg        s3_valid;
     reg [1:0]  s3_kind;
     reg        s3_eob;
-    reg signed [15:0] s3_val;
+    /* verilator lint_off UNUSEDSIGNAL */
+    reg signed [15:0] s3_val;        // only [15] and [10:0] used (|value| < 2048)
+    /* verilator lint_on UNUSEDSIGNAL */
     reg [3:0]  s3_run;
     // S4: sign/abs/category
     reg        s4_valid;
@@ -632,7 +636,9 @@ module huffman_encoder #(
     wire [63:0] rem64     = {rem, 1'b0};
     wire [63:0] rem_below = prefix_or(rem64) << 1;
     wire [5:0]  rem_pos   = onehot_idx(rem64 & ~rem_below);
-    wire [63:0] rem_clr   = rem64 & rem_below;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire [63:0] rem_clr   = rem64 & rem_below;   // [0] is always 0 (rem64[0] = 0)
+    /* verilator lint_on UNUSEDSIGNAL */
     wire [63:1] rem_next  = rem_clr[63:1];
 
     wire signed [15:0] s2_coeff = coeff_buf[{coeff_rd_bank, s2_pos}];

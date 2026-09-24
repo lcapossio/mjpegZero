@@ -379,7 +379,12 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
         defines['DUMP_VCD'] = 1
         defines['VCD_FILE'] = f'"tb_iverilog_{tag}.vcd"'
 
-    # 1. Compile
+    # 1. Compile. Remove outputs of earlier runs first so a sim that writes
+    # nothing can never be scored against a stale JPEG.
+    default_out = os.path.join(build_dir, 'sim_output.jpg')
+    for stale in (default_out, output_jpg):
+        if os.path.exists(stale):
+            os.remove(stale)
     if not compile_rtl(iverilog, vvp_out, defines, unisims_dir=unisims_dir):
         return False
 
@@ -390,7 +395,6 @@ def run_one(iverilog, vvp, build_dir, lite_mode, quality,
         return False
 
     # Rename the default output to the tagged filename
-    default_out = os.path.join(build_dir, 'sim_output.jpg')
     if os.path.exists(default_out):
         os.replace(default_out, output_jpg)
 
@@ -447,13 +451,16 @@ def _compile_and_sim(iverilog, vvp, build_dir, lite_mode, quality, restart_inter
     if restart_interval:
         defines['RESTART_INTERVAL'] = restart_interval
     vvp_out = os.path.join(build_dir, f'sim_{tag}.vvp')
+    default_out = os.path.join(build_dir, 'sim_output.jpg')
+    out_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
+    for stale in (default_out, out_jpg):
+        if os.path.exists(stale):
+            os.remove(stale)
     if not compile_rtl(iverilog, vvp_out, defines):
         return None
     ok, _ = run_simulation(vvp, vvp_out, build_dir)
     if not ok:
         return None
-    default_out = os.path.join(build_dir, 'sim_output.jpg')
-    out_jpg = os.path.join(build_dir, f'sim_output_{tag}.jpg')
     if os.path.exists(default_out):
         os.replace(default_out, out_jpg)
     return out_jpg if os.path.exists(out_jpg) else None

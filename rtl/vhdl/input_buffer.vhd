@@ -27,8 +27,13 @@ entity input_buffer is
         blk_sob       : out std_logic;
         blk_comp      : out std_logic_vector(1 downto 0);
         blk_ready     : in  std_logic;
+        -- May begin a new block (checked at each block's first sample)
+        blk_start     : in  std_logic;
 
-        lines_done    : out std_logic
+        -- Lines-done pulse (8 lines written, blocks ready to read)
+        lines_done    : out std_logic;
+        -- A strip is buffered and the read side is waiting to issue / issuing it
+        blk_avail     : out std_logic
     );
 end entity input_buffer;
 
@@ -39,6 +44,10 @@ architecture rtl of input_buffer is
     constant CB_BANK_SIZE : natural := 8 * (IMG_WIDTH / 2);
     constant CR_BANK_SIZE : natural := 8 * (IMG_WIDTH / 2);
     constant CHROMA_WIDTH : natural := IMG_WIDTH / 2;
+    -- Counter widths follow IMG_WIDTH (fixed 11-bit x / 7-bit MCU column
+    -- counters silently wrapped above 2048 pixels and hung the encoder).
+    constant X_W   : natural := imax(clog2(IMG_WIDTH), 1);
+    constant COL_W : natural := imax(clog2(MCU_COLS), 1);
 
     constant Y_ADDR_W  : natural := clog2(2 * Y_BANK_SIZE);
     constant CB_ADDR_W : natural := clog2(2 * CB_BANK_SIZE);
@@ -81,26 +90,35 @@ architecture rtl of input_buffer is
     signal rd_active          : std_logic := '0';
     signal lines_done_pending : std_logic := '0';
     signal rd_bank_pending    : std_logic := '0';
+    signal rd_first_pending   : std_logic := '0';  -- pending strip is a frame's first
 
     signal wr_bank         : std_logic := '0';
-    signal wr_x            : unsigned(10 downto 0) := (others => '0');
+    signal wr_x            : unsigned(X_W-1 downto 0) := (others => '0');
     signal wr_line         : unsigned(2 downto 0) := (others => '0');
-    signal wr_mcu_row      : unsigned(6 downto 0) := (others => '0');
     signal wr_phase        : std_logic := '0';
     signal wr_frame_active : std_logic := '0';
+    signal wr_strip_first  : std_logic := '0';  -- strip being written is a frame's first
     signal wr_8lines_done  : std_logic := '0';
+    signal wr_done_first   : std_logic := '0';  -- qualifies wr_8lines_done
 
     signal s_axis_tready_i : std_logic;
     signal wr_accept : std_logic;
+    signal wr_sof    : std_logic;
+    signal wr_take   : std_logic;
+    signal px_x      : unsigned(X_W-1 downto 0);
+    signal px_line   : unsigned(2 downto 0);
+    signal px_phase  : std_logic;
+    signal px_first  : std_logic;
 
     type rd_state_t is (RD_IDLE, RD_READ);
     signal rd_state       : rd_state_t := RD_IDLE;
-    signal rd_mcu_col     : unsigned(6 downto 0) := (others => '0');
+    signal rd_mcu_col     : unsigned(COL_W-1 downto 0) := (others => '0');
     signal rd_comp        : unsigned(1 downto 0) := (others => '0');
     signal rd_row         : unsigned(2 downto 0) := (others => '0');
     signal rd_col         : unsigned(2 downto 0) := (others => '0');
-    signal rd_started     : std_logic := '0';
     signal rd_sof_pending : std_logic := '0';
+    signal rd_blk_first   : std_logic;
+    signal rd_issue       : std_logic;
 
     signal rd_valid_pipe : std_logic := '0';
     signal rd_sob_pipe   : std_logic := '0';
@@ -148,10 +166,32 @@ begin
             wdata => cr_buf_wdata, raddr => cr_buf_raddr, rdata => cr_buf_rdata
         );
 
-    s_axis_tready_i <= '1' when wr_frame_active = '1' and (wr_bank /= rd_bank or rd_active = '0') else '0';
+    -- Write-side ready: the write bank is not being read (double-buffer
+    -- protection). Before the first start-of-frame, words are accepted and
+    -- discarded so a source that starts mid-frame cannot stall forever.
+    s_axis_tready_i <= '1' when (wr_bank /= rd_bank or rd_active = '0') else '0';
     s_axis_tready <= s_axis_tready_i;
     wr_accept <= s_axis_tvalid and s_axis_tready_i;
     lines_done <= wr_8lines_done;
+
+    -- A start-of-frame word is the frame's pixel (0,0) on line 0 of the current
+    -- write bank. The bank is NOT reset: ping-pong continues across frames, so a
+    -- new frame never overwrites the previous frame's last strip while it is
+    -- still being read out.
+    wr_sof   <= wr_accept and s_axis_tuser;
+    wr_take  <= wr_accept and (wr_frame_active or s_axis_tuser);
+    px_x     <= (others => '0') when wr_sof = '1' else wr_x;
+    px_line  <= (others => '0') when wr_sof = '1' else wr_line;
+    px_phase <= '0' when wr_sof = '1' else wr_phase;
+    px_first <= '1' when wr_sof = '1' else wr_strip_first;
+
+    blk_avail <= '1' when rd_state = RD_READ else '0';
+
+    -- Issue a sample when downstream is ready; a block's first sample also
+    -- needs blk_start, so admission is decided on block boundaries only and a
+    -- block, once started, is never cut short by the admission gate.
+    rd_blk_first <= '1' when rd_row = 0 and rd_col = 0 else '0';
+    rd_issue     <= blk_ready and (not rd_blk_first or blk_start);
 
     blk_valid <= blk_valid_r;
     blk_data <= blk_data_r;
@@ -172,10 +212,11 @@ begin
                 wr_bank <= '0';
                 wr_x <= (others => '0');
                 wr_line <= (others => '0');
-                wr_mcu_row <= (others => '0');
                 wr_phase <= '0';
                 wr_frame_active <= '0';
+                wr_strip_first <= '0';
                 wr_8lines_done <= '0';
+                wr_done_first <= '0';
                 y_buf_we <= '0';
                 cb_buf_we <= '0';
                 cr_buf_we <= '0';
@@ -185,16 +226,10 @@ begin
                 cr_buf_we <= '0';
                 wr_8lines_done <= '0';
 
-                if s_axis_tvalid = '1' and s_axis_tuser = '1' then
+                if wr_take = '1' then
                     wr_frame_active <= '1';
-                    wr_x <= (others => '0');
-                    wr_line <= (others => '0');
-                    wr_mcu_row <= (others => '0');
-                    wr_phase <= '0';
-                    wr_bank <= '0';
-                end if;
+                    wr_strip_first <= px_first;
 
-                if wr_accept = '1' and wr_frame_active = '1' then
                     if wr_bank = '1' then
                         bank_base_y := Y_BANK_SIZE;
                         bank_base_cb := CB_BANK_SIZE;
@@ -205,36 +240,38 @@ begin
                         bank_base_cr := 0;
                     end if;
 
-                    y_addr := bank_base_y + to_integer(wr_line) * IMG_WIDTH + to_integer(wr_x);
+                    y_addr := bank_base_y + to_integer(px_line) * IMG_WIDTH + to_integer(px_x);
                     y_buf_we <= '1';
                     y_buf_waddr <= std_logic_vector(to_unsigned(y_addr, Y_ADDR_W));
                     y_buf_wdata <= s_axis_tdata(7 downto 0);
 
-                    if wr_phase = '0' then
-                        cb_addr := bank_base_cb + to_integer(wr_line) * CHROMA_WIDTH + to_integer(wr_x(10 downto 1));
+                    if px_phase = '0' then
+                        cb_addr := bank_base_cb + to_integer(px_line) * CHROMA_WIDTH + to_integer(px_x) / 2;
                         cb_buf_we <= '1';
                         cb_buf_waddr <= std_logic_vector(to_unsigned(cb_addr, CB_ADDR_W));
                         cb_buf_wdata <= s_axis_tdata(15 downto 8);
                     else
-                        cr_addr := bank_base_cr + to_integer(wr_line) * CHROMA_WIDTH + to_integer(wr_x(10 downto 1));
+                        cr_addr := bank_base_cr + to_integer(px_line) * CHROMA_WIDTH + to_integer(px_x) / 2;
                         cr_buf_we <= '1';
                         cr_buf_waddr <= std_logic_vector(to_unsigned(cr_addr, CR_ADDR_W));
                         cr_buf_wdata <= s_axis_tdata(15 downto 8);
                     end if;
 
-                    wr_phase <= not wr_phase;
-                    wr_x <= wr_x + 1;
+                    wr_phase <= not px_phase;
+                    wr_x <= px_x + 1;
+                    wr_line <= px_line;
 
-                    if wr_x = to_unsigned(IMG_WIDTH - 1, wr_x'length) or s_axis_tlast = '1' then
+                    if px_x = to_unsigned(IMG_WIDTH - 1, X_W) or s_axis_tlast = '1' then
                         wr_x <= (others => '0');
                         wr_phase <= '0';
-                        if wr_line = to_unsigned(7, wr_line'length) then
+                        if px_line = to_unsigned(7, 3) then
                             wr_line <= (others => '0');
                             wr_8lines_done <= '1';
+                            wr_done_first <= px_first;
+                            wr_strip_first <= '0';
                             wr_bank <= not wr_bank;
-                            wr_mcu_row <= wr_mcu_row + 1;
                         else
-                            wr_line <= wr_line + 1;
+                            wr_line <= px_line + 1;
                         end if;
                     end if;
                 end if;
@@ -258,7 +295,6 @@ begin
                 rd_row <= (others => '0');
                 rd_col <= (others => '0');
                 rd_active <= '0';
-                rd_started <= '0';
                 rd_sof_pending <= '0';
                 rd_state <= RD_IDLE;
                 rd_valid_pipe <= '0';
@@ -267,6 +303,7 @@ begin
                 rd_comp_pipe <= (others => '0');
                 lines_done_pending <= '0';
                 rd_bank_pending <= '0';
+                rd_first_pending <= '0';
             else
                 rd_valid_pipe <= '0';
                 rd_sob_pipe <= '0';
@@ -275,6 +312,7 @@ begin
                 if wr_8lines_done = '1' and rd_state = RD_READ then
                     lines_done_pending <= '1';
                     rd_bank_pending <= not wr_bank;
+                    rd_first_pending <= wr_done_first;
                 end if;
 
                 case rd_state is
@@ -283,8 +321,10 @@ begin
                             rd_active <= '1';
                             if wr_8lines_done = '1' then
                                 rd_bank <= not wr_bank;
+                                rd_sof_pending <= wr_done_first;
                             else
                                 rd_bank <= rd_bank_pending;
+                                rd_sof_pending <= rd_first_pending;
                             end if;
                             rd_mcu_col <= (others => '0');
                             rd_comp <= (others => '0');
@@ -292,14 +332,10 @@ begin
                             rd_col <= (others => '0');
                             rd_state <= RD_READ;
                             lines_done_pending <= '0';
-                            if rd_started = '0' then
-                                rd_sof_pending <= '1';
-                                rd_started <= '1';
-                            end if;
                         end if;
 
                     when RD_READ =>
-                        if blk_ready = '1' then
+                        if rd_issue = '1' then
                             rd_valid_pipe <= '1';
                             rd_comp_pipe <= rd_comp;
 
@@ -351,7 +387,7 @@ begin
                                     if rd_comp = 3 then
                                         rd_comp <= (others => '0');
                                         rd_mcu_col <= rd_mcu_col + 1;
-                                        if rd_mcu_col = to_unsigned(MCU_COLS - 1, rd_mcu_col'length) then
+                                        if rd_mcu_col = to_unsigned(MCU_COLS - 1, COL_W) then
                                             rd_state <= RD_IDLE;
                                             rd_active <= '0';
                                         end if;
@@ -360,13 +396,6 @@ begin
                             end if;
                         end if;
                 end case;
-
-                if s_axis_tvalid = '1' and s_axis_tuser = '1' then
-                    rd_started <= '0';
-                    rd_state <= RD_IDLE;
-                    lines_done_pending <= '0';
-                    rd_active <= '0';
-                end if;
             end if;
         end if;
     end process;
