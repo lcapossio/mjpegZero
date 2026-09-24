@@ -13,7 +13,7 @@ yuyv_720p.hex) with sim/tb_iverilog.sv built with +PERF, and reports:
   720p fps       projected at 150 MHz: 150e6 / (cycles/block * 28800 blocks)
   ring full      % of cycles the Huffman input ring was full (Huffman-bound)
   packer stall   % of cycles a Huffman code waited on the bitstream packer
-  Huffman FSM    % of cycles per state (idle / DC / AC fetch+scan / emit ...)
+  Huffman ctl    % of cycles per controller state (idle / AC / EOB / drain)
 
 Each run's JPEG is kept as build/perf/out_q<Q>_r<row>.jpg so RTL changes that
 must be bit-exact can be diffed against a baseline (--compare DIR).
@@ -42,11 +42,8 @@ TV_720P = os.path.join(PROJ_DIR, 'sim', 'test_vectors', 'yuyv_720p.hex')
 BUILD = os.path.join(PROJ_DIR, 'build', 'perf')
 W, H_FULL, CLK_HZ, BLOCKS_720P = 1280, 720, 150e6, 1280 * 720 // 32
 
-STATES = ['IDLE', 'DC_FETCH', 'DC_ENC', 'DC_EMIT', 'AC_FETCH', 'AC_SCAN',
-          'AC_ENC', 'AC_EMIT', 'ZRL', 'EOB', 'DC_CALC']
-# Report groups: (label, state indices)
-GROUPS = [('idle', [0]), ('dc', [1, 2, 10, 3]), ('ac scan', [4, 5]),
-          ('ac enc+emit', [6, 7, 8]), ('eob', [9])]
+# Huffman controller states (huffman_encoder.v ctl): report groups
+GROUPS = [('idle', [0]), ('issue ac', [1]), ('issue eob', [2]), ('drain', [3])]
 
 
 def cut_strip(row, path):
@@ -118,7 +115,7 @@ def main():
 
     print()
     hdr = (f'{"case":<14}{"bytes":>7}{"cyc/blk":>9}{"720p fps":>10}'
-           f'{"ring full":>11}{"pk stall":>10}  Huffman FSM % '
+           f'{"ring full":>11}{"pk stall":>10}  Huffman ctl % '
            + ' / '.join(g for g, _ in GROUPS))
     print(hdr)
     print('-' * len(hdr))

@@ -255,7 +255,7 @@ module tb_iverilog;
     // ========================================================================
     // Throughput probe (python/measure_throughput.py). Measures the encode
     // window from the first block the input buffer issues to the Huffman
-    // encoder's last end-of-block, and where the Huffman FSM spends it.
+    // encoder's last end-of-block, and the Huffman controller state per cycle.
     // ========================================================================
     integer perf_cyc, perf_blocks, perf_ring_full, perf_pk_stall, perf_dct_idle;
     integer perf_state [0:15];
@@ -271,7 +271,7 @@ module tb_iverilog;
             perf_on = 1;
         if (perf_on && perf_blocks < IMG_WIDTH / 4) begin
             perf_cyc = perf_cyc + 1;
-            perf_state[dut.u_huffman.state] = perf_state[dut.u_huffman.state] + 1;
+            perf_state[dut.u_huffman.ctl] = perf_state[dut.u_huffman.ctl] + 1;
             if (dut.pipeline_depth >= dut.HUFF_BANKS_CAP) perf_ring_full = perf_ring_full + 1;
             if (dut.u_huffman.out_valid && !dut.u_bitpacker.bp_ready)
                 perf_pk_stall = perf_pk_stall + 1;
@@ -282,7 +282,7 @@ module tb_iverilog;
                     $display("PERF blocks=%0d cycles=%0d ring_full=%0d packer_stall=%0d ibuf_idle=%0d",
                              perf_blocks, perf_cyc, perf_ring_full, perf_pk_stall, perf_dct_idle);
                     $write("PERF states");
-                    for (perf_i = 0; perf_i < 11; perf_i = perf_i + 1)
+                    for (perf_i = 0; perf_i < 4; perf_i = perf_i + 1)
                         $write(" %0d", perf_state[perf_i]);
                     $write("\n");
                 end

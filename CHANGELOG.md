@@ -69,6 +69,15 @@ All notable changes to mjpegZero are documented here.
   --hw-host/--hw-port/--jpeg-max-bytes` flags.
 
 ### Changed
+- **Pipelined Huffman encoder + concurrent packer** (Verilog and VHDL): the
+  AC scan jumps between nonzero coefficients via a per-bank bitmap (one token
+  per cycle, ZRL via a one-cycle stall), and the packer accepts a code in the
+  same cycle it drains a byte. Encode is now DCT-limited at ~65 cycles/block
+  (~80 fps 720p at 150 MHz) at every quality, including Q100; it was
+  74-192 cycles/block (27-71 fps), depending on content and quality.
+  The output is bit-identical. The cost is about +240 LUT and +140 FF; core
+  post-synth WNS is +0.17 ns at 150 MHz. `python/measure_throughput.py`
+  measures this on mandrill strips, and CI guards Q100 at >= 75 fps.
 - `demo_top.v` now drives the encoder via `fcapz_ejtagaxi_xilinx7` instead of
   `jtag_axi_0`; reset is active-high (`~rst_n`) on `axi_rst`/`sample_rst`.
 - AW_RESP no longer assert+clear `m_bvalid` in the same evaluation step;

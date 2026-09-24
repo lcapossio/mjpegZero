@@ -451,15 +451,41 @@ module huffman_encoder #(
     endfunction
     /* verilator coverage_on */
 
+
+    // Binary index of a one-hot vector (an OR tree, no priority chain).
+    function [5:0] onehot_idx;
+        input [63:0] oh;
+        integer i;
+        begin
+            onehot_idx = 6'd0;
+            for (i = 0; i < 64; i = i + 1)
+                onehot_idx = onehot_idx | ({6{oh[i]}} & i[5:0]);
+        end
+    endfunction
+
+    // Inclusive prefix OR (bit i = |x[i:0]) as a log-depth shift-OR network,
+    // so the lowest-set-bit logic stays off the 64-bit carry chain.
+    function [63:0] prefix_or;
+        input [63:0] x;
+        begin
+            prefix_or = x;
+            prefix_or = prefix_or | (prefix_or << 1);
+            prefix_or = prefix_or | (prefix_or << 2);
+            prefix_or = prefix_or | (prefix_or << 4);
+            prefix_or = prefix_or | (prefix_or << 8);
+            prefix_or = prefix_or | (prefix_or << 16);
+            prefix_or = prefix_or | (prefix_or << 32);
+        end
+    endfunction
+    /* verilator coverage_on */
+
     // ========================================================================
     // Input buffering with level-based ready signal
     // ========================================================================
     // ---- NB-deep ring of 64-coefficient blocks (a FIFO of whole blocks) ----
     // Deeper buffering lets the streaming front end (DCT/zigzag, ~64 cyc/block)
-    // run ahead and keep this serial Huffman FSM fed, instead of the old 1-2
-    // block limit that forced the whole pipeline to process one block at a time
-    // (latency-bound, ~5x slower than the DCT can sustain). occ = wr_count -
-    // rd_count is a wire, so the FSM observes a pop the same cycle it issues it.
+    // run ahead of the Huffman pipeline. occ = wr_count - rd_count is a wire, so
+    // the controller observes a pop the same cycle it issues it.
     localparam [3:0] NB = HUFF_BANKS[3:0];
     localparam BW = (NB <= 4'd2) ? 1 : (NB <= 4'd4) ? 2 : (NB <= 4'd8) ? 3 : 4;
     // NB must be 2, 4 or 8: wr_bank = wr_count[BW-1:0] is a power-of-two mask and
@@ -475,11 +501,13 @@ module huffman_encoder #(
     /* verilator coverage_off */
     reg [5:0]    coeff_wr_idx;
     reg [1:0]    coeff_comp_id;
-    reg [5:0]    last_nonzero_idx;
+    reg [63:1]   nz_acc;              // nonzero map of the block being written
+    reg          nz_any;              // any nonzero AC so far in that block
     reg [BW:0]   wr_count;            // block write pointer (BW+1 bits)
     reg [BW:0]   rd_count;            // block read  pointer (BW+1 bits)
     reg [1:0]    bank_comp [0:NB-1];  // per-bank comp_id
-    reg [5:0]    bank_lnz  [0:NB-1];  // per-bank last-nonzero index
+    reg [63:1]   bank_nz   [0:NB-1];  // per-bank nonzero AC map (bit i = coeff i != 0)
+    reg          bank_any  [0:NB-1];  // per-bank |bank_nz, kept off the read-side path
     /* verilator coverage_on */
 
     wire [BW-1:0] wr_bank = wr_count[BW-1:0];
@@ -493,22 +521,26 @@ module huffman_encoder #(
     // block's first coefficient arrives, so a write never clobbers a queued bank.
     always @(posedge clk) begin
         if (!rst_n) begin
-            coeff_wr_idx     <= 6'd0;
-            wr_count         <= {(BW+1){1'b0}};
-            last_nonzero_idx <= 6'd0;
+            coeff_wr_idx <= 6'd0;
+            wr_count     <= {(BW+1){1'b0}};
+            nz_acc       <= 63'd0;
+            nz_any       <= 1'b0;
         end else begin
             if (in_valid) begin
                 coeff_buf[coeff_wr_addr] <= in_data;
                 if (in_sob) begin
-                    coeff_wr_idx     <= 6'd1;
-                    coeff_comp_id    <= comp_id;
-                    last_nonzero_idx <= 6'd0;
+                    coeff_wr_idx  <= 6'd1;
+                    coeff_comp_id <= comp_id;
+                    nz_acc        <= 63'd0;
+                    nz_any        <= 1'b0;
                 end else begin
+                    nz_acc[coeff_wr_idx] <= (in_data != 16'd0);
                     if (in_data != 16'd0)
-                        last_nonzero_idx <= coeff_wr_idx;
+                        nz_any <= 1'b1;
                     if (coeff_wr_idx == 6'd63) begin
                         bank_comp[wr_bank] <= coeff_comp_id;
-                        bank_lnz[wr_bank]  <= (in_data != 16'd0) ? 6'd63 : last_nonzero_idx;
+                        bank_nz[wr_bank]   <= {(in_data != 16'd0), nz_acc[62:1]};
+                        bank_any[wr_bank]  <= nz_any || (in_data != 16'd0);
                         wr_count           <= wr_count + 1'b1;   // push (advances wr_bank)
                         coeff_wr_idx       <= 6'd0;
                     end else begin
@@ -520,294 +552,267 @@ module huffman_encoder #(
     end
 
     // ========================================================================
-    // Multi-cycle processing state machine
+    // Code pipeline: one Huffman code per cycle
     // ========================================================================
-    localparam S_IDLE      = 4'd0,
-               S_DC_FETCH  = 4'd1,
-               S_DC_ENCODE = 4'd2,
-               S_DC_EMIT   = 4'd3,
-               S_AC_FETCH  = 4'd4,
-               S_AC_SCAN   = 4'd5,
-               S_AC_ENCODE = 4'd6,
-               S_AC_EMIT   = 4'd7,
-               S_ZRL_EMIT  = 4'd8,
-               S_EOB_EMIT  = 4'd9,
-               S_DC_CALC   = 4'd10;
+    // A controller walks the block's nonzero map and issues one token per cycle
+    // (DC, each nonzero AC, EOB) into a 5-stage pipeline; zero coefficients cost
+    // nothing. Stage 2 splits runs of >15 zeros into ZRL codes, stalling the
+    // controller one cycle per ZRL. The whole pipeline advances together
+    // whenever the output register is free (adv).
+    //
+    //   issue -> S2 fetch/DC diff/run -> S3 abs+category -> S4 table lookup
+    //         -> out register (code+value bits combined)
+    //
+    // Blocks never overlap: the next block is issued only from C_IDLE, entered
+    // the cycle after the block's EOB-flagged code is accepted. That keeps the
+    // top's restart/frame_done (registered off that handshake) in step: the DC
+    // predictors reset in C_IDLE before the next DC reaches S2, and the next
+    // code reaches the packer >= 2 cycles after the EOB, after it saw in_restart.
+    localparam C_IDLE = 2'd0,
+               C_AC   = 2'd1,
+               C_EOB  = 2'd2,
+               C_WAIT = 2'd3;
+
+    localparam K_DC  = 2'd0,
+               K_AC  = 2'd1,
+               K_ZRL = 2'd2,
+               K_EOB = 2'd3;
 
     /* verilator coverage_off */
-    reg [3:0]  state;
-    reg [5:0]  ac_idx;
-    reg [3:0]  zero_run;
+    reg [1:0]  ctl;
+    reg [63:1] rem;                  // nonzero ACs not yet issued
     reg [1:0]  blk_comp_id;
     reg [BW-1:0] coeff_rd_bank;
-    reg [5:0]  blk_last_nonzero;
+    reg        restart_pending;
     reg signed [15:0] prev_dc_y;
     reg signed [15:0] prev_dc_cb;
     reg signed [15:0] prev_dc_cr;
-    reg signed [15:0] cur_coeff;
-    reg [10:0] cur_abs;
-    reg        cur_sign;
-    reg [3:0]  cur_cat;
-    reg [10:0] cur_vbits;
-    reg [15:0] huff_code;
-    reg [4:0]  huff_len;
-    reg restart_pending;
+
+    // S2: token as issued
+    reg        s2_valid;
+    reg [1:0]  s2_kind;
+    reg [5:0]  s2_pos;               // coefficient index (0 for DC)
+    reg        s2_eob;
+    reg [5:0]  last_pos;             // index of the previous coded coefficient
+    // S3: value + run
+    reg        s3_valid;
+    reg [1:0]  s3_kind;
+    reg        s3_eob;
+    reg signed [15:0] s3_val;
+    reg [3:0]  s3_run;
+    // S4: sign/abs/category
+    reg        s4_valid;
+    reg [1:0]  s4_kind;
+    reg        s4_eob;
+    reg [10:0] s4_raw;               // value[10:0]
+    reg        s4_sign;
+    reg [3:0]  s4_cat;
+    reg [3:0]  s4_run;
+    // S5: code + value bits, ready to combine
+    reg        s5_valid;
+    reg        s5_dc;
+    reg        s5_eob;
+    reg [15:0] s5_code;
+    reg [4:0]  s5_len;
+    reg [3:0]  s5_cat;
+    reg [10:0] s5_vbits;
+    /* verilator coverage_on */
+
+    wire blk_is_luma = (blk_comp_id <= 2'd1);
+    wire adv = !out_valid || out_ready;
+
+    // S2 run of zeros before this AC; > 15 needs a ZRL first.
+    wire [5:0] s2_run   = s2_pos - last_pos - 6'd1;
+    wire       zrl_emit = s2_valid && (s2_kind == K_AC) && (s2_run[5:4] != 2'd0);
+    wire       issue_en = adv && !zrl_emit;
+
+    // Controller: next nonzero AC in the block
+    // rem_below[i] = any set bit below i. The lowest set bit is the one with
+    // none below it; clearing it keeps the rest (== x & (x-1), no carry chain).
+    wire [63:0] rem64     = {rem, 1'b0};
+    wire [63:0] rem_below = prefix_or(rem64) << 1;
+    wire [5:0]  rem_pos   = onehot_idx(rem64 & ~rem_below);
+    wire [63:0] rem_clr   = rem64 & rem_below;
+    wire [63:1] rem_next  = rem_clr[63:1];
+
+    wire signed [15:0] s2_coeff = coeff_buf[{coeff_rd_bank, s2_pos}];
+    wire signed [15:0] s2_prev_dc = (blk_comp_id <= 2'd1) ? prev_dc_y :
+                                    (blk_comp_id == 2'd2) ? prev_dc_cb : prev_dc_cr;
+
+    wire [10:0] s3_abs = s3_val[15] ? (-s3_val[10:0]) : s3_val[10:0];
+
+    /* verilator coverage_off */
     reg [19:0] dc_lookup_tmp;
     reg [20:0] ac_lookup_tmp;
-    reg [3:0]  temp_cat;
-    reg [7:0]  ac_sym_tmp;
     reg [5:0]  vshift;
     /* verilator coverage_on */
-    wire       blk_is_luma = (blk_comp_id <= 2'd1);
-    wire [BW+5:0] coeff_dc_addr = {coeff_rd_bank, 6'd0};
-    wire [BW+5:0] coeff_ac_addr = {coeff_rd_bank, ac_idx};
-    wire signed [15:0] coeff_dc = coeff_buf[coeff_dc_addr];
-    wire signed [15:0] coeff_ac = coeff_buf[coeff_ac_addr];
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            state <= S_IDLE;
-            out_valid <= 1'b0;
-            out_sob <= 1'b0;
-            out_eob <= 1'b0;
-            prev_dc_y  <= 16'd0;
-            prev_dc_cb <= 16'd0;
-            prev_dc_cr <= 16'd0;
-            ac_idx <= 6'd1;
-            zero_run <= 4'd0;
+            ctl             <= C_IDLE;
+            rem             <= 63'd0;
             restart_pending <= 1'b0;
-            coeff_rd_bank <= {BW{1'b0}};
-            rd_count <= {(BW+1){1'b0}};
+            coeff_rd_bank   <= {BW{1'b0}};
+            rd_count        <= {(BW+1){1'b0}};
+            prev_dc_y       <= 16'd0;
+            prev_dc_cb      <= 16'd0;
+            prev_dc_cr      <= 16'd0;
+            last_pos        <= 6'd0;
+            s2_valid        <= 1'b0;
+            s3_valid        <= 1'b0;
+            s4_valid        <= 1'b0;
+            s5_valid        <= 1'b0;
+            out_valid       <= 1'b0;
+            out_sob         <= 1'b0;
+            out_eob         <= 1'b0;
         end else begin
             // Latch restart request
             if (restart)
                 restart_pending <= 1'b1;
 
-            case (state)
-                // ============================================================
-                S_IDLE: begin
-                    out_valid <= 1'b0;
-                    out_sob <= 1'b0;
-                    out_eob <= 1'b0;
-
+            // ---------------- Controller / issue ----------------
+            case (ctl)
+                C_IDLE: begin
                     // Apply pending restart. Also honor a LIVE restart that
                     // arrives this very cycle: a mid-frame restart_trigger lands
-                    // exactly as the FSM enters S_IDLE (both are registered off
-                    // the same block-3 EOB), so waiting for the latched
-                    // restart_pending (set next cycle) would miss this S_IDLE and
-                    // the next MCU's DC would be coded against the stale predictor
-                    // - a desync vs the decoder, which resets DC at the RSTn marker.
+                    // exactly as the controller enters C_IDLE (both are registered
+                    // off the same EOB handshake), so waiting for the latched
+                    // restart_pending (set next cycle) would miss it and the next
+                    // MCU's DC would be coded against the stale predictor - a
+                    // desync vs the decoder, which resets DC at the RSTn marker.
                     if (restart_pending || restart) begin
-                        prev_dc_y  <= 16'd0;
-                        prev_dc_cb <= 16'd0;
-                        prev_dc_cr <= 16'd0;
+                        prev_dc_y       <= 16'd0;
+                        prev_dc_cb      <= 16'd0;
+                        prev_dc_cr      <= 16'd0;
                         restart_pending <= 1'b0;
                     end
-
-                    if (occ != {(BW+1){1'b0}}) begin
-                        blk_comp_id      <= bank_comp[rd_bank];
-                        blk_last_nonzero <= bank_lnz[rd_bank];
-                        coeff_rd_bank    <= rd_bank;
-                        state            <= S_DC_FETCH;
-                    end
-                end
-
-                // ============================================================
-                // DC coefficient processing
-                // ============================================================
-                S_DC_FETCH: begin
-                    out_valid <= 1'b0;
-                    // Compute DC differential based on component
-                    if (blk_comp_id <= 2'd1) begin
-                        cur_coeff <= coeff_dc - prev_dc_y;
-                        prev_dc_y <= coeff_dc;
-                    end else if (blk_comp_id == 2'd2) begin
-                        cur_coeff <= coeff_dc - prev_dc_cb;
-                        prev_dc_cb <= coeff_dc;
-                    end else begin
-                        cur_coeff <= coeff_dc - prev_dc_cr;
-                        prev_dc_cr <= coeff_dc;
-                    end
-                    state <= S_DC_ENCODE;
-                end
-
-                S_DC_ENCODE: begin
-                    // Cycle 1: abs + category (split to reduce 7-level critical path)
-                    out_valid <= 1'b0;
-                    cur_sign <= cur_coeff[15];
-                    cur_abs <= cur_coeff[15] ? (-cur_coeff[10:0]) : cur_coeff[10:0];
-                    /* verilator lint_off BLKSEQ */
-                    temp_cat = compute_category(cur_coeff[15] ? (-cur_coeff[10:0]) : cur_coeff[10:0]);
-                    /* verilator lint_on BLKSEQ */
-                    cur_cat <= temp_cat;
-                    state <= S_DC_CALC;
-                end
-
-                S_DC_CALC: begin
-                    // Cycle 2: vbits + Huffman lookup from registered category
-                    out_valid <= 1'b0;
-                    if (cur_sign)
-                        cur_vbits <= cur_coeff[10:0] + (11'd1 << cur_cat) - 11'd1;
-                    else
-                        cur_vbits <= cur_coeff[10:0];
-
-                    /* verilator lint_off BLKSEQ */
-                    dc_lookup_tmp = blk_is_luma ? dc_luma_lookup(cur_cat) : dc_chroma_lookup(cur_cat);
-                    /* verilator lint_on BLKSEQ */
-                    huff_code <= dc_lookup_tmp[15:0];
-                    /* verilator lint_off WIDTHEXPAND */
-                    huff_len  <= dc_lookup_tmp[19:16];
-                    /* verilator lint_on WIDTHEXPAND */
-
-                    state <= S_DC_EMIT;
-                end
-
-                S_DC_EMIT: begin
-                    out_valid <= 1'b1;
-                    out_sob <= 1'b1;
-                    out_eob <= 1'b0;
-                    // Combine Huffman code (MSB-aligned) with value bits
-                    // Value bits placed immediately after the Huffman code
-                    /* verilator lint_off BLKSEQ */
-                    vshift = 6'd32 - {1'b0, huff_len} - {2'd0, cur_cat};
-                    /* verilator lint_on BLKSEQ */
-                    out_bits <= {huff_code, 16'd0} |
-                               ({21'd0, cur_vbits} << vshift);
-                    out_len <= {1'b0, huff_len} + {2'd0, cur_cat};
-
-                    // Wait for out_valid to be registered (1 cycle) before
-                    // checking out_ready. Prevents last-NBA-wins override.
-                    if (out_valid && out_ready) begin
-                        out_valid <= 1'b0;
-                        out_sob <= 1'b0;
-                        // Early EOB: skip AC processing if all ACs are zero
-                        if (blk_last_nonzero == 6'd0) begin
-                            state <= S_EOB_EMIT;
-                        end else begin
-                            ac_idx <= 6'd1;
-                            zero_run <= 4'd0;
-                            state <= S_AC_FETCH;
+                    if (issue_en) begin
+                        s2_valid <= 1'b0;
+                        if (occ != {(BW+1){1'b0}}) begin
+                            blk_comp_id   <= bank_comp[rd_bank];
+                            coeff_rd_bank <= rd_bank;
+                            rem           <= bank_nz[rd_bank];
+                            s2_valid      <= 1'b1;
+                            s2_kind       <= K_DC;
+                            s2_pos        <= 6'd0;
+                            s2_eob        <= 1'b0;
+                            ctl           <= bank_any[rd_bank] ? C_AC : C_EOB;
                         end
                     end
                 end
 
-                // ============================================================
-                // AC coefficient processing
-                // ============================================================
-                S_AC_FETCH: begin
-                    out_valid <= 1'b0;
-                    out_sob <= 1'b0;
-                    out_eob <= 1'b0;
-                    cur_coeff <= coeff_ac;
-                    state <= S_AC_SCAN;
-                end
-
-                S_AC_SCAN: begin
-                    out_valid <= 1'b0;
-                    if (cur_coeff == 16'd0) begin
-                        // Early EOB: all remaining ACs are zero
-                        if (ac_idx > blk_last_nonzero) begin
-                            state <= S_EOB_EMIT;
-                        end else if (zero_run == 4'd15) begin
-                            state <= S_ZRL_EMIT;
-                        end else begin
-                            zero_run <= zero_run + 4'd1;
-                            ac_idx <= ac_idx + 6'd1;
-                            state <= S_AC_FETCH;
-                        end
-                    end else begin
-                        cur_sign <= cur_coeff[15];
-                        cur_abs <= cur_coeff[15] ? (-cur_coeff[10:0]) : cur_coeff[10:0];
-                        state <= S_AC_ENCODE;
+                C_AC: begin
+                    if (issue_en) begin
+                        s2_valid <= 1'b1;
+                        s2_kind  <= K_AC;
+                        s2_pos   <= rem_pos;
+                        s2_eob   <= (rem_next == 63'd0) && (rem_pos == 6'd63);
+                        rem      <= rem_next;
+                        if (rem_next == 63'd0)
+                            ctl <= (rem_pos == 6'd63) ? C_WAIT : C_EOB;
                     end
                 end
 
-                S_AC_ENCODE: begin
-                    out_valid <= 1'b0;
-                    /* verilator lint_off BLKSEQ */
-                    temp_cat = compute_category(cur_abs);
-                    /* verilator lint_on BLKSEQ */
-                    cur_cat <= temp_cat;
-
-                    if (cur_sign)
-                        cur_vbits <= cur_coeff[10:0] + (11'd1 << temp_cat) - 11'd1;
-                    else
-                        cur_vbits <= cur_coeff[10:0];
-
-                    /* verilator lint_off BLKSEQ */
-                    ac_sym_tmp = {zero_run, temp_cat};
-                    ac_lookup_tmp = blk_is_luma ? ac_luma_lookup(ac_sym_tmp) : ac_chroma_lookup(ac_sym_tmp);
-                    /* verilator lint_on BLKSEQ */
-                    huff_code <= ac_lookup_tmp[15:0];
-                    huff_len  <= ac_lookup_tmp[20:16];
-
-                    state <= S_AC_EMIT;
-                end
-
-                S_AC_EMIT: begin
-                    out_valid <= 1'b1;
-                    out_sob <= 1'b0;
-                    // Signal block completion on last AC coefficient
-                    out_eob <= (ac_idx == 6'd63) ? 1'b1 : 1'b0;
-                    // Combine Huffman code (MSB-aligned) with value bits
-                    /* verilator lint_off BLKSEQ */
-                    vshift = 6'd32 - {1'b0, huff_len} - {2'd0, cur_cat};
-                    /* verilator lint_on BLKSEQ */
-                    out_bits <= {huff_code, 16'd0} |
-                               ({21'd0, cur_vbits} << vshift);
-                    out_len <= {1'b0, huff_len} + {2'd0, cur_cat};
-
-                    if (out_valid && out_ready) begin
-                        out_valid <= 1'b0;
-                        zero_run <= 4'd0;
-                        if (ac_idx == 6'd63) begin
-                            rd_count <= rd_count + 1'b1;   // pop completed block
-                            state <= S_IDLE;
-                        end else begin
-                            ac_idx <= ac_idx + 6'd1;
-                            state <= S_AC_FETCH;
-                        end
+                C_EOB: begin
+                    if (issue_en) begin
+                        s2_valid <= 1'b1;
+                        s2_kind  <= K_EOB;
+                        s2_eob   <= 1'b1;
+                        ctl      <= C_WAIT;
                     end
                 end
 
-                S_ZRL_EMIT: begin
-                    out_valid <= 1'b1;
-                    out_sob <= 1'b0;
-                    out_eob <= 1'b0;
-                    /* verilator lint_off BLKSEQ */
-                    ac_lookup_tmp = blk_is_luma ? ac_luma_lookup(8'hF0) : ac_chroma_lookup(8'hF0);
-                    /* verilator lint_on BLKSEQ */
-                    out_bits <= {ac_lookup_tmp[15:0], 16'd0};
-                    out_len <= {1'b0, ac_lookup_tmp[20:16]};
-
-                    if (out_valid && out_ready) begin
-                        out_valid <= 1'b0;
-                        zero_run <= 4'd0;
-                        ac_idx <= ac_idx + 6'd1;
-                        state <= S_AC_FETCH;
-                    end
-                end
-
-                S_EOB_EMIT: begin
-                    out_valid <= 1'b1;
-                    out_sob <= 1'b0;
-                    out_eob <= 1'b1;
-                    /* verilator lint_off BLKSEQ */
-                    ac_lookup_tmp = blk_is_luma ? ac_luma_lookup(8'h00) : ac_chroma_lookup(8'h00);
-                    /* verilator lint_on BLKSEQ */
-                    out_bits <= {ac_lookup_tmp[15:0], 16'd0};
-                    out_len <= {1'b0, ac_lookup_tmp[20:16]};
-
-                    if (out_valid && out_ready) begin
-                        out_valid <= 1'b0;
-                        out_eob <= 1'b0;
+                C_WAIT: begin
+                    if (issue_en)
+                        s2_valid <= 1'b0;
+                    if (out_valid && out_ready && out_eob) begin
                         rd_count <= rd_count + 1'b1;   // pop completed block
-                        state <= S_IDLE;
+                        ctl      <= C_IDLE;
+                    end
+                end
+            endcase
+
+            if (adv) begin
+                // ---------------- S2: fetch / DC diff / zero run ----------------
+                s3_valid <= s2_valid;
+                s3_eob   <= s2_eob && !zrl_emit;
+                if (zrl_emit) begin
+                    s3_kind  <= K_ZRL;
+                    s3_run   <= 4'd15;
+                    s3_val   <= 16'd0;
+                    last_pos <= last_pos + 6'd16;
+                end else begin
+                    s3_kind <= s2_kind;
+                    s3_run  <= s2_run[3:0];
+                    if (s2_kind == K_DC) begin
+                        s3_val   <= s2_coeff - s2_prev_dc;
+                        last_pos <= 6'd0;
+                        if (s2_valid) begin
+                            if (blk_comp_id <= 2'd1)      prev_dc_y  <= s2_coeff;
+                            else if (blk_comp_id == 2'd2) prev_dc_cb <= s2_coeff;
+                            else                          prev_dc_cr <= s2_coeff;
+                        end
+                    end else begin
+                        s3_val <= s2_coeff;
+                        if (s2_valid)
+                            last_pos <= s2_pos;
                     end
                 end
 
-                default: state <= S_IDLE;
-            endcase
+                // ---------------- S3: sign / abs / category ----------------
+                s4_valid <= s3_valid;
+                s4_kind  <= s3_kind;
+                s4_eob   <= s3_eob;
+                s4_run   <= s3_run;
+                // ZRL/EOB carry no value bits: zero them so none leak into the code.
+                if (s3_kind == K_DC || s3_kind == K_AC) begin
+                    s4_raw  <= s3_val[10:0];
+                    s4_sign <= s3_val[15];
+                    s4_cat  <= compute_category(s3_abs);
+                end else begin
+                    s4_raw  <= 11'd0;
+                    s4_sign <= 1'b0;
+                    s4_cat  <= 4'd0;
+                end
+
+                // ---------------- S4: value bits + table lookup ----------------
+                s5_valid <= s4_valid;
+                s5_dc    <= (s4_kind == K_DC);
+                s5_eob   <= s4_eob;
+                s5_cat   <= s4_cat;
+                if (s4_sign)
+                    s5_vbits <= s4_raw + (11'd1 << s4_cat) - 11'd1;
+                else
+                    s5_vbits <= s4_raw;
+                /* verilator lint_off BLKSEQ */
+                if (s4_kind == K_DC) begin
+                    dc_lookup_tmp = blk_is_luma ? dc_luma_lookup(s4_cat) : dc_chroma_lookup(s4_cat);
+                    s5_code <= dc_lookup_tmp[15:0];
+                    /* verilator lint_off WIDTHEXPAND */
+                    s5_len  <= dc_lookup_tmp[19:16];
+                    /* verilator lint_on WIDTHEXPAND */
+                end else begin
+                    ac_lookup_tmp = blk_is_luma ?
+                        ac_luma_lookup((s4_kind == K_AC)  ? {s4_run, s4_cat} :
+                                       (s4_kind == K_ZRL) ? 8'hF0 : 8'h00) :
+                        ac_chroma_lookup((s4_kind == K_AC)  ? {s4_run, s4_cat} :
+                                         (s4_kind == K_ZRL) ? 8'hF0 : 8'h00);
+                    s5_code <= ac_lookup_tmp[15:0];
+                    s5_len  <= ac_lookup_tmp[20:16];
+                end
+                /* verilator lint_on BLKSEQ */
+
+                // ---------------- S5: combine into the output register ----------------
+                // Huffman code MSB-aligned, value bits immediately after it.
+                out_valid <= s5_valid;
+                out_sob   <= s5_valid && s5_dc;
+                out_eob   <= s5_valid && s5_eob;
+                /* verilator lint_off BLKSEQ */
+                vshift = 6'd32 - {1'b0, s5_len} - {2'd0, s5_cat};
+                /* verilator lint_on BLKSEQ */
+                out_bits <= {s5_code, 16'd0} | ({21'd0, s5_vbits} << vshift);
+                out_len  <= {1'b0, s5_len} + {2'd0, s5_cat};
+            end
         end
     end
 

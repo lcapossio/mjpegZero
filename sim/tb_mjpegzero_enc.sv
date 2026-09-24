@@ -41,8 +41,9 @@ module tb_mjpegzero_enc;
 
     // Timeouts scale with frame size so ANY resolution gets enough time to
     // finish encoding (a hand-set define no longer decides this). ~50 cyc/pixel
-    // is >10x the measured serial-Huffman throughput (720p encodes in ~2.3M
-    // cycles); the floor covers fixed pipeline latency on tiny smoke frames.
+    // is >10x the measured encode throughput (~65 cyc/block, DCT-limited; 720p
+    // encodes in ~1.9M cycles); the floor covers fixed pipeline latency on
+    // tiny smoke frames.
     // Cycle counts (not ns) keep the values inside 32-bit up to ~4K.
     localparam integer EOI_TIMEOUT_CYCLES =
         (NUM_PIXELS * 50 > 2_000_000) ? (NUM_PIXELS * 50) : 2_000_000;
@@ -384,10 +385,10 @@ module tb_mjpegzero_enc;
                             dut.quant_out_valid,
                             dut.zz_out_valid,
                             dut.zz_out_sob);
-                        $display("  huff_state=%0d huff_wr_idx=%0d huff_ac_idx=%0d",
-                            dut.u_huffman.state,
+                        $display("  huff_ctl=%0d huff_wr_idx=%0d huff_s2_pos=%0d",
+                            dut.u_huffman.ctl,
                             dut.u_huffman.coeff_wr_idx,
-                            dut.u_huffman.ac_idx);
+                            dut.u_huffman.s2_pos);
                         $display("  dct_row_valid=%b dct_tbuf_done=%b dct_col_valid=%b dct_out_cnt=%0d",
                             dut.u_dct.row_dct_out_valid,
                             dut.u_dct.tbuf_block_done,
@@ -579,21 +580,19 @@ module tb_mjpegzero_enc;
     initial huff_blk_num = 0;
 
     always @(posedge clk) begin
-        // Trace Huffman DC value for every block (DC_FETCH -> DC_ENCODE transition)
-        if (dut.u_huffman.state == 4'd1) begin // S_DC_FETCH
+        // Trace Huffman DC value for every block (DC token leaving stage 2)
+        if (dut.u_huffman.s2_valid && dut.u_huffman.s2_kind == 2'd0 && dut.u_huffman.adv) begin
             $display("[HUFF] Block %0d comp=%0d: DC_raw=%0d prev_dc_y=%0d prev_dc_cb=%0d prev_dc_cr=%0d",
                 huff_blk_num, dut.u_huffman.blk_comp_id,
-                $signed(dut.u_huffman.coeff_buf[{dut.u_huffman.coeff_rd_bank, 6'd0}]),
+                $signed(dut.u_huffman.s2_coeff),
                 $signed(dut.u_huffman.prev_dc_y),
                 $signed(dut.u_huffman.prev_dc_cb),
                 $signed(dut.u_huffman.prev_dc_cr));
         end
-        // Trace the DC emit details
-        if (dut.u_huffman.state == 4'd3 && dut.u_huffman.out_valid && dut.huff_bp_ready) begin
-            $display("[HUFF] Block %0d DC_EMIT: dc_diff=%0d cat=%0d huff_len=%0d out_bits=%08h out_len=%0d",
-                huff_blk_num, $signed(dut.u_huffman.cur_coeff),
-                dut.u_huffman.cur_cat, dut.u_huffman.huff_len,
-                dut.u_huffman.out_bits, dut.u_huffman.out_len);
+        // Trace the DC code as the packer takes it
+        if (dut.u_huffman.out_valid && dut.u_huffman.out_sob && dut.huff_bp_ready) begin
+            $display("[HUFF] Block %0d DC_EMIT: out_bits=%08h out_len=%0d",
+                huff_blk_num, dut.u_huffman.out_bits, dut.u_huffman.out_len);
         end
         // Count EOBs to track block progression (only when accepted by packer)
         if (dut.huff_out_eob && dut.huff_out_valid && dut.huff_bp_ready) begin

@@ -198,21 +198,21 @@ build the same configuration. WNS is **post-synthesis** for every row.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,584 | 1,029 | 16 | 23 | +0.516 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,570 | 1,036 | 16 | 23 | +0.326 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,344 | 983 | 11 | 21 | +0.516 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,331 | 982 | 11 | 21 | +0.326 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,834 | 1,163 | 16 | 23 | +0.171 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,839 | 1,177 | 16 | 23 | +0.191 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,556 | 1,117 | 11 | 21 | +0.171 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,572 | 1,123 | 11 | 21 | +0.309 ns |
 
-**Verilog and VHDL are equivalent in area.** The two builds land within 14 LUTs
-(0.5%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
-FFs within 1%. Per-module deltas run in both directions and come from frontend
+**Verilog and VHDL are equivalent in area.** The two builds land within 16 LUTs
+(0.6%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
+FFs within 1.5%. Per-module deltas run in both directions and come from frontend
 and retiming choices on identical RTL, not from any structural difference — for
 example Vivado packs three of the `input_buffer` delay chains into SRL16s from
 the Verilog source but leaves them as FFs from the VHDL source.
 
 **Full vs lite is the quality path only** (runtime-programmable vs
 synthesis-fixed); the rest of the pipeline is identical. At the **same
-resolution** the delta is small — full vs lite at 720p is **+234 LUT / +65 FF /
+resolution** the delta is small — full vs lite at 720p is **+272 LUT / +65 FF /
 +0 BRAM / +2 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT, and
 Q-scaling multiply). The rows above use different resolution presets, so their
 larger BRAM (16 vs 11) is the wider line buffers — **BRAM scales with image

@@ -248,6 +248,14 @@ jobs:
       - name: RTL unit benches (zigzag gapless / packer backpressure / restart)
         run: python python/run_unit_benches.py
 
+      # Throughput floor: Q100 on the busiest mandrill strip is the worst case
+      # for the entropy path. Measured ~80 fps (DCT-limited); a regression that
+      # makes Huffman/packer the bottleneck again drops well below 75.
+      - name: Throughput guard (Q100 worst-case strip, >= 75 fps 720p @ 150 MHz)
+        run: |
+          test -f sim/test_vectors/yuyv_720p.hex || python python/generate_test_vectors.py
+          python python/measure_throughput.py --quality 100 --rows 0 --min-fps 75
+
       # NOTE: the core golden (full/lite, single frame) is owned by the Verilator
       # job (rtl-verilator-sim) and the cocotb-dual job. This iverilog job runs
       # only what those don't: the multi-frame regression and the RGB / gaps /

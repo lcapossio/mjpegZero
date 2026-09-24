@@ -58,15 +58,19 @@ module bitstream_packer (
     localparam S_FLUSH_PAD  = 3'd5;
     localparam S_FLUSH_LAST = 3'd6;
 
-    // Backpressure: ready ONLY when Priority 3 (accept input) will actually fire.
-    // Must ensure bit_cnt < 8 so Priority 2 (byte drain) won't take precedence
-    // in the else-if chain.  Old condition (bit_cnt <= 32) allowed the Huffman
-    // encoder to see acceptance while the packer was actually draining bytes.
-    // The (!out_valid || out_ready) term MUST match the Priority 3 accept guard
-    // below: without it bp_ready can be high while output backpressure blocks the
-    // accept, so a producer that trusts ready would drop the offered code.
-    assign bp_ready = (state == S_NORMAL) && (bit_cnt < 7'd8) && !need_stuff &&
-                      (!out_valid || out_ready);
+    // Backpressure: in S_NORMAL a code is accepted whenever it fits, in the same
+    // cycle as a byte drain or stuff byte and regardless of the output slot, so
+    // bp_ready is exactly "the offered code is taken this cycle". With
+    // bit_cnt <= 32 a code of up to 27 bits (16 Huffman + 11 value) always fits
+    // the 64-bit accumulator.
+    assign bp_ready = (state == S_NORMAL) && (bit_cnt <= 7'd32);
+
+    wire        out_free = !out_valid || out_ready;
+    // New code placed right after the pending bits. It starts at bit_cnt >= 8
+    // whenever a byte drains this cycle, so it never touches bit_buf[63:56].
+    wire [63:0] merged   = (in_valid && bp_ready) ? (bit_buf | ({in_bits, 32'd0} >> bit_cnt))
+                                                  : bit_buf;
+    wire [6:0]  added    = (in_valid && bp_ready) ? {1'b0, in_len} : 7'd0;
 
     // ========================================================================
     // Main logic
@@ -94,28 +98,28 @@ module bitstream_packer (
                 // NORMAL: Accept input, output bytes
                 // ==============================================================
                 S_NORMAL: begin
-                    // Priority 1: Byte stuffing
-                    if (need_stuff && (!out_valid || out_ready)) begin
+                    // Output side: a pending stuff byte first, else drain one
+                    // byte when >=8 bits are available. The input side (merged /
+                    // added) accepts a code in the same cycle.
+                    if (need_stuff && out_free) begin
                         out_valid  <= 1'b1;
                         out_data   <= 8'h00;
                         need_stuff <= 1'b0;
                         byte_count <= byte_count + 32'd1;
-                    end
-                    // Priority 2: Output bytes when >=8 bits available
-                    else if (bit_cnt >= 7'd8 && !need_stuff && (!out_valid || out_ready)) begin
-                        out_valid <= 1'b1;
-                        out_data  <= bit_buf[63:56];
-                        bit_buf   <= {bit_buf[55:0], 8'd0};
-                        bit_cnt   <= bit_cnt - 7'd8;
+                        bit_buf    <= merged;
+                        bit_cnt    <= bit_cnt + added;
+                    end else if (bit_cnt >= 7'd8 && !need_stuff && out_free) begin
+                        out_valid  <= 1'b1;
+                        out_data   <= bit_buf[63:56];
+                        bit_buf    <= {merged[55:0], 8'd0};
+                        bit_cnt    <= bit_cnt - 7'd8 + added;
                         byte_count <= byte_count + 32'd1;
                         // Check for byte stuffing
                         if (bit_buf[63:56] == 8'hFF)
                             need_stuff <= 1'b1;
-                    end
-                    // Priority 3: Accept new input when buffer has room
-                    else if (in_valid && bp_ready && (!out_valid || out_ready)) begin
-                        bit_buf <= bit_buf | ({in_bits, 32'd0} >> bit_cnt);
-                        bit_cnt <= bit_cnt + {1'b0, in_len};
+                    end else begin
+                        bit_buf <= merged;
+                        bit_cnt <= bit_cnt + added;
                     end
 
                     // Restart request
