@@ -64,3 +64,8 @@ tight_setup_hold_pins.txt
 # OS
 Thumbs.db
 .DS_Store
+
+# pytest caches / scratch (pytest-cache-files-* are left behind by locked temp dirs on Windows)
+.pytest_cache/
+pytest-cache-files-*/
+tests/_tmp/

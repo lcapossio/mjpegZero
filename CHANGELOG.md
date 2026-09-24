@@ -78,6 +78,13 @@ All notable changes to mjpegZero are documented here.
 - Top-level [`README.md`](README.md) `Resource Usage` section now shows
   standalone core synthesis (`run_core_synth.tcl`, XC7A100T) for Verilog and
   VHDL, full and lite; board demo totals live in the board READMEs.
+- CI: shared setup action (`.github/actions/setup-sim`) with pip caching and
+  a cached mandrill test image, so every job encodes the same source (a
+  synthetic fallback is flagged and never cached); per-job timeouts,
+  superseded-run cancellation, `workflow_dispatch`; cocotb/FuseSoC pinned to
+  their current majors; Python matrix 3.11 + 3.13 (3.9 is end-of-life);
+  pytest for `tests/`; FuseSoC sim-target smoke test. `run_ci_local.py`
+  mirrors the current jobs again (adds `vhdl-lint`).
 - Single behavioral BRAM (`rtl/bram_sdp.v`) replaces the per-vendor
   `rtl/vendor/` wrappers.
 - Quality mode (`LITE_MODE`) is decoupled from resolution

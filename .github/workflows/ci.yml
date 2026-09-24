@@ -9,6 +9,15 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR cancels the superseded run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -17,23 +26,21 @@ jobs:
   verify:
     name: Python verification (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.11", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      # Includes python/test_encoder.py: the reference-encoder PSNR check.
+      - name: Set up Python ${{ matrix.python-version }}, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          pip install -r python/requirements.txt
+          apt-packages: ffmpeg
+          pip-extra: "pytest>=8,<10"
 
       - name: Verify Huffman ROM tables
         run: python python/verify_huffman_rom.py
@@ -44,8 +51,8 @@ jobs:
       - name: Verify quality-scale formula agrees across RTL/VHDL/Python
         run: python python/verify_quality_scale.py
 
-      - name: Python reference encoder test (PSNR check)
-        run: python python/test_encoder.py
+      - name: LiteX integration unit tests (pytest)
+        run: python -m pytest tests -q
 
       - name: Visual quality comparison (mandrill encode/decode, Q=50/75/95)
         run: |
@@ -66,6 +73,7 @@ jobs:
   rtl-lint:
     name: RTL lint (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -183,6 +191,7 @@ jobs:
   vhdl-lint:
     name: VHDL lint (GHDL)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -223,23 +232,15 @@ jobs:
   rtl-sim:
     name: RTL variant tests (iverilog)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, iverilog, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test image (download mandrill or synthetic fallback)
-        run: python python/test_encoder.py
+          apt-packages: iverilog ffmpeg
 
       # Entropy-path unit benches: deterministic guards for the gapless zigzag
       # cross-block leak, the packer bp_ready backpressure drop, and the restart
@@ -330,23 +331,15 @@ jobs:
   rtl-verilator-sim:
     name: RTL sim (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Verilator, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends verilator g++ make ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test vectors
-        run: python python/test_encoder.py
+          apt-packages: verilator g++ make ffmpeg
 
       - name: Verilator sim — full mode (Q=50/75/95)
         run: python python/run_verilator_sim.py
@@ -368,23 +361,15 @@ jobs:
   rtl-coverage:
     name: RTL coverage (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Verilator, lcov, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends verilator g++ make lcov ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test vectors
-        run: python python/test_encoder.py
+          apt-packages: verilator g++ make lcov ffmpeg
 
       - name: Run coverage (full mode, Q=50/75/95)
         run: python python/run_coverage.py --html
@@ -403,25 +388,21 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # FuseSoC — core descriptor validation + lint via FuseSoC/Verilator
+  # FuseSoC — core descriptor validation, lint, and sim-target smoke test
   # ---------------------------------------------------------------------------
   fusesoc:
-    name: FuseSoC (core validation + lint)
+    name: FuseSoC (core validation + lint + sim)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, FuseSoC, Verilator, iverilog, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install FuseSoC and Verilator
-        run: |
-          sudo apt-get update
-          pip install fusesoc
-          sudo apt-get install -y --no-install-recommends verilator make
+          apt-packages: verilator make iverilog
+          pip-extra: "fusesoc>=2.4,<3"
 
       - name: Register core library
         run: fusesoc library add mjpegzero .
@@ -435,6 +416,15 @@ jobs:
       - name: Lint via FuseSoC (Verilator, LITE_MODE=0)
         run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
 
+      # tb_iverilog always exits 0, so gate on its summary line.
+      - name: Sim targets via FuseSoC (icarus smoke test, full + lite)
+        run: |
+          python python/generate_test_vectors.py
+          fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc | tee fs_sim.log
+          grep -q "ALL TESTS PASSED" fs_sim.log
+          fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc | tee fs_sim_lite.log
+          grep -q "ALL TESTS PASSED" fs_sim_lite.log
+
   # ---------------------------------------------------------------------------
   # cocotb dual-language sim - ONE testbench, both ports: Verilog (Icarus) and
   # VHDL (GHDL), each golden-checked. Gives the VHDL port real CI coverage.
@@ -442,19 +432,19 @@ jobs:
   cocotb-dual:
     name: cocotb (Verilog + VHDL)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Icarus, cocotb, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
+          apt-packages: iverilog ffmpeg
+          pip-extra: "cocotb>=2.0,<3"
 
-      - name: Install simulators (Icarus + GHDL) and cocotb
+      - name: Install GHDL
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
           # Use GHDL's GCC backend (compiled, fast). NOT ghdl-llvm: on Ubuntu 24.04
           # ghdl-llvm 4.1.0 links the soname "libLLVM-18.so.18.1", but the distro's
           # libllvm18 only ships "libLLVM.so.18.1" -> the LLVM backend dies at
@@ -465,13 +455,9 @@ jobs:
             || sudo apt-get install -y --no-install-recommends ghdl-mcode \
             || sudo apt-get install -y --no-install-recommends ghdl
           ghdl --version
-          pip install cocotb
-          pip install -r python/requirements.txt
 
-      - name: Generate test image, vectors + golden references
-        run: |
-          python python/test_encoder.py          # downloads mandrill (or synthetic fallback)
-          python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
+      - name: Generate test vectors + golden references
+        run: python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
 
       - name: cocotb - Verilog/Icarus (full Q95)
         run: python sim/cocotb/test_runner.py verilog full 95 1

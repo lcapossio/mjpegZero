@@ -18,6 +18,7 @@ Usage:
 Available jobs:
     verify             Python-only verification (Tier 1)
     rtl-lint           Verilator lint (all parameter combinations)
+    vhdl-lint          GHDL analysis of all VHDL sources (-Wall --warn-error)
     rtl-sim            iverilog RTL simulation (full + lite + corner cases)
     rtl-verilator-sim  Verilator functional simulation
     rtl-coverage       Verilator code coverage
@@ -25,7 +26,7 @@ Available jobs:
     vhdl-top-sim       Vivado xsim VHDL top simulation (full + lite)
     demo-shell-sim     Vivado xsim board shell simulation with AXI JPEG readback
     core-resource-equiv Vivado core Verilog/VHDL resource comparison
-    fusesoc            FuseSoC core validation + lint
+    fusesoc            FuseSoC core validation + lint + sim smoke test
     all                All of the above (default)
 
 Tool prerequisites are checked at job start. Missing tools fail the job
@@ -168,7 +169,10 @@ def job_verify():
         steps=[
             ('verify_huffman_rom', py('python/verify_huffman_rom.py')),
             ('verify_lite_quality', py('python/verify_lite_quality.py')),
+            ('verify_quality_scale', py('python/verify_quality_scale.py')),
             ('test_encoder (PSNR check)', py('python/test_encoder.py')),
+            ('pytest tests (LiteX integration)',
+             py('-m', 'pytest', 'tests', '-q', '-p', 'no:cacheprovider')),
             ('mandrill_compare Q=50',  py('python/mandrill_compare.py', '--quality', '50',
                                          '--out', 'build/mandrill_Q50.png')),
             ('mandrill_compare Q=75',  py('python/mandrill_compare.py', '--quality', '75',
@@ -239,8 +243,14 @@ def job_rtl_sim():
         prereqs_modules=['numpy', 'PIL'],
         steps=[
             ('generate test image',         py('python/test_encoder.py')),
+            ('unit benches (zigzag / packer / restart)',
+             py('python/run_unit_benches.py')),
             ('verify_rtl_sim full mode',    py('python/verify_rtl_sim.py')),
             ('verify_rtl_sim lite mode',    py('python/verify_rtl_sim.py', '--lite')),
+            ('verify_rtl_sim --frames 2 full',
+             py('python/verify_rtl_sim.py', '--frames', '2')),
+            ('verify_rtl_sim --frames 2 lite',
+             py('python/verify_rtl_sim.py', '--lite', '--frames', '2')),
             ('verify_rtl_sim --rgb full',   py('python/verify_rtl_sim.py', '--rgb')),
             ('verify_rtl_sim --rgb lite',   py('python/verify_rtl_sim.py', '--lite', '--rgb')),
             ('verify_rtl_sim --gaps full',  py('python/verify_rtl_sim.py', '--gaps')),
@@ -249,6 +259,14 @@ def job_rtl_sim():
              py('python/verify_rtl_sim.py', '--min-width')),
             ('verify_rtl_sim --min-width lite',
              py('python/verify_rtl_sim.py', '--lite', '--min-width')),
+            ('verify_rtl_sim --quality 100 full',
+             py('python/verify_rtl_sim.py', '--quality', '100')),
+            ('verify_rtl_sim --quality 100 lite',
+             py('python/verify_rtl_sim.py', '--lite', '--quality', '100')),
+            ('verify_rtl_sim --restart 1 full',
+             py('python/verify_rtl_sim.py', '--restart', '1')),
+            ('verify_rtl_sim --restart 1 lite',
+             py('python/verify_rtl_sim.py', '--lite', '--restart', '1')),
             ('verify_exif full 72 DPI',     py('python/verify_exif.py')),
             ('verify_exif full 96 DPI',     py('python/verify_exif.py',
                                               '--x-res', '96', '--y-res', '96', '--res-unit', '2')),
@@ -293,12 +311,40 @@ def job_cocotb_dual():
         prereqs_tools=['iverilog', 'ghdl'],
         prereqs_modules=['cocotb', 'cocotb_tools'],
         steps=[
+            ('generate test vectors', py('python/generate_test_vectors.py')),
             ('cocotb Verilog full Q95', py('sim/cocotb/test_runner.py', 'verilog', 'full', '95', '1')),
             ('cocotb Verilog lite Q75', py('sim/cocotb/test_runner.py', 'verilog', 'lite', '75', '1')),
             ('cocotb Verilog full Q95 x2', py('sim/cocotb/test_runner.py', 'verilog', 'full', '95', '2')),
             ('cocotb VHDL full Q95', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '1')),
             ('cocotb VHDL lite Q75', py('sim/cocotb/test_runner.py', 'vhdl', 'lite', '75', '1')),
             ('cocotb VHDL full Q95 x2', py('sim/cocotb/test_runner.py', 'vhdl', 'full', '95', '2')),
+            ('cocotb demo JPEG path',
+             py('example_proj/arty_a7_100t_eth/sim/cocotb/run_jpeg_path.py')),
+        ],
+    )
+
+
+# Dependency order, as in the vhdl-lint CI job.
+VHDL_LINT_SOURCES = [
+    'mjpegzero_pkg', 'axi4_lite_regs', 'bram_sdp', 'input_buffer', 'dct_1d',
+    'dct_2d', 'quantizer', 'huffman_encoder', 'bitstream_packer',
+    'rgb_to_ycbcr', 'zigzag_reorder', 'jfif_writer', 'mjpegzero_enc_top',
+    'demo_jpeg_buffer', 'synth_timing_wrapper',
+]
+
+
+def job_vhdl_lint():
+    workdir = os.path.join('build', 'ghdl_lint')
+    os.makedirs(os.path.join(PROJ_DIR, workdir), exist_ok=True)
+    return run_job(
+        'vhdl-lint',
+        prereqs_tools=['ghdl'],
+        prereqs_modules=[],
+        steps=[
+            ('ghdl analyze all sources (-Wall --warn-error)',
+             ['ghdl', '-a', '--std=93', '--syn-binding', '-Wall', '--warn-error',
+              f'--workdir={workdir}']
+             + [f'rtl/vhdl/{n}.vhd' for n in VHDL_LINT_SOURCES]),
         ],
     )
 
@@ -356,13 +402,29 @@ def job_fusesoc():
             ('lint LITE_MODE=0',
              ['fusesoc', '--cores-root', '.', 'run', '--target', 'lint',
               'bard0-design:mjpegzero:mjpegzero_enc', '--LITE_MODE', '0']),
+            ('generate test vectors', py('python/generate_test_vectors.py')),
+            ('sim target (full)', _fusesoc_sim('sim')),
+            ('sim target (lite)', _fusesoc_sim('sim_lite')),
         ],
     )
+
+
+def _fusesoc_sim(target):
+    """FuseSoC sim run gated on the testbench summary (tb_iverilog exits 0)."""
+    script = (
+        'import subprocess, sys\n'
+        f'r = subprocess.run(["fusesoc", "--cores-root", ".", "run", "--target", "{target}",'
+        ' "bard0-design:mjpegzero:mjpegzero_enc"], capture_output=True, text=True)\n'
+        'print(r.stdout[-2000:]); print(r.stderr[-2000:], file=sys.stderr)\n'
+        'sys.exit(0 if r.returncode == 0 and "ALL TESTS PASSED" in r.stdout else 1)\n'
+    )
+    return py('-c', script)
 
 
 JOBS = {
     'verify':            job_verify,
     'rtl-lint':          job_rtl_lint,
+    'vhdl-lint':         job_vhdl_lint,
     'rtl-sim':           job_rtl_sim,
     'rtl-verilator-sim': job_rtl_verilator_sim,
     'rtl-coverage':      job_rtl_coverage,
@@ -374,7 +436,7 @@ JOBS = {
 }
 
 ALL_JOBS_ORDER = [
-    'verify', 'rtl-lint', 'rtl-sim',
+    'verify', 'rtl-lint', 'vhdl-lint', 'rtl-sim',
     'rtl-verilator-sim', 'rtl-coverage', 'cocotb-dual', 'fusesoc',
 ]
 

@@ -268,7 +268,7 @@ RAM wrappers are behavioral in both Verilog and VHDL.
 
 
 - AMD/Xilinx Vivado 2020.2+ (tested with 2025.2)
-- Python 3.8+ with NumPy, SciPy, Pillow (for reference encoder)
+- Python 3.11+ with NumPy, SciPy, Pillow (for reference encoder; CI tests 3.11 and 3.13)
 - FFmpeg (for validation)
 
 ```bash
