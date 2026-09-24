@@ -251,6 +251,46 @@ module tb_iverilog;
         end
     end
 
+`ifdef PERF
+    // ========================================================================
+    // Throughput probe (python/measure_throughput.py). Measures the encode
+    // window from the first block the input buffer issues to the Huffman
+    // encoder's last end-of-block, and where the Huffman FSM spends it.
+    // ========================================================================
+    integer perf_cyc, perf_blocks, perf_ring_full, perf_pk_stall, perf_dct_idle;
+    integer perf_state [0:15];
+    integer perf_i;
+    reg     perf_on;
+    initial begin
+        perf_on = 0; perf_cyc = 0; perf_blocks = 0;
+        perf_ring_full = 0; perf_pk_stall = 0; perf_dct_idle = 0;
+        for (perf_i = 0; perf_i < 16; perf_i = perf_i + 1) perf_state[perf_i] = 0;
+    end
+    always @(posedge clk) begin
+        if (!perf_on && dut.ibuf_blk_valid && dut.ibuf_blk_sob && dut.ibuf_blk_ready)
+            perf_on = 1;
+        if (perf_on && perf_blocks < IMG_WIDTH / 4) begin
+            perf_cyc = perf_cyc + 1;
+            perf_state[dut.u_huffman.state] = perf_state[dut.u_huffman.state] + 1;
+            if (dut.pipeline_depth >= dut.HUFF_BANKS_CAP) perf_ring_full = perf_ring_full + 1;
+            if (dut.u_huffman.out_valid && !dut.u_bitpacker.bp_ready)
+                perf_pk_stall = perf_pk_stall + 1;
+            if (!(dut.ibuf_blk_valid && dut.ibuf_blk_ready)) perf_dct_idle = perf_dct_idle + 1;
+            if (dut.huff_out_eob && dut.huff_out_valid && dut.huff_bp_ready) begin
+                perf_blocks = perf_blocks + 1;
+                if (perf_blocks == IMG_WIDTH / 4) begin
+                    $display("PERF blocks=%0d cycles=%0d ring_full=%0d packer_stall=%0d ibuf_idle=%0d",
+                             perf_blocks, perf_cyc, perf_ring_full, perf_pk_stall, perf_dct_idle);
+                    $write("PERF states");
+                    for (perf_i = 0; perf_i < 11; perf_i = perf_i + 1)
+                        $write(" %0d", perf_state[perf_i]);
+                    $write("\n");
+                end
+            end
+        end
+    end
+`endif
+
     // ========================================================================
     // AXI-Lite write task
     // ========================================================================
