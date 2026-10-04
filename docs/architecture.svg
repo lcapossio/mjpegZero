@@ -1,99 +1,174 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="656" viewBox="0 0 1660 656" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" style="background:#000000">
+<svg xmlns="http://www.w3.org/2000/svg" width="1921" height="656" viewBox="0 0 1921 656" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" role="img">
+  <title>mjpegZero encoder (mjpegzero_enc_top)</title>
+  <style>
+    svg { background:#f8fafc }
+    @media (prefers-color-scheme: dark) {
+      svg { background:#000000 }
+      .hd-dk0 { fill: #e2e8f0 }
+      .hd-dk1 { fill: #9ca3af }
+      .hd-dk2 { fill: #d9f99d }
+      .hd-dk3 { fill: #93c5fd }
+      .hd-dk4 { fill: #5eead4 }
+      .hd-dk5 { fill: #d8b4fe }
+      .hd-dk6 { fill: #fbbf24 }
+      .hd-dk7 { fill: #000000; stroke: #e2e8f0 }
+      .hd-dk8 { fill: #000000 }
+      .hd-dk9 { fill: #374151; stroke: #9ca3af }
+      .hd-dk10 { fill: #172554; stroke: #60A5FA }
+      .hd-dk11 { fill: #ffffff }
+      .hd-dk12 { fill: #052E16; stroke: #4ADE80 }
+      .hd-dk13 { fill: #451A03; stroke: #FBBF24 }
+      .hd-dk14 { stroke: #d9f99d }
+      .hd-dk15 { stroke: #9ca3af }
+      .hd-dk16 { stroke: #93c5fd }
+      .hd-dk17 { stroke: #fbbf24 }
+      .hd-dk18 { fill: #0f172a; stroke: #475569 }
+      .hd-dk19 { fill: #000000; stroke: #9ca3af }
+    }
+  </style>
   <defs>
-    <marker id="ah-solid" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#e2e8f0"/></marker>
-    <marker id="ah-thin" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#9ca3af"/></marker>
-    <marker id="ah-stream" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#d9f99d"/></marker>
-    <marker id="ah-axil" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#93c5fd"/></marker>
-    <marker id="ah-cdc" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#d8b4fe"/></marker>
-    <marker id="ah-open" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0.5,0.5 L0.5,5.5 L8,3 z" fill="#000000" stroke="#e2e8f0" stroke-width="1"/></marker>
+    <marker id="ah-solid" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#1f2937" class="hd-dk0"/></marker>
+    <marker id="ah-thin" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#374151" class="hd-dk1"/></marker>
+    <marker id="ah-stream" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#5C5C00" class="hd-dk2"/></marker>
+    <marker id="ah-axil" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#0D47A1" class="hd-dk3"/></marker>
+    <marker id="ah-tilelink" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#00796B" class="hd-dk4"/></marker>
+    <marker id="ah-cdc" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#6A1B9A" class="hd-dk5"/></marker>
+    <marker id="ah-ctl" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#B45309" class="hd-dk6"/></marker>
+    <marker id="ah-open" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0.5,0.5 L0.5,5.5 L8,3 z" fill="#f8fafc" stroke="#1f2937" stroke-width="1" class="hd-dk7"/></marker>
   </defs>
-  <rect width="1660" height="656" fill="#000000" id="_canvas_bg"/>
-  <text x="830.0" y="24" text-anchor="middle" font-size="17" font-weight="600" fill="#e2e8f0" letter-spacing="0.2">mjpegZero Encoder Top-Level</text>
-  <rect id="video_in" x="44" y="74" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
-  <text x="154" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">Video AXI4-Stream In</text>
-  <text x="154" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#e2e8f0" opacity="0.85">16b YUYV / 24b RGB</text>
-  <rect id="input_path" x="382" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="492" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Input Format Path</text>
-  <text x="492" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">YUYV pass-through or rgb_to_ycbcr</text>
-  <rect id="input_buffer" x="720" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="830" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">input_buffer</text>
-  <text x="830" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">YUYV to 8x8 blocks</text>
-  <rect id="dct" x="1058" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="1168" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">dct_2d</text>
-  <text x="1168" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">level-shifted samples</text>
-  <rect id="quantizer" x="1396" y="74" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="1506" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">quantizer</text>
-  <text x="1506" y="134" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">quality + Q tables</text>
-  <rect id="zigzag" x="44" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="154" y="303" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">zigzag_reorder</text>
-  <rect id="huffman" x="382" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="492" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">huffman_encoder</text>
-  <text x="492" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">entropy coding</text>
-  <rect id="bitpacker" x="720" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="830" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">bitstream_packer</text>
-  <text x="830" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">stuff, restart, flush</text>
-  <rect id="jfif" x="1058" y="252" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="1168" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">jfif_writer</text>
-  <text x="1168" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">headers + scan stream</text>
-  <rect id="jpg_out" x="1396" y="252" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
-  <text x="1506" y="296" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">JPEG AXI4-Stream Out</text>
-  <text x="1506" y="312" text-anchor="middle" font-size="11" font-style="italic" fill="#e2e8f0" opacity="0.85">8b stream</text>
-  <rect id="host" x="382" y="430" width="220" height="92" fill="#374151" stroke="#9ca3af" stroke-width="1.4" rx="8"/>
-  <text x="492" y="481" text-anchor="middle" font-size="14" font-weight="600" fill="#e2e8f0">AXI4-Lite Host</text>
-  <rect id="regs" x="720" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="830" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">axi4_lite_regs</text>
-  <text x="830" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">enable, quality, status</text>
-  <rect id="frame_ctrl" x="1058" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="1168" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Top Frame Control</text>
-  <text x="1168" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">frame start/done, ready gating</text>
-  <rect id="comp_track" x="1396" y="430" width="220" height="92" fill="#90CAF9" stroke="#1565C0" stroke-width="1.4" rx="8"/>
-  <text x="1506" y="474" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937">Component Tracking FIFOs</text>
-  <text x="1506" y="490" text-anchor="middle" font-size="11" font-style="italic" fill="#1f2937" opacity="0.85">comp_id latency alignment</text>
-  <path id="edge_video_in_to_input_path" d="M 264.0,120.0 L 323.0,120.0 L 323.0,120.0 L 382.0,120.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
-  <rect x="271.6" y="104.7" width="102.8" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="323.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S VID_DATA_W</text>
-  <path id="edge_input_path_to_input_buffer" d="M 602.0,120.0 L 661.0,120.0 L 661.0,120.0 L 720.0,120.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
-  <rect x="630.8" y="104.7" width="60.5" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="661.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 16b</text>
-  <path id="edge_input_buffer_to_dct" d="M 940.0,120.0 L 999.0,120.0 L 999.0,120.0 L 1058.0,120.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="990.0" y="104.7" width="18.1" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="999.0" y="116.0" text-anchor="middle" font-size="11" fill="#e2e8f0">8b</text>
-  <path id="edge_dct_to_quantizer" d="M 1278.0,120.0 L 1337.0,120.0 L 1337.0,104.7 L 1396.0,104.7" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="1324.9" y="97.0" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="1337.0" y="108.3" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
-  <path id="edge_quantizer_to_zigzag" d="M 1506.0,166.0 L 1506.0,209.0 L 154.0,209.0 L 154.0,252.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="817.9" y="193.7" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="830.0" y="205.0" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
-  <path id="edge_zigzag_to_huffman" d="M 264.0,313.3 L 323.0,313.3 L 323.0,298.0 L 382.0,298.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="310.9" y="290.3" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="323.0" y="301.7" text-anchor="middle" font-size="11" fill="#e2e8f0">16b</text>
-  <path id="edge_huffman_to_bitpacker" d="M 602.0,298.0 L 661.0,298.0 L 661.0,298.0 L 720.0,298.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="648.9" y="282.6" width="24.2" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="661.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">38b</text>
-  <path id="edge_bitpacker_to_jfif" d="M 940.0,298.0 L 999.0,298.0 L 999.0,298.0 L 1058.0,298.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
-  <rect x="971.8" y="282.6" width="54.4" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="999.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 8b</text>
-  <path id="edge_jfif_to_jpg_out" d="M 1278.0,298.0 L 1337.0,298.0 L 1337.0,298.0 L 1396.0,298.0" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
-  <rect x="1309.8" y="282.6" width="54.4" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="1337.0" y="294.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-S 8b</text>
-  <path id="edge_host_to_regs" d="M 602.0,476.0 L 661.0,476.0 L 661.0,476.0 L 720.0,476.0" stroke="#93c5fd" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)"/>
-  <rect x="630.8" y="460.6" width="60.5" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="661.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">AXI-L 32b</text>
-  <path id="edge_regs_to_frame_ctrl" d="M 940.0,476.0 L 999.0,476.0 L 999.0,476.0 L 1058.0,476.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="962.7" y="460.6" width="72.6" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="999.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">ctrl/status</text>
-  <path id="edge_frame_ctrl_to_comp_track" d="M 1278.0,476.0 L 1337.0,476.0 L 1337.0,476.0 L 1396.0,476.0" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <rect x="1297.7" y="460.6" width="78.6" height="15.0" fill="#1f2937" stroke="#4b5563" stroke-width="0.6" rx="3"/>
-  <text x="1337.0" y="472.0" text-anchor="middle" font-size="11" fill="#e2e8f0">block pulses</text>
-  <text x="44" y="576" font-size="11" font-weight="600" fill="#9ca3af" letter-spacing="0.5">CLOCK DOMAINS</text>
-  <rect x="44" y="590" width="18" height="14" fill="#90CAF9" stroke="#1565C0" stroke-width="0.8" rx="3"/>
-  <text x="68" y="601" font-size="11" fill="#e2e8f0">core</text>
-  <text x="44" y="626" font-size="11" font-weight="600" fill="#9ca3af" letter-spacing="0.5">CONNECTION STYLES</text>
-  <path id="legend-arrow-axi-stream" d="M 44,647 L 80,647" stroke="#d9f99d" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)"/>
-  <text x="90" y="651" font-size="11" fill="#e2e8f0">AXI-Stream</text>
-  <path id="legend-arrow-generic" d="M 182,647 L 218,647" stroke="#9ca3af" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)"/>
-  <text x="228" y="651" font-size="11" fill="#e2e8f0">Generic / discrete</text>
-  <path id="legend-arrow-axi-lite" d="M 376,647 L 412,647" stroke="#93c5fd" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)"/>
-  <text x="422" y="651" font-size="11" fill="#e2e8f0">AXI4-Lite control</text>
+  <rect width="1921" height="656" fill="#f8fafc" id="_canvas_bg" class="hd-dk8"/>
+  <text x="810.0" y="24" text-anchor="middle" font-size="21" font-weight="600" fill="#1f2937" letter-spacing="0.2" class="hd-dk0">mjpegZero encoder (mjpegzero_enc_top)</text>
+  <text x="810.0" y="47" text-anchor="middle" font-size="14" fill="#374151" class="hd-dk1">8x8 blocks in MCU order (Y0 Y1 Cb Cr, 4:2:2) · one 150 MHz clock domain · Verilog 2001 and VHDL-1993</text>
+  <rect id="video_in" x="40" y="94" width="220" height="96" fill="#E0E0E0" stroke="#424242" stroke-width="1.4" rx="8" data-role="block" class="hd-dk9"/>
+  <text data-role="block-label" data-owner="video_in" x="150" y="132" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937" class="hd-dk0">Video in</text>
+  <text data-role="block-label" data-owner="video_in" x="150" y="147" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">AXI4-Stream slave</text>
+  <text data-role="block-label" data-owner="video_in" x="150" y="162" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">16b YUYV / 24b RGB</text>
+  <rect id="rgb2yuv" x="370" y="94" width="220" height="96" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.4" rx="8" stroke-dasharray="3,3" data-role="block" class="hd-dk10"/>
+  <text data-role="block-label" data-owner="rgb2yuv" x="480" y="132" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">rgb_to_ycbcr</text>
+  <text data-role="block-label" data-owner="rgb2yuv" x="480" y="147" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">BT.601 RGB to YUYV</text>
+  <text data-role="block-label" data-owner="rgb2yuv" x="480" y="162" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">only if RGB_INPUT=1</text>
+  <rect id="ibuf" x="700" y="94" width="220" height="96" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.4" rx="8" data-role="block" class="hd-dk10"/>
+  <text data-role="block-label" data-owner="ibuf" x="810" y="132" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">input_buffer</text>
+  <text data-role="block-label" data-owner="ibuf" x="810" y="147" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">8-line strip BRAM</text>
+  <text data-role="block-label" data-owner="ibuf" x="810" y="162" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">YUYV to 8x8 blocks</text>
+  <rect id="dct" x="1030" y="94" width="220" height="96" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.4" rx="8" data-role="block" class="hd-dk10"/>
+  <text data-role="block-label" data-owner="dct" x="1140" y="132" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">dct_2d</text>
+  <text data-role="block-label" data-owner="dct" x="1140" y="147" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">row/column 1-D DCT</text>
+  <text data-role="block-label" data-owner="dct" x="1140" y="162" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">+ transpose buffer</text>
+  <rect id="quant" x="1360" y="94" width="220" height="96" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.4" rx="8" data-role="block" class="hd-dk10"/>
+  <text data-role="block-label" data-owner="quant" x="1470" y="132" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">quantizer</text>
+  <text data-role="block-label" data-owner="quant" x="1470" y="147" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">reciprocal multiply</text>
+  <text data-role="block-label" data-owner="quant" x="1470" y="162" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">Q tables from QUALITY</text>
+  <rect id="host" x="40" y="290" width="220" height="96" fill="#E0E0E0" stroke="#424242" stroke-width="1.4" rx="8" data-role="block" class="hd-dk9"/>
+  <text data-role="block-label" data-owner="host" x="150" y="328" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937" class="hd-dk0">Host</text>
+  <text data-role="block-label" data-owner="host" x="150" y="343" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">AXI4-Lite master</text>
+  <text data-role="block-label" data-owner="host" x="150" y="358" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">32b data, 5b addr</text>
+  <rect id="regs" x="370" y="290" width="220" height="96" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.4" rx="8" data-role="block" class="hd-dk12"/>
+  <text data-role="block-label" data-owner="regs" x="480" y="328" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">axi4_lite_regs</text>
+  <text data-role="block-label" data-owner="regs" x="480" y="343" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">CTRL / STATUS / QUALITY</text>
+  <text data-role="block-label" data-owner="regs" x="480" y="358" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">RESTART / FRAME_CNT/SIZE</text>
+  <rect id="fsm" x="700" y="290" width="550" height="110" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.4" rx="8" data-role="block" class="hd-dk12"/>
+  <text data-role="block-label" data-owner="fsm" x="975" y="328" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937" class="hd-dk11">frame control</text>
+  <text data-role="block-label" data-owner="fsm" x="975" y="342" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">IDLE &gt; QWAIT &gt; RUN &gt; DRAIN</text>
+  <text data-role="block-label" data-owner="fsm" x="975" y="358" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">latches QUALITY/RESTART per frame</text>
+  <text data-role="block-label" data-owner="fsm" x="975" y="372" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">&lt;= HUFF_BANKS blocks in flight</text>
+  <rect id="jpeg_out" x="40" y="486" width="220" height="96" fill="#E0E0E0" stroke="#424242" stroke-width="1.4" rx="8" data-role="block" class="hd-dk9"/>
+  <text data-role="block-label" data-owner="jpeg_out" x="150" y="524" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2937" class="hd-dk0">JPEG out</text>
+  <text data-role="block-label" data-owner="jpeg_out" x="150" y="539" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">AXI4-Stream master</text>
+  <text data-role="block-label" data-owner="jpeg_out" x="150" y="554" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk0">8b, no tready</text>
+  <rect id="jfif" x="370" y="486" width="220" height="96" fill="#FEF3C7" stroke="#D97706" stroke-width="1.4" rx="8" data-role="block" class="hd-dk13"/>
+  <text data-role="block-label" data-owner="jfif" x="480" y="524" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">jfif_writer</text>
+  <text data-role="block-label" data-owner="jfif" x="480" y="539" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">SOI APP0 DQT SOF0</text>
+  <text data-role="block-label" data-owner="jfif" x="480" y="554" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">DHT SOS ... EOI</text>
+  <rect id="packer" x="700" y="486" width="220" height="96" fill="#FEF3C7" stroke="#D97706" stroke-width="1.4" rx="8" data-role="block" class="hd-dk13"/>
+  <text data-role="block-label" data-owner="packer" x="810" y="524" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">bitstream_packer</text>
+  <text data-role="block-label" data-owner="packer" x="810" y="539" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">bits to bytes</text>
+  <text data-role="block-label" data-owner="packer" x="810" y="554" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">FF to FF 00 stuffing</text>
+  <rect id="huff" x="1030" y="486" width="220" height="96" fill="#FEF3C7" stroke="#D97706" stroke-width="1.4" rx="8" data-role="block" class="hd-dk13"/>
+  <text data-role="block-label" data-owner="huff" x="1140" y="524" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">huffman_encoder</text>
+  <text data-role="block-label" data-owner="huff" x="1140" y="539" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">standard DC/AC tables</text>
+  <text data-role="block-label" data-owner="huff" x="1140" y="554" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">HUFF_BANKS-deep ring</text>
+  <rect id="zigzag" x="1360" y="486" width="220" height="96" fill="#FEF3C7" stroke="#D97706" stroke-width="1.4" rx="8" data-role="block" class="hd-dk13"/>
+  <text data-role="block-label" data-owner="zigzag" x="1470" y="524" text-anchor="middle" font-size="14" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" fill="#1f2937" class="hd-dk11">zigzag_reorder</text>
+  <text data-role="block-label" data-owner="zigzag" x="1470" y="539" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">ROM address remap</text>
+  <text data-role="block-label" data-owner="zigzag" x="1470" y="554" text-anchor="middle" font-size="14" font-weight="400" opacity="0.85" fill="#1f2937" class="hd-dk11">double-buffered</text>
+  <mask id="edge-label-clearance" maskUnits="userSpaceOnUse">
+    <rect width="1921" height="656" fill="#ffffff"/>
+    <rect x="290.1" y="117.0" width="49.9" height="19.0" fill="#000000"/>
+    <rect x="608.0" y="117.0" width="74.0" height="19.0" fill="#000000"/>
+    <rect x="945.5" y="117.0" width="59.0" height="19.0" fill="#000000"/>
+    <rect x="1290.5" y="117.0" width="29.0" height="19.0" fill="#000000"/>
+    <rect x="1512.7" y="322.5" width="98.2" height="19.0" fill="#000000"/>
+    <rect x="1290.5" y="509.0" width="29.0" height="19.0" fill="#000000"/>
+    <rect x="938.2" y="509.0" width="73.6" height="19.0" fill="#000000"/>
+    <rect x="616.7" y="509.0" width="56.5" height="19.0" fill="#000000"/>
+    <rect x="283.0" y="509.0" width="64.0" height="19.0" fill="#000000"/>
+    <rect x="279.6" y="313.0" width="70.7" height="19.0" fill="#000000"/>
+    <rect x="639.0" y="338.3" width="24.0" height="19.0" fill="#000000"/>
+    <rect x="617.0" y="297.0" width="44.0" height="19.0" fill="#000000"/>
+    <rect x="862.2" y="208.0" width="60.7" height="19.0" fill="#000000"/>
+    <rect x="1148.0" y="253.0" width="112.4" height="19.0" fill="#000000"/>
+    <rect x="609.6" y="387.0" width="70.7" height="19.0" fill="#000000"/>
+    <rect x="816.0" y="439.5" width="82.4" height="19.0" fill="#000000"/>
+    <rect x="1025.9" y="449.0" width="63.2" height="19.0" fill="#000000"/>
+  </mask>
+  <path id="edge_video_in_to_rgb2yuv" d="M 260.0,142.0 L 370.0,142.0" stroke="#5C5C00" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)" mask="url(#edge-label-clearance)" data-role="edge" data-from="video_in" data-to="rgb2yuv" class="hd-dk14"/>
+  <path id="edge_rgb2yuv_to_ibuf" d="M 590.0,142.0 L 700.0,142.0" stroke="#5C5C00" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)" mask="url(#edge-label-clearance)" data-role="edge" data-from="rgb2yuv" data-to="ibuf" class="hd-dk14"/>
+  <path id="edge_ibuf_to_dct" d="M 920.0,142.0 L 1030.0,142.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" mask="url(#edge-label-clearance)" data-role="edge" data-from="ibuf" data-to="dct" class="hd-dk15"/>
+  <path id="edge_dct_to_quant" d="M 1250.0,142.0 L 1360.0,142.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" mask="url(#edge-label-clearance)" data-role="edge" data-from="dct" data-to="quant" class="hd-dk15"/>
+  <path id="edge_quant_to_zigzag" d="M 1506.7,190.0 L 1506.7,474.0 L 1470.0,474.0 L 1470.0,486.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" mask="url(#edge-label-clearance)" data-role="edge" data-from="quant" data-to="zigzag" class="hd-dk15"/>
+  <path id="edge_zigzag_to_huff" d="M 1360.0,534.0 L 1250.0,534.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" mask="url(#edge-label-clearance)" data-role="edge" data-from="zigzag" data-to="huff" class="hd-dk15"/>
+  <path id="edge_huff_to_packer" d="M 1030.0,534.0 L 920.0,534.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" mask="url(#edge-label-clearance)" data-role="edge" data-from="huff" data-to="packer" class="hd-dk15"/>
+  <path id="edge_packer_to_jfif" d="M 700.0,534.0 L 590.0,534.0" stroke="#5C5C00" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)" mask="url(#edge-label-clearance)" data-role="edge" data-from="packer" data-to="jfif" class="hd-dk14"/>
+  <path id="edge_jfif_to_jpeg_out" d="M 370.0,534.0 L 260.0,534.0" stroke="#5C5C00" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)" mask="url(#edge-label-clearance)" data-role="edge" data-from="jfif" data-to="jpeg_out" class="hd-dk14"/>
+  <path id="edge_host_to_regs" d="M 260.0,338.0 L 370.0,338.0" stroke="#0D47A1" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)" mask="url(#edge-label-clearance)" data-role="edge" data-from="host" data-to="regs" class="hd-dk16"/>
+  <path id="edge_regs_to_fsm" d="M 590.0,354.0 L 602.0,354.0 L 602.0,363.3 L 700.0,363.3" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="regs" data-to="fsm" class="hd-dk17"/>
+  <path id="edge_fsm_to_regs" d="M 700.0,326.7 L 688.0,326.7 L 688.0,322.0 L 590.0,322.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="regs" class="hd-dk17"/>
+  <path id="edge_fsm_to_ibuf" d="M 975.0,290.0 L 975.0,202.0 L 810.0,202.0 L 810.0,190.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="ibuf" data-net="fsm/seq" class="hd-dk17"/>
+  <path id="edge_fsm_to_quant" d="M 975.0,290.0 L 975.0,278.0 L 1433.3,278.0 L 1433.3,190.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="quant" data-net="fsm/seq" class="hd-dk17"/>
+  <path id="edge_fsm_to_jfif" d="M 975.0,400.0 L 975.0,412.0 L 480.0,412.0 L 480.0,486.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="jfif" data-net="fsm/seq" class="hd-dk17"/>
+  <path id="edge_fsm_to_packer" d="M 975.0,400.0 L 975.0,412.0 L 810.0,412.0 L 810.0,486.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="packer" data-net="fsm/seq" class="hd-dk17"/>
+  <path id="edge_fsm_to_huff" d="M 975.0,400.0 L 975.0,474.0 L 1140.0,474.0 L 1140.0,486.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" mask="url(#edge-label-clearance)" data-role="edge" data-from="fsm" data-to="huff" data-net="fsm/seq" class="hd-dk17"/>
+  <circle cx="975.0" cy="278.0" r="3.5" fill="#B45309" data-role="junction" class="hd-dk6"/>
+  <circle cx="810.0" cy="412.0" r="3.5" fill="#B45309" data-role="junction" class="hd-dk6"/>
+  <circle cx="975.0" cy="412.0" r="3.5" fill="#B45309" data-role="junction" class="hd-dk6"/>
+  <text data-role="edge-label" data-owner="edge_video_in_to_rgb2yuv" x="315.0" y="131.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">16/24b</text>
+  <text data-role="edge-label" data-owner="edge_rgb2yuv_to_ibuf" x="645.0" y="131.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">16b YUYV</text>
+  <text data-role="edge-label" data-owner="edge_ibuf_to_dct" x="975.0" y="131.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">8b, -128</text>
+  <text data-role="edge-label" data-owner="edge_dct_to_quant" x="1305.0" y="131.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">16b</text>
+  <text data-role="edge-label" data-owner="edge_quant_to_zigzag" x="1561.8" y="337.2" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">16b quantized</text>
+  <text data-role="edge-label" data-owner="edge_zigzag_to_huff" x="1305.0" y="523.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">16b</text>
+  <text data-role="edge-label" data-owner="edge_huff_to_packer" x="975.0" y="523.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">code + len</text>
+  <text data-role="edge-label" data-owner="edge_packer_to_jfif" x="645.0" y="523.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">8b scan</text>
+  <text data-role="edge-label" data-owner="edge_jfif_to_jpeg_out" x="315.0" y="523.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">AXI-S 8b</text>
+  <text data-role="edge-label" data-owner="edge_host_to_regs" x="315.0" y="327.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">AXI-L 32b</text>
+  <text data-role="edge-label" data-owner="edge_regs_to_fsm" x="651.0" y="353.1" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">ctrl</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_regs" x="639.0" y="311.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">status</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_ibuf" x="892.5" y="222.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">blk_start</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_quant" x="1204.2" y="267.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">quality, comp_id</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_jfif" x="645.0" y="401.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">start/done</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_packer" x="857.2" y="454.2" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">flush, RSTn</text>
+  <text data-role="edge-label" data-owner="edge_fsm_to_huff" x="1057.5" y="463.8" text-anchor="middle" font-size="15" fill="#1f2937" class="hd-dk0">DC reset</text>
+  <rect id="legend_card" x="1665" y="70" width="240" height="286" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" rx="6" data-role="legend" class="hd-dk18"/>
+  <text x="1785" y="98" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937" letter-spacing="0.4" class="hd-dk0">Functions</text>
+  <rect x="1679" y="110" width="22" height="14" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.2" rx="2" class="hd-dk10"/>
+  <text x="1711" y="122" font-size="13" fill="#1f2937" class="hd-dk0">Pixels to coefficients</text>
+  <rect x="1679" y="132" width="22" height="14" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.2" rx="2" class="hd-dk12"/>
+  <text x="1711" y="144" font-size="13" fill="#1f2937" class="hd-dk0">Registers and frame control</text>
+  <rect x="1679" y="154" width="22" height="14" fill="#FEF3C7" stroke="#D97706" stroke-width="1.2" rx="2" class="hd-dk13"/>
+  <text x="1711" y="166" font-size="13" fill="#1f2937" class="hd-dk0">Entropy coding to JFIF</text>
+  <text x="1785" y="194" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937" letter-spacing="0.4" class="hd-dk0">Blocks</text>
+  <rect x="1679" y="206" width="22" height="14" fill="#f8fafc" stroke="#374151" stroke-width="1.2" rx="2" stroke-dasharray="3,3" class="hd-dk19"/>
+  <text x="1711" y="218" font-size="13" fill="#1f2937" class="hd-dk0">Optional (generate)</text>
+  <text x="1785" y="246" text-anchor="middle" font-size="13" font-weight="700" fill="#1f2937" letter-spacing="0.4" class="hd-dk0">Connection styles</text>
+  <path id="legend-arrow-axi-stream" d="M 1679,265.0 L 1721,265.0" stroke="#5C5C00" stroke-width="2.2" fill="none" marker-end="url(#ah-stream)" class="hd-dk14"/>
+  <text x="1731" y="270" font-size="13" fill="#1f2937" class="hd-dk0">AXI-Stream</text>
+  <path id="legend-arrow-generic" d="M 1679,287.0 L 1721,287.0" stroke="#374151" stroke-width="1.4" fill="none" marker-end="url(#ah-thin)" class="hd-dk15"/>
+  <text x="1731" y="292" font-size="13" fill="#1f2937" class="hd-dk0">Generic / discrete</text>
+  <path id="legend-arrow-axi-lite" d="M 1679,309.0 L 1721,309.0" stroke="#0D47A1" stroke-width="2.5" fill="none" marker-end="url(#ah-axil)" class="hd-dk16"/>
+  <text x="1731" y="314" font-size="13" fill="#1f2937" class="hd-dk0">AXI4-Lite control</text>
+  <path id="legend-arrow-control" d="M 1679,331.0 L 1721,331.0" stroke="#B45309" stroke-width="1.6" fill="none" marker-end="url(#ah-ctl)" stroke-dasharray="5,4" class="hd-dk17"/>
+  <text x="1731" y="336" font-size="13" fill="#1f2937" class="hd-dk0">Control / sequencing</text>
+  <text x="40" y="612" font-size="13" font-style="italic" fill="#374151" data-role="note" class="hd-dk1">JPEG output has no backpressure: the sink must accept every byte (add a 256-512 B FIFO if it can stall).</text>
 </svg>

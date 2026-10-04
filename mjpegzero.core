@@ -1,5 +1,5 @@
 CAPI=2:
-name: bard0-design:mjpegzero:mjpegzero_enc:0.2.0
+name: bard0-design:mjpegzero:mjpegzero_enc:0.3.0
 description: "Synthesizable MJPEG encoder — behavioral Verilog 2001, AXI4-Stream + AXI4-Lite, 150 MHz, up to 1080p30"
 
 filesets:

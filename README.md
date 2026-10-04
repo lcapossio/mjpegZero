@@ -58,12 +58,17 @@ A Python reference encoder is included for validation and test vector generation
 
 
 <a href="docs/architecture.svg">
-  <img src="docs/architecture.svg" alt="mjpegZero encoder top-level architecture" width="100%">
+  <img src="docs/architecture.svg" alt="mjpegZero encoder block diagram: video in, rgb_to_ycbcr, input_buffer, dct_2d, quantizer, zigzag_reorder, huffman_encoder, bitstream_packer, jfif_writer, JPEG out, with AXI4-Lite registers and the frame-control FSM sequencing the pipeline" width="100%">
 </a>
 
-The editable diagram spec [`docs/architecture.json`](docs/architecture.json)
-and rendered SVG [`docs/architecture.svg`](docs/architecture.svg) were created
-with the [`hdldiagZero`](https://github.com/lcapossio/hdldiagZero) skill.
+Pixels flow along the top row into the DCT and quantizer, then back along the
+bottom row through entropy coding to the JFIF byte stream. The frame-control
+FSM in the middle admits blocks, latches QUALITY/RESTART per frame, and drives
+the header, flush, restart-marker and DC-predictor resets.
+
+The diagram is rendered from [`docs/architecture.json`](docs/architecture.json)
+with the [`hdldiagZero`](https://github.com/lcapossio/hdldiagZero) skill; it
+follows the viewer's light or dark theme.
 
 <a id="interfaces"></a>
 ## Interfaces <sub>[↑ Top](#top)</sub>
@@ -426,7 +431,7 @@ The sim targets are a smoke test (SOI/EOI/size); for golden-checked runs use
 To use mjpegZero as a dependency in your own FuseSoC project, add to your `.core` file:
 ```yaml
 depend:
-  - bard0-design:mjpegzero:mjpegzero_enc:0.2.0
+  - bard0-design:mjpegzero:mjpegzero_enc:0.3.0
 ```
 
 <a id="litex-integration"></a>

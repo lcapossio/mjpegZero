@@ -6,6 +6,10 @@ All notable changes to mjpegZero are documented here.
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-10-04
+
 ### Added
 - **Native VHDL-1993 port** (`rtl/vhdl/`, 15 sources) mirroring the Verilog
   core module for module, with AMD synthesis/post-synthesis scripts, an Arty A7
@@ -109,6 +113,10 @@ All notable changes to mjpegZero are documented here.
   against Verilog. Wired into CI and `run_ci_local.py`.
 - **VHDL `VID_DATA_W` derived from `RGB_INPUT`** (`vid_data_w()`), as in
   Verilog; the free generic is gone.
+- **README architecture diagram** redrawn from `docs/architecture.json` with
+  hdldiagZero 1.3.0: U-turn pipeline layout, frame-control fan-out to the
+  stages it sequences, colour by function, follows the viewer's light/dark
+  theme.
 
 ### Removed
 - `example_proj/common/python/host.tcl` — Vivado Hardware Manager script
@@ -205,6 +213,7 @@ First public release.
 
 ---
 
-[Unreleased]: https://github.com/lcapossio/mjpegZero/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lcapossio/mjpegZero/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lcapossio/mjpegZero/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lcapossio/mjpegZero/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lcapossio/mjpegZero/releases/tag/v0.1.0
