@@ -432,7 +432,7 @@ jobs:
       - name: Set up Python, FuseSoC, Verilator, iverilog, test image
         uses: ./.github/actions/setup-sim
         with:
-          apt-packages: verilator make iverilog
+          apt-packages: verilator make iverilog ffmpeg
           pip-extra: "fusesoc>=2.4,<3"
 
       - name: Register core library
