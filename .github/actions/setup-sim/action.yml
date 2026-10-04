@@ -40,7 +40,13 @@ runs:
 
     - name: Install Python dependencies
       shell: bash
-      run: pip install -r python/requirements.txt ${{ inputs.pip-extra }}
+      # Through env, not inline: an inline `<3` in a spec like
+      # "cocotb>=2.0,<3" is parsed by bash as a redirect.
+      env:
+        PIP_EXTRA: ${{ inputs.pip-extra }}
+      run: |
+        read -ra extra <<< "$PIP_EXTRA"
+        pip install -r python/requirements.txt "${extra[@]}"
 
     - name: Restore test image
       id: img

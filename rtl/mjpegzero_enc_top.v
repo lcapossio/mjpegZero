@@ -35,7 +35,7 @@ module mjpegzero_enc_top #(
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
     parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth (blocks in flight): 2, 4, or 8 only; higher = more throughput, more LUTRAM
-    parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
+    parameter VID_DATA_W    = (RGB_INPUT != 0) ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -429,7 +429,7 @@ module mjpegzero_enc_top #(
     wire        vid_yuyv_tuser;
 
     generate
-        if (RGB_INPUT) begin : g_rgb_input
+        if (RGB_INPUT != 0) begin : g_rgb_input
             // ENABLE=0 stalls the stream (no handshake) rather than
             // accepting and dropping pixels.
             wire rgb_tready;
