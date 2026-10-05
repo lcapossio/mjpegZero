@@ -9,7 +9,8 @@
 // sender address must drive the emitted RTP/JPEG stream, which is captured off
 // the arbiter's output and depacketized by python/rtp_jpeg_verify.py.
 //
-// net_rx ignores IP/UDP checksums, so the trigger frame uses csum=0.
+// net_rx drops IPv4 headers with a bad checksum, so the trigger frame carries
+// a computed one; the UDP checksum is 0 (none), which net_rx accepts.
 // Shared identity/port constants below MUST match scripts/run_rtp_eth_sim.py
 // (which passes the expected destination to the verifier as gate G5).
 //
@@ -67,7 +68,7 @@ module tb_jpeg_rtp_eth #(
     reg        rx_tlast;
     reg        rx_tsof;
 
-    wire [7:0]  ud_data;  wire ud_valid, ud_last;
+    wire [7:0]  ud_data;  wire ud_valid, ud_last, ud_err;
     wire [31:0] ud_src_ip;
     wire [15:0] ud_src_port, ud_dst_port, ud_length;
     wire [47:0] rx_src_mac;
@@ -78,7 +79,7 @@ module tb_jpeg_rtp_eth #(
         .s_axis_tlast(rx_tlast), .s_axis_tsof(rx_tsof), .s_axis_terror(1'b0),
         .arp_data(), .arp_valid(), .arp_last(),
         .icmp_data(), .icmp_valid(), .icmp_last(), .icmp_src_ip(),
-        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last),
+        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err),
         .udp_src_ip(ud_src_ip), .udp_src_port(ud_src_port),
         .udp_dst_port(ud_dst_port), .udp_length(ud_length),
         .rx_src_mac(rx_src_mac),
@@ -100,7 +101,7 @@ module tb_jpeg_rtp_eth #(
         .RTP_SRC_PORT(RTP_SRC_PORT)
     ) u_trig (
         .clk(clk), .rst_n(rst_n),
-        .udp_valid(ud_valid), .udp_last(ud_last), .udp_dst_port(ud_dst_port),
+        .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err), .udp_dst_port(ud_dst_port),
         .udp_rx_src_mac(rx_src_mac), .udp_rx_src_ip(ud_src_ip),
         .busy(busy),
         .start(trg_start), .dst_mac(trg_dst_mac), .dst_ip(trg_dst_ip),
@@ -191,10 +192,12 @@ module tb_jpeg_rtp_eth #(
     end
 
     // ====================================================================
-    // Trigger frame (Eth/IPv4/UDP to TRIGGER_PORT, 4-byte payload, csum=0)
+    // Trigger frame (Eth/IPv4/UDP to TRIGGER_PORT, 4-byte payload)
     // ====================================================================
     localparam FRAME_LEN = 46;
     reg [7:0] trig [0:FRAME_LEN-1];
+    reg [31:0] ip_sum;
+    integer    k;
     initial begin
         // Ethernet
         trig[0]=FPGA_MAC[47:40]; trig[1]=FPGA_MAC[39:32]; trig[2]=FPGA_MAC[31:24];
@@ -202,7 +205,7 @@ module tb_jpeg_rtp_eth #(
         trig[6]=HOST_MAC[47:40]; trig[7]=HOST_MAC[39:32]; trig[8]=HOST_MAC[31:24];
         trig[9]=HOST_MAC[23:16]; trig[10]=HOST_MAC[15:8]; trig[11]=HOST_MAC[7:0];
         trig[12]=8'h08; trig[13]=8'h00;
-        // IPv4 (total len 32, id 0, proto UDP, csum 0)
+        // IPv4 (total len 32, id 0, proto UDP, csum filled in below)
         trig[14]=8'h45; trig[15]=8'h00; trig[16]=8'h00; trig[17]=8'h20;
         trig[18]=8'h00; trig[19]=8'h00; trig[20]=8'h40; trig[21]=8'h00;
         trig[22]=8'h40; trig[23]=8'h11; trig[24]=8'h00; trig[25]=8'h00;
@@ -216,6 +219,13 @@ module tb_jpeg_rtp_eth #(
         trig[38]=8'h00; trig[39]=8'h0C; trig[40]=8'h00; trig[41]=8'h00;
         // payload
         trig[42]=8'h01; trig[43]=8'h02; trig[44]=8'h03; trig[45]=8'h04;
+        // IPv4 header checksum: ones'-complement of the folded 16-bit sum
+        ip_sum = 32'd0;
+        for (k = 14; k < 34; k = k + 2)
+            ip_sum = ip_sum + {trig[k], trig[k+1]};
+        ip_sum = (ip_sum & 32'hFFFF) + (ip_sum >> 16);
+        ip_sum = (ip_sum & 32'hFFFF) + (ip_sum >> 16);
+        trig[24] = ~ip_sum[15:8]; trig[25] = ~ip_sum[7:0];
     end
 
     // ====================================================================

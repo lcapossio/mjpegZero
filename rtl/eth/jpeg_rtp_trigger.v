@@ -29,6 +29,7 @@ module jpeg_rtp_trigger #(
     // From net_rx (UDP payload stream + parsed metadata)
     input  wire        udp_valid,
     input  wire        udp_last,
+    input  wire        udp_err,       // net_rx: discard this datagram
     input  wire [15:0] udp_dst_port,
     input  wire [47:0] udp_rx_src_mac,
     input  wire [31:0] udp_rx_src_ip,
@@ -53,7 +54,7 @@ module jpeg_rtp_trigger #(
             src_port <= RTP_SRC_PORT;
         end else begin
             start <= 1'b0;
-            if (udp_valid && udp_last &&
+            if (udp_valid && udp_last && !udp_err &&
                 (udp_dst_port == TRIGGER_PORT) && !busy) begin
                 start    <= 1'b1;
                 dst_mac  <= udp_rx_src_mac;

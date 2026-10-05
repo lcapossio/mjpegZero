@@ -50,7 +50,7 @@ module tb_vtpg_stream;
     wire [31:0] box_img_x_step_r, box_img_y_step_r;
     vtpg_udp_control u_udp_control (
         .clk(clk), .rst_n(rst_n),
-        .udp_data(8'd0), .udp_valid(1'b0), .udp_last(1'b0), .udp_dst_port(16'd0),
+        .udp_data(8'd0), .udp_valid(1'b0), .udp_last(1'b0), .udp_err(1'b0), .udp_dst_port(16'd0),
         .start_loop(), .stop_loop(), .single_req(),
         .cfg_pattern(cfg_pattern_r), .solid_color(solid_color_r), .box_color(box_color_r),
         .box_w(box_w_r), .box_h(box_h_r), .box_dx(box_dx_r), .box_dy(box_dy_r),

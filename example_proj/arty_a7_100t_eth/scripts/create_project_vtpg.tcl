@@ -72,6 +72,7 @@ set rtl_files [list \
     $emac_rtl/async_fifo.v \
     $emac_rtl/sync_fifo.v \
     $emac_rtl/mii_if.v \
+    $emac_rtl/mii_tx_saf.v \
     $emac_rtl/eth_mac_rx.v \
     $emac_rtl/eth_mac_tx.v \
     $emac_rtl/eth_mac.v \
@@ -82,6 +83,7 @@ set rtl_files [list \
     $emac_rtl/ddr_output.v \
     $emac_rtl/ddr_input.v \
     $emac_rtl/rgmii_if.v \
+    $emac_rtl/gmii_if.v \
     $emac_rtl/gmii_cdc.v \
     $emac_rtl/net/tx_csum_off.v \
     $emac_rtl/eth_mac_sys.v \
