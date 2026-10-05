@@ -137,8 +137,12 @@ def run_synth_script(vendor, tcl_script, log_name):
 # Report checker
 # ---------------------------------------------------------------------------
 
-def check_reports(vendor):
-    """Parse and display synthesis/implementation reports."""
+def check_reports(vendor, stages=("synth", "impl")):
+    """Parse and display synthesis/implementation reports.
+
+    Returns False if a requested stage has no report, its WNS cannot be
+    parsed, or timing is violated, so callers can exit nonzero."""
+    ok = True
     for stage, subdir in [("Synthesis", "synth"), ("Implementation", "impl")]:
         report_dir  = os.path.join(BUILD_DIR, subdir)
         util_file   = os.path.join(report_dir, "utilization.rpt")
@@ -146,6 +150,8 @@ def check_reports(vendor):
 
         if not os.path.exists(util_file):
             print(f"\n{stage}: No reports found")
+            if subdir in stages:
+                ok = False
             continue
 
         print(f"\n{'='*60}")
@@ -182,7 +188,16 @@ def check_reports(vendor):
             if wns is not None:
                 status = "MET" if wns >= 0 else "VIOLATED"
                 print(f"  WNS: {wns:+.3f} ns  ({status})")
+                if wns < 0 and subdir in stages:
+                    ok = False
+            elif subdir in stages:
+                print("  ERROR: could not parse WNS")
+                ok = False
             print("Timing report available at:", timing_file)
+        elif subdir in stages:
+            print(f"  ERROR: no timing report at {timing_file}")
+            ok = False
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -212,8 +227,7 @@ def main():
     synth_dir = os.path.join(SCRIPT_DIR, "synth", vendor)
 
     if args.action == "check":
-        check_reports(vendor)
-        return 0
+        return 0 if check_reports(vendor) else 1
 
     synth_tcl = os.path.join(synth_dir, "run_synth.tcl")
     impl_tcl  = os.path.join(synth_dir, "run_impl.tcl")
@@ -227,7 +241,8 @@ def main():
         ok = run_synth_script(vendor, synth_tcl, f"synth_{vendor}")
         if not ok:
             return 1
-        check_reports(vendor)
+        if args.action == "synth" and not check_reports(vendor, ("synth",)):
+            return 1
 
     if args.action == "impl":
         if not os.path.isfile(impl_tcl):
@@ -237,7 +252,8 @@ def main():
         ok = run_synth_script(vendor, impl_tcl, f"impl_{vendor}")
         if not ok:
             return 1
-        check_reports(vendor)
+        if not check_reports(vendor):
+            return 1
 
     return 0
 

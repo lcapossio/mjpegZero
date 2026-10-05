@@ -9,6 +9,15 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR cancels the superseded run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -17,23 +26,21 @@ jobs:
   verify:
     name: Python verification (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.11", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      # Includes python/test_encoder.py: the reference-encoder PSNR check.
+      - name: Set up Python ${{ matrix.python-version }}, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          pip install -r python/requirements.txt
+          apt-packages: ffmpeg
+          pip-extra: "pytest>=8,<10"
 
       - name: Verify Huffman ROM tables
         run: python python/verify_huffman_rom.py
@@ -44,8 +51,8 @@ jobs:
       - name: Verify quality-scale formula agrees across RTL/VHDL/Python
         run: python python/verify_quality_scale.py
 
-      - name: Python reference encoder test (PSNR check)
-        run: python python/test_encoder.py
+      - name: LiteX integration unit tests (pytest)
+        run: python -m pytest tests -q
 
       - name: Visual quality comparison (mandrill encode/decode, Q=50/75/95)
         run: |
@@ -66,6 +73,7 @@ jobs:
   rtl-lint:
     name: RTL lint (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -94,10 +102,10 @@ jobs:
           verilator --lint-only -Wall --bbox-unsup rtl/bram_sdp.v rtl/input_buffer.v
 
       - name: Lint quantizer (LITE_MODE=0)
-        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 rtl/quantizer.v
+        run: verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 rtl/quantizer.v
 
       - name: Lint quantizer (LITE_MODE=1)
-        run: verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 rtl/quantizer.v
+        run: verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 rtl/quantizer.v
 
       - name: Lint huffman_encoder
         run: verilator --lint-only -Wall --bbox-unsup rtl/huffman_encoder.v
@@ -107,7 +115,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=0, RGB_INPUT=0)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -123,7 +131,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=1, RGB_INPUT=0)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -139,7 +147,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=1, RGB_INPUT=1)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=1 -DRGB_INPUT=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=1 -GRGB_INPUT=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -155,7 +163,7 @@ jobs:
 
       - name: Lint top-level (LITE_MODE=0, RGB_INPUT=1)
         run: |
-          verilator --lint-only -Wall --bbox-unsup -DLITE_MODE=0 -DRGB_INPUT=1 \
+          verilator --lint-only -Wall --bbox-unsup -GLITE_MODE=0 -GRGB_INPUT=1 \
             rtl/bram_sdp.v \
             rtl/dct_1d.v \
             rtl/dct_2d.v \
@@ -183,6 +191,7 @@ jobs:
   vhdl-lint:
     name: VHDL lint (GHDL)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -223,29 +232,29 @@ jobs:
   rtl-sim:
     name: RTL variant tests (iverilog)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, iverilog, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test image (download mandrill or synthetic fallback)
-        run: python python/test_encoder.py
+          apt-packages: iverilog ffmpeg
 
       # Entropy-path unit benches: deterministic guards for the gapless zigzag
       # cross-block leak, the packer bp_ready backpressure drop, and the restart
       # tail-bit drop — bugs the full-encoder golden does not reliably exercise.
       - name: RTL unit benches (zigzag gapless / packer backpressure / restart)
         run: python python/run_unit_benches.py
+
+      # Throughput floor: Q100 on the busiest mandrill strip is the worst case
+      # for the entropy path. Measured ~80 fps (DCT-limited); a regression that
+      # makes Huffman/packer the bottleneck again drops well below 75.
+      - name: Throughput guard (Q100 worst-case strip, >= 75 fps 720p @ 150 MHz)
+        run: |
+          test -f sim/test_vectors/yuyv_720p.hex || python python/generate_test_vectors.py
+          python python/measure_throughput.py --quality 100 --rows 0 --min-fps 75
 
       # NOTE: the core golden (full/lite, single frame) is owned by the Verilator
       # job (rtl-verilator-sim) and the cocotb-dual job. This iverilog job runs
@@ -316,6 +325,29 @@ jobs:
       - name: AXI register coverage (lite mode, 2 frames)
         run: python python/verify_axi_regs.py --lite
 
+      # Back-to-back multi-row streams of DIFFERENT frames (next SOF arrives
+      # while the previous frame is still encoding). Every frame is decoded
+      # restart-aware and checked against the Python reference (SOF/DRI/DQT/DHT
+      # bytes, RST sequence, +/-1 coefficients). Guards per-frame QUALITY /
+      # RESTART latching, ENABLE stalling (not dropping) input, QUALITY clamp,
+      # FRAME_SIZE, the SOF bank handling and widths above 2048.
+      - name: Stream — back-to-back frames (full, 128x24 x3)
+        run: python python/verify_stream.py
+      - name: Stream — QUALITY change mid-frame (clamped 120 -> 100) + restart wrap
+        run: python python/verify_stream.py --quality2 120 --restart 2
+      - name: Stream — Q<50, HUFF_BANKS=4, random gaps
+        run: python python/verify_stream.py --quality 30 --huff-banks 4 --gaps
+      - name: Stream — lite, ENABLE toggled mid-frame, HUFF_BANKS=2
+        run: python python/verify_stream.py --lite --toggle-enable --huff-banks 2
+      - name: Stream — QUALITY=0 clamps to 1
+        run: python python/verify_stream.py --quality 10 --quality2 0
+      - name: Stream — lite Q95, restart 3, gaps
+        run: python python/verify_stream.py --lite --quality 95 --restart 3 --gaps
+      - name: Stream — RGB input + EXIF
+        run: python python/verify_stream.py --rgb --exif --restart 3
+      - name: Stream — width 4096 (> 2048 counter widths)
+        run: python python/verify_stream.py --width 4096 --height 8 --frames 2
+
       - name: Upload simulation artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -330,23 +362,15 @@ jobs:
   rtl-verilator-sim:
     name: RTL sim (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Verilator, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends verilator g++ make ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test vectors
-        run: python python/test_encoder.py
+          apt-packages: verilator g++ make ffmpeg
 
       - name: Verilator sim — full mode (Q=50/75/95)
         run: python python/run_verilator_sim.py
@@ -368,23 +392,15 @@ jobs:
   rtl-coverage:
     name: RTL coverage (Verilator)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Verilator, lcov, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends verilator g++ make lcov ffmpeg
-          pip install -r python/requirements.txt
-
-      - name: Generate test vectors
-        run: python python/test_encoder.py
+          apt-packages: verilator g++ make lcov ffmpeg
 
       - name: Run coverage (full mode, Q=50/75/95)
         run: python python/run_coverage.py --html
@@ -403,25 +419,21 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # FuseSoC — core descriptor validation + lint via FuseSoC/Verilator
+  # FuseSoC — core descriptor validation, lint, and sim-target smoke test
   # ---------------------------------------------------------------------------
   fusesoc:
-    name: FuseSoC (core validation + lint)
+    name: FuseSoC (core validation + lint + sim)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, FuseSoC, Verilator, iverilog, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
-
-      - name: Install FuseSoC and Verilator
-        run: |
-          sudo apt-get update
-          pip install fusesoc
-          sudo apt-get install -y --no-install-recommends verilator make
+          apt-packages: verilator make iverilog ffmpeg
+          pip-extra: "fusesoc>=2.4,<3"
 
       - name: Register core library
         run: fusesoc library add mjpegzero .
@@ -435,6 +447,15 @@ jobs:
       - name: Lint via FuseSoC (Verilator, LITE_MODE=0)
         run: fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
 
+      # tb_iverilog always exits 0, so gate on its summary line.
+      - name: Sim targets via FuseSoC (icarus smoke test, full + lite)
+        run: |
+          python python/generate_test_vectors.py
+          fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc | tee fs_sim.log
+          grep -q "ALL TESTS PASSED" fs_sim.log
+          fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc | tee fs_sim_lite.log
+          grep -q "ALL TESTS PASSED" fs_sim_lite.log
+
   # ---------------------------------------------------------------------------
   # cocotb dual-language sim - ONE testbench, both ports: Verilog (Icarus) and
   # VHDL (GHDL), each golden-checked. Gives the VHDL port real CI coverage.
@@ -442,19 +463,19 @@ jobs:
   cocotb-dual:
     name: cocotb (Verilog + VHDL)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up Python, Icarus, cocotb, deps, test image
+        uses: ./.github/actions/setup-sim
         with:
-          python-version: "3.12"
+          apt-packages: iverilog ffmpeg
+          pip-extra: "cocotb>=2.0,<3"
 
-      - name: Install simulators (Icarus + GHDL) and cocotb
+      - name: Install GHDL
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends iverilog ffmpeg
           # Use GHDL's GCC backend (compiled, fast). NOT ghdl-llvm: on Ubuntu 24.04
           # ghdl-llvm 4.1.0 links the soname "libLLVM-18.so.18.1", but the distro's
           # libllvm18 only ships "libLLVM.so.18.1" -> the LLVM backend dies at
@@ -465,13 +486,9 @@ jobs:
             || sudo apt-get install -y --no-install-recommends ghdl-mcode \
             || sudo apt-get install -y --no-install-recommends ghdl
           ghdl --version
-          pip install cocotb
-          pip install -r python/requirements.txt
 
-      - name: Generate test image, vectors + golden references
-        run: |
-          python python/test_encoder.py          # downloads mandrill (or synthetic fallback)
-          python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
+      - name: Generate test vectors + golden references
+        run: python python/generate_test_vectors.py  # 4-MCU yuyv_input.hex + reference_4mcu*.jpg
 
       - name: cocotb - Verilog/Icarus (full Q95)
         run: python sim/cocotb/test_runner.py verilog full 95 1
@@ -490,6 +507,20 @@ jobs:
 
       - name: cocotb - VHDL/GHDL (multi-frame, full Q95 x2)
         run: python sim/cocotb/test_runner.py vhdl full 95 2
+
+      # VHDL port through the same back-to-back stream checks as the Verilog
+      # rtl-sim job, plus --xcheck: the Verilog iverilog testbench runs the same
+      # input and every VHDL frame must be byte-identical to it.
+      - name: Stream VHDL — QUALITY change, restart wrap, gaps (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --quality2 30 --restart 3 --gaps
+      - name: Stream VHDL — lite, restart 1, ENABLE toggle (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --lite --quality 95 --restart 1 --toggle-enable
+      - name: Stream VHDL — RGB input, HUFF_BANKS=2, restart 5 (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --rgb --huff-banks 2 --restart 5
+      - name: Stream VHDL — EXIF, Q100 -> QUALITY=0 clamp, HUFF_BANKS=4 (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --exif --quality 100 --quality2 0 --huff-banks 4
+      - name: Stream VHDL — lite RGB + EXIF + gaps (vs Verilog)
+        run: python python/verify_stream.py --sim cocotb-vhdl --xcheck --width 64 --height 16 --lite --rgb --exif --gaps
 
       # Demo JPEG output path (capture -> buffer -> RTP), Icarus-only. Self-
       # contained: builds a synthetic JPEG, no test vectors/ffmpeg needed.

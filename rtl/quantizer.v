@@ -55,7 +55,11 @@ module quantizer #(
     // Q-table read port (for JFIF writer to read current Q values)
     input  wire [5:0]  qt_rd_addr,
     input  wire        qt_rd_is_chroma,
-    output reg  [7:0]  qt_rd_data
+    output reg  [7:0]  qt_rd_data,
+
+    // High while the Q tables do not yet match `quality` (full mode: the
+    // update FSM is pending or running; lite mode: never)
+    output wire        tables_busy
 );
 
     // ========================================================================
@@ -283,14 +287,21 @@ if (LITE_MODE == 0) begin : g_full_quality
     // Intermediate computation registers
     // ------------------------------------------------------------------
     reg [20:0] scaled_raw;
-    reg [20:0] scaled_plus50_r;
+    reg [14:0] scaled_plus50_r;       // n + 50, saturated to 25600
+    // Exact floor(n/100): (n * 41944) >> 22 is exact for n < 43690. Any
+    // n >= 25600 gives a quotient >= 256 (clamped to 255 anyway), so n is
+    // saturated to 25600 first. (The old n*1311>>17 over-rounded large n,
+    // e.g. 12998 -> 130 instead of 129, so Q<50 tables drifted from IJG.)
     /* verilator lint_off UNUSEDSIGNAL */
     reg [31:0] div100_product_r;
     /* verilator lint_on UNUSEDSIGNAL */
+    // (saturation is registered in UPD_ADD, keeping the compare off the DSP input)
+    wire [14:0] div100_num = scaled_plus50_r;
+    wire [9:0]  div100_q   = div100_product_r[31:22];
     wire [7:0] div100_result;
-    assign div100_result = (div100_product_r[31:17] > 15'd255) ? 8'd255 :
-                           (div100_product_r[31:17] < 15'd1)   ? 8'd1  :
-                           div100_product_r[24:17];
+    assign div100_result = (div100_q > 10'd255) ? 8'd255 :
+                           (div100_q < 10'd1)   ? 8'd1  :
+                           div100_q[7:0];
 
     // ------------------------------------------------------------------
     // Q-table update state machine
@@ -300,11 +311,15 @@ if (LITE_MODE == 0) begin : g_full_quality
     localparam UPD_ADD      = 3'd2;
     localparam UPD_DIV      = 3'd3;
     localparam UPD_RECIP    = 3'd4;
+    localparam UPD_LOAD     = 3'd5;   // base-table read, registered off the DSP input
 
     reg [2:0] upd_state;
     reg       upd_is_chroma;
     reg [5:0] upd_pos;
     reg [6:0] last_quality;
+    reg [7:0] upd_base;
+
+    assign tables_busy = (upd_state != UPD_IDLE) || (quality != last_quality);
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -320,22 +335,24 @@ if (LITE_MODE == 0) begin : g_full_quality
                         scale_factor  <= scale_factor_comb;
                         upd_is_chroma <= 1'b0;
                         upd_pos       <= 6'd0;
-                        upd_state     <= UPD_SCALE;
+                        upd_state     <= UPD_LOAD;
                     end
                 end
+                UPD_LOAD: begin
+                    upd_base  <= upd_is_chroma ? base_chroma[upd_pos] : base_luma[upd_pos];
+                    upd_state <= UPD_SCALE;
+                end
                 UPD_SCALE: begin
-                    if (upd_is_chroma)
-                        scaled_raw <= {13'd0, base_chroma[upd_pos]} * {8'd0, scale_factor};
-                    else
-                        scaled_raw <= {13'd0, base_luma[upd_pos]} * {8'd0, scale_factor};
+                    scaled_raw <= {13'd0, upd_base} * {8'd0, scale_factor};
                     upd_state <= UPD_ADD;
                 end
                 UPD_ADD: begin
-                    scaled_plus50_r <= scaled_raw + 21'd50;
+                    scaled_plus50_r <= (scaled_raw >= 21'd25550) ? 15'd25600
+                                                                 : scaled_raw[14:0] + 15'd50;
                     upd_state <= UPD_DIV;
                 end
                 UPD_DIV: begin
-                    div100_product_r <= {11'd0, scaled_plus50_r} * 32'd1311;
+                    div100_product_r <= {17'd0, div100_num} * 32'd41944;
                     upd_state <= UPD_RECIP;
                 end
                 UPD_RECIP: begin
@@ -352,11 +369,11 @@ if (LITE_MODE == 0) begin : g_full_quality
                             upd_state <= UPD_IDLE;
                         end else begin
                             upd_is_chroma <= 1'b1;
-                            upd_state     <= UPD_SCALE;
+                            upd_state     <= UPD_LOAD;
                         end
                     end else begin
                         upd_pos   <= upd_pos + 6'd1;
-                        upd_state <= UPD_SCALE;
+                        upd_state <= UPD_LOAD;
                     end
                 end
                 default: upd_state <= UPD_IDLE;
@@ -378,6 +395,7 @@ if (LITE_MODE == 0) begin : g_full_quality
     /* verilator coverage_on */
 
 end else begin : g_lite_quality
+    assign tables_busy = 1'b0;
     // ------------------------------------------------------------------
     // LITE MODE: Fixed tables computed from LITE_QUALITY parameter
     // No update FSM, no base tables at runtime, no reciprocal LUT

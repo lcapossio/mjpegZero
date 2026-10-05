@@ -54,9 +54,16 @@ def download_test_image(output_path):
             print(f"  Failed: {e}")
             continue
 
+    # Marker so CI can tell a synthetic image apart and never cache it.
+    marker = os.path.join(os.path.dirname(output_path), 'SYNTHETIC')
     if img is None:
         print("Could not download mandrill. Creating a rich synthetic test image instead.")
+        if os.environ.get('GITHUB_ACTIONS'):
+            print("::warning::mandrill download failed; using synthetic test image")
         img = _create_synthetic_test_image()
+        open(marker, 'w').close()
+    elif os.path.exists(marker):
+        os.remove(marker)
 
     # Convert to RGB if needed
     img = img.convert('RGB')

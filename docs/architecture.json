@@ -1,204 +1,69 @@
 {
-  "title": "mjpegZero Encoder Top-Level",
+  "title": "mjpegZero encoder (mjpegzero_enc_top)",
+  "subtitle": "8x8 blocks in MCU order (Y0 Y1 Cb Cr, 4:2:2) · one 150 MHz clock domain · Verilog 2001 and VHDL-1993",
+  "notes": ["JPEG output has no backpressure: the sink must accept every byte (add a 256-512 B FIFO if it can stall)."],
   "top": "mjpegzero_enc_top",
-  "theme": "dark",
-  "grid": {
-    "cell_w": 220,
-    "cell_h": 92,
-    "gutter_x": 118,
-    "gutter_y": 86,
-    "margin": 44
-  },
+  "theme": "auto",
+  "grid": {"cell_w": 220, "cell_h": 96, "gutter_x": 110, "gutter_y": 100, "margin": 40},
   "domains": {
-    "core": {
-      "color": "#90CAF9",
-      "border": "#1565C0"
-    }
+    "core": {"freq_mhz": 150}
+  },
+  "roles": {
+    "transform": {"label": "Pixels to coefficients"},
+    "control":   {"label": "Registers and frame control"},
+    "entropy":   {"label": "Entropy coding to JFIF"}
   },
   "blocks": [
-    {
-      "id": "video_in",
-      "label": "Video AXI4-Stream In",
-      "sublabel": "16b YUYV / 24b RGB",
-      "external": true,
-      "row": 0,
-      "col": 0
-    },
-    {
-      "id": "input_path",
-      "label": "Input Format Path",
-      "sublabel": "YUYV pass-through or rgb_to_ycbcr",
-      "domain": "core",
-      "row": 0,
-      "col": 1
-    },
-    {
-      "id": "input_buffer",
-      "label": "input_buffer",
-      "sublabel": "YUYV to 8x8 blocks",
-      "domain": "core",
-      "row": 0,
-      "col": 2
-    },
-    {
-      "id": "dct",
-      "label": "dct_2d",
-      "sublabel": "level-shifted samples",
-      "domain": "core",
-      "row": 0,
-      "col": 3
-    },
-    {
-      "id": "quantizer",
-      "label": "quantizer",
-      "sublabel": "quality + Q tables",
-      "domain": "core",
-      "row": 0,
-      "col": 4
-    },
-    {
-      "id": "zigzag",
-      "label": "zigzag_reorder",
-      "domain": "core",
-      "row": 1,
-      "col": 0
-    },
-    {
-      "id": "huffman",
-      "label": "huffman_encoder",
-      "sublabel": "entropy coding",
-      "domain": "core",
-      "row": 1,
-      "col": 1
-    },
-    {
-      "id": "bitpacker",
-      "label": "bitstream_packer",
-      "sublabel": "stuff, restart, flush",
-      "domain": "core",
-      "row": 1,
-      "col": 2
-    },
-    {
-      "id": "jfif",
-      "label": "jfif_writer",
-      "sublabel": "headers + scan stream",
-      "domain": "core",
-      "row": 1,
-      "col": 3
-    },
-    {
-      "id": "jpg_out",
-      "label": "JPEG AXI4-Stream Out",
-      "sublabel": "8b stream",
-      "external": true,
-      "row": 1,
-      "col": 4
-    },
-    {
-      "id": "host",
-      "label": "AXI4-Lite Host",
-      "external": true,
-      "row": 2,
-      "col": 1
-    },
-    {
-      "id": "regs",
-      "label": "axi4_lite_regs",
-      "sublabel": "enable, quality, status",
-      "domain": "core",
-      "row": 2,
-      "col": 2
-    },
-    {
-      "id": "frame_ctrl",
-      "label": "Top Frame Control",
-      "sublabel": "frame start/done, ready gating",
-      "domain": "core",
-      "row": 2,
-      "col": 3
-    },
-    {
-      "id": "comp_track",
-      "label": "Component Tracking FIFOs",
-      "sublabel": "comp_id latency alignment",
-      "domain": "core",
-      "row": 2,
-      "col": 4
-    }
+    {"id": "video_in", "lines": ["Video in", "AXI4-Stream slave", "16b YUYV / 24b RGB"],
+     "external": true, "side": "left", "row": 0, "col": 0},
+    {"id": "rgb2yuv", "lines": ["rgb_to_ycbcr", "BT.601 RGB to YUYV", "only if RGB_INPUT=1"],
+     "mono": true, "optional": true, "role": "transform", "domain": "core", "row": 0, "col": 1},
+    {"id": "ibuf", "lines": ["input_buffer", "8-line strip BRAM", "YUYV to 8x8 blocks"],
+     "mono": true, "role": "transform", "domain": "core", "row": 0, "col": 2},
+    {"id": "dct", "lines": ["dct_2d", "row/column 1-D DCT", "+ transpose buffer"],
+     "mono": true, "role": "transform", "domain": "core", "row": 0, "col": 3},
+    {"id": "quant", "lines": ["quantizer", "reciprocal multiply", "Q tables from QUALITY"],
+     "mono": true, "role": "transform", "domain": "core", "row": 0, "col": 4},
+
+    {"id": "host", "lines": ["Host", "AXI4-Lite master", "32b data, 5b addr"],
+     "external": true, "side": "left", "row": 1, "col": 0},
+    {"id": "regs", "lines": ["axi4_lite_regs", "CTRL / STATUS / QUALITY", "RESTART / FRAME_CNT/SIZE"],
+     "mono": true, "role": "control", "domain": "core", "row": 1, "col": 1},
+    {"id": "fsm", "lines": ["frame control", "IDLE > QWAIT > RUN > DRAIN",
+                            "latches QUALITY/RESTART per frame",
+                            "<= HUFF_BANKS blocks in flight"],
+     "role": "control", "domain": "core", "row": 1, "col": 2, "w": 550, "h": 110},
+
+    {"id": "jpeg_out", "lines": ["JPEG out", "AXI4-Stream master", "8b, no tready"],
+     "external": true, "side": "left", "row": 2, "col": 0},
+    {"id": "jfif", "lines": ["jfif_writer", "SOI APP0 DQT SOF0", "DHT SOS ... EOI"],
+     "mono": true, "role": "entropy", "domain": "core", "row": 2, "col": 1},
+    {"id": "packer", "lines": ["bitstream_packer", "bits to bytes", "FF to FF 00 stuffing"],
+     "mono": true, "role": "entropy", "domain": "core", "row": 2, "col": 2},
+    {"id": "huff", "lines": ["huffman_encoder", "standard DC/AC tables", "HUFF_BANKS-deep ring"],
+     "mono": true, "role": "entropy", "domain": "core", "row": 2, "col": 3},
+    {"id": "zigzag", "lines": ["zigzag_reorder", "ROM address remap", "double-buffered"],
+     "mono": true, "role": "entropy", "domain": "core", "row": 2, "col": 4}
   ],
   "edges": [
-    {
-      "from": "video_in",
-      "to": "input_path",
-      "kind": "axi-stream",
-      "width": "VID_DATA_W"
-    },
-    {
-      "from": "input_path",
-      "to": "input_buffer",
-      "kind": "axi-stream",
-      "width": 16
-    },
-    {
-      "from": "input_buffer",
-      "to": "dct",
-      "kind": "generic",
-      "width": 8
-    },
-    {
-      "from": "dct",
-      "to": "quantizer",
-      "kind": "generic",
-      "width": 16
-    },
-    {
-      "from": "quantizer",
-      "to": "zigzag",
-      "kind": "generic",
-      "width": 16
-    },
-    {
-      "from": "zigzag",
-      "to": "huffman",
-      "kind": "generic",
-      "width": 16
-    },
-    {
-      "from": "huffman",
-      "to": "bitpacker",
-      "kind": "generic",
-      "width": "38b"
-    },
-    {
-      "from": "bitpacker",
-      "to": "jfif",
-      "kind": "axi-stream",
-      "width": 8
-    },
-    {
-      "from": "jfif",
-      "to": "jpg_out",
-      "kind": "axi-stream",
-      "width": 8
-    },
-    {
-      "from": "host",
-      "to": "regs",
-      "kind": "axi-lite",
-      "width": 32
-    },
-    {
-      "from": "regs",
-      "to": "frame_ctrl",
-      "kind": "generic",
-      "width": "ctrl/status"
-    },
-    {
-      "from": "frame_ctrl",
-      "to": "comp_track",
-      "kind": "generic",
-      "width": "block pulses"
-    }
+    {"from": "video_in", "to": "rgb2yuv", "kind": "axi-stream", "label": "16/24b"},
+    {"from": "rgb2yuv", "to": "ibuf", "kind": "axi-stream", "label": "16b YUYV"},
+    {"from": "ibuf", "to": "dct", "kind": "generic", "label": "8b, -128"},
+    {"from": "dct", "to": "quant", "kind": "generic", "width": 16},
+    {"from": "quant", "to": "zigzag", "kind": "generic", "label": "16b quantized"},
+    {"from": "zigzag", "to": "huff", "kind": "generic", "width": 16},
+    {"from": "huff", "to": "packer", "kind": "generic", "label": "code + len"},
+    {"from": "packer", "to": "jfif", "kind": "axi-stream", "label": "8b scan"},
+    {"from": "jfif", "to": "jpeg_out", "kind": "axi-stream", "width": 8},
+
+    {"from": "host", "to": "regs", "kind": "axi-lite", "width": 32},
+    {"from": "regs", "to": "fsm", "kind": "control", "label": "ctrl"},
+    {"from": "fsm", "to": "regs", "kind": "control", "label": "status"},
+
+    {"from": "fsm", "to": "ibuf", "kind": "control", "net": "seq", "from_side": "top", "to_side": "bottom", "label": "blk_start"},
+    {"from": "fsm", "to": "quant", "kind": "control", "net": "seq", "from_side": "top", "to_side": "bottom", "label": "quality, comp_id"},
+    {"from": "fsm", "to": "jfif", "kind": "control", "net": "seq", "from_side": "bottom", "to_side": "top", "label": "start/done"},
+    {"from": "fsm", "to": "packer", "kind": "control", "net": "seq", "from_side": "bottom", "to_side": "top", "label": "flush, RSTn"},
+    {"from": "fsm", "to": "huff", "kind": "control", "net": "seq", "from_side": "bottom", "to_side": "top", "label": "DC reset"}
   ]
 }

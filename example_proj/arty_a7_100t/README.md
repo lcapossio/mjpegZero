@@ -79,19 +79,19 @@ python example_proj/common/python/demo.py \
 | `0x0200_0000` | DEMO_STATUS | R | `[0]`=enc_done, `[1]`=overflow, `[2]`=axi_error, `[3]`=running, `[4]`=armed |
 | `0x0200_0004` | JPEG_SIZE | R | `[18:0]`=byte count |
 | `0x0200_0008` | JPEG_CAPACITY | R | JPEG buffer capacity in bytes |
-| `0x0300_0000–0x0301_FFFF` | JPEG_PORT | R | Compressed JPEG (burst) |
+| `0x0300_0000–0x0303_FFFF` | JPEG_PORT | R | Compressed JPEG (burst); 256 KB = `JPEG_WORDS`×4 with `JPEG_WORDS=65536` |
 
 ---
 
 ## Resource Utilisation
 
-Latest post-route fcapz demo builds at 150 MHz (Verilog encoder uses
-`HUFF_BANKS=8`, the throughput ring; VHDL uses the 2-bank buffer):
+Latest post-route fcapz demo builds at 150 MHz (pipelined Huffman, per-frame
+control, `HUFF_BANKS=8`), both rebuilt from the same commit:
 
 | HDL | LUT | FF | BRAM tiles | DSP48E1 | WNS |
 |-----|----:|---:|-----------:|--------:|----:|
-| Verilog | 5,454 | 5,255 | 78 | 21 | +0.342 ns |
-| VHDL    | 5,348 | 5,258 | 78 | 21 | +0.167 ns |
+| Verilog | 5,780 | 5,395 | 78 | 21 | +0.275 ns |
+| VHDL    | 5,805 | 5,413 | 78 | 21 | +0.196 ns |
 
 Both builds use vanilla fcapz `da892ca` with a minimized 16-bit, 512-sample ELA
 (`INPUT_PIPE=1`, no timestamps, no decimation) plus the EJTAG-AXI bridge used by

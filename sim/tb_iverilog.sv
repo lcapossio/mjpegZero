@@ -32,7 +32,11 @@ module tb_iverilog;
 `else
     localparam IMG_WIDTH  = 64;   // 4 MCUs wide
 `endif
+`ifdef TB_IMG_HEIGHT
+    localparam IMG_HEIGHT = `TB_IMG_HEIGHT;
+`else
     localparam IMG_HEIGHT = 8;    // 1 MCU row
+`endif
     localparam NUM_PIXELS = IMG_WIDTH * IMG_HEIGHT;
 
 `ifdef LITE_MODE
@@ -97,6 +101,37 @@ module tb_iverilog;
     localparam TB_RANDOM_GAPS = 0;
 `endif
 
+// STREAM: frames are fed back to back (no wait for EOI), each frame reads its
+// own slice of the vector file (NUM_FRAMES * NUM_PIXELS words) and is written
+// to sim_output_f<k>.jpg. Used by python/verify_stream.py.
+`ifdef STREAM
+    localparam TB_STREAM = 1;
+`else
+    localparam TB_STREAM = 0;
+`endif
+
+// QUALITY_2: written to the QUALITY register halfway through frame 0's input.
+// Frame 0 must keep its quality (latched per frame); later frames use QUALITY_2.
+`ifdef QUALITY_2
+    localparam TB_QUALITY_2 = `QUALITY_2;
+`else
+    localparam TB_QUALITY_2 = -1;
+`endif
+
+// TOGGLE_ENABLE: clear CTRL.enable for a while mid-frame 0, then set it again.
+// Input must stall (not drop pixels) while disabled.
+`ifdef TOGGLE_ENABLE
+    localparam TB_TOGGLE_ENABLE = 1;
+`else
+    localparam TB_TOGGLE_ENABLE = 0;
+`endif
+
+`ifdef HUFF_BANKS
+    localparam TB_HUFF_BANKS = `HUFF_BANKS;
+`else
+    localparam TB_HUFF_BANKS = 8;
+`endif
+
 // Restart interval (DRI): >0 emits a DRI segment + RST markers every N MCUs.
 // Exercises the packer's restart pad/drain path (tail-bit padding before RSTn).
 `ifdef RESTART_INTERVAL
@@ -157,7 +192,8 @@ module tb_iverilog;
         .EXIF_X_RES    (TB_EXIF_X_RES),
         .EXIF_Y_RES    (TB_EXIF_Y_RES),
         .EXIF_RES_UNIT (TB_EXIF_RES_UNIT),
-        .RGB_INPUT     (TB_RGB_INPUT)
+        .RGB_INPUT     (TB_RGB_INPUT),
+        .HUFF_BANKS    (TB_HUFF_BANKS)
     ) dut (
         .clk               (clk),
         .rst_n             (rst_n),
@@ -191,7 +227,8 @@ module tb_iverilog;
     // ========================================================================
     // Test vector storage
     // ========================================================================
-    reg [TB_VID_DATA_W-1:0] vid_data [0:NUM_PIXELS-1];
+    localparam NUM_VEC = TB_STREAM ? NUM_PIXELS * TB_NUM_FRAMES : NUM_PIXELS;
+    reg [TB_VID_DATA_W-1:0] vid_data [0:NUM_VEC-1];
 
     initial begin
 `ifdef TV_HEX_FILE
@@ -215,7 +252,10 @@ module tb_iverilog;
     reg [7:0] prev_byte;
 
     initial begin
-        output_file      = $fopen("sim_output.jpg", "wb");
+        if (TB_STREAM)
+            output_file  = $fopen("sim_output_f0.jpg", "wb");
+        else
+            output_file  = $fopen("sim_output.jpg", "wb");
         output_byte_cnt  = 0;
         frames_completed = 0;
         saw_soi          = 0;
@@ -242,7 +282,10 @@ module tb_iverilog;
             frames_completed = frames_completed + 1;
             // Re-open for next frame (resets to the same filename; last frame is what remains)
             if (frames_completed < TB_NUM_FRAMES) begin
-                output_file     = $fopen("sim_output.jpg", "wb");
+                if (TB_STREAM)
+                    output_file = $fopen($sformatf("sim_output_f%0d.jpg", frames_completed), "wb");
+                else
+                    output_file = $fopen("sim_output.jpg", "wb");
                 output_byte_cnt = 0;
                 saw_soi         = 0;
                 saw_eoi         = 0;
@@ -251,34 +294,79 @@ module tb_iverilog;
         end
     end
 
+`ifdef PERF
+    // ========================================================================
+    // Throughput probe (python/measure_throughput.py). Measures the encode
+    // window from the first block the input buffer issues to the Huffman
+    // encoder's last end-of-block, and the Huffman controller state per cycle.
+    // ========================================================================
+    integer perf_cyc, perf_blocks, perf_ring_full, perf_pk_stall, perf_dct_idle;
+    integer perf_state [0:15];
+    integer perf_i;
+    reg     perf_on;
+    initial begin
+        perf_on = 0; perf_cyc = 0; perf_blocks = 0;
+        perf_ring_full = 0; perf_pk_stall = 0; perf_dct_idle = 0;
+        for (perf_i = 0; perf_i < 16; perf_i = perf_i + 1) perf_state[perf_i] = 0;
+    end
+    always @(posedge clk) begin
+        if (!perf_on && dut.ibuf_blk_valid && dut.ibuf_blk_sob && dut.ibuf_blk_ready)
+            perf_on = 1;
+        if (perf_on && perf_blocks < IMG_WIDTH / 4) begin
+            perf_cyc = perf_cyc + 1;
+            perf_state[dut.u_huffman.ctl] = perf_state[dut.u_huffman.ctl] + 1;
+            if (dut.pipeline_depth >= dut.HUFF_BANKS_CAP) perf_ring_full = perf_ring_full + 1;
+            if (dut.u_huffman.out_valid && !dut.u_bitpacker.bp_ready)
+                perf_pk_stall = perf_pk_stall + 1;
+            if (!(dut.ibuf_blk_valid && dut.ibuf_blk_ready)) perf_dct_idle = perf_dct_idle + 1;
+            if (dut.huff_out_eob && dut.huff_out_valid && dut.huff_bp_ready) begin
+                perf_blocks = perf_blocks + 1;
+                if (perf_blocks == IMG_WIDTH / 4) begin
+                    $display("PERF blocks=%0d cycles=%0d ring_full=%0d packer_stall=%0d ibuf_idle=%0d",
+                             perf_blocks, perf_cyc, perf_ring_full, perf_pk_stall, perf_dct_idle);
+                    $write("PERF states");
+                    for (perf_i = 0; perf_i < 4; perf_i = perf_i + 1)
+                        $write(" %0d", perf_state[perf_i]);
+                    $write("\n");
+                end
+            end
+        end
+    end
+`endif
+
     // ========================================================================
     // AXI-Lite write task
     // ========================================================================
+    // Drive on negedge, sample handshakes on posedge (race-free against the
+    // DUT's combinational AWREADY/WREADY).
     task axi_write(input [4:0] addr, input [31:0] data);
+        reg aw_done, w_done, b_done;
         begin
-            @(posedge clk);
+            @(negedge clk);
             s_axi_awaddr  = addr;
             s_axi_awvalid = 1;
             s_axi_wdata   = data;
             s_axi_wstrb   = 4'hF;
             s_axi_wvalid  = 1;
             s_axi_bready  = 1;
+            aw_done = 0;
+            w_done  = 0;
+            b_done  = 0;
 
-            fork
-                begin: aw_wait
-                    wait(s_axi_awready);
-                    @(posedge clk);
-                    s_axi_awvalid = 0;
-                end
-                begin: w_wait
-                    wait(s_axi_wready);
-                    @(posedge clk);
-                    s_axi_wvalid = 0;
-                end
-            join
+            while (!(aw_done && w_done)) begin
+                @(posedge clk);
+                if (s_axi_awvalid && s_axi_awready) aw_done = 1;
+                if (s_axi_wvalid  && s_axi_wready)  w_done  = 1;
+                @(negedge clk);
+                if (aw_done) s_axi_awvalid = 0;
+                if (w_done)  s_axi_wvalid  = 0;
+            end
 
-            wait(s_axi_bvalid);
-            @(posedge clk);
+            while (!b_done) begin
+                @(posedge clk);
+                if (s_axi_bvalid && s_axi_bready) b_done = 1;
+            end
+            @(negedge clk);
             s_axi_bready = 0;
         end
     endtask
@@ -286,24 +374,33 @@ module tb_iverilog;
     // ========================================================================
     // AXI-Lite read task
     // ========================================================================
-    // Set signals at negedge to guarantee setup before the next posedge.
-    // The reg file responds with rvalid+rdata in 1 clock cycle, so:
-    //   negedge C  : set araddr/arvalid/rready
-    //   posedge C+1: DUT samples arvalid=1, rvalid=0 → rvalid<=1, rdata<=reg
-    //   posedge C+2: DUT samples rvalid=1, rready=1 → rvalid<=0; rdata stable
-    //   after C+2  : capture s_axi_rdata, deassert
+    // Drive on negedge, sample handshakes on posedge: AR handshake, then
+    // capture RDATA on the R handshake.
     task axi_read(input [4:0] addr, output reg [31:0] data);
+        reg ar_done, r_done;
         begin
             @(negedge clk);
             s_axi_araddr  = addr;
             s_axi_arvalid = 1;
             s_axi_rready  = 1;
+            ar_done = 0;
+            r_done  = 0;
 
-            @(posedge clk);   // C+1: DUT captures address, sets rvalid+rdata
-            @(posedge clk);   // C+2: DUT clears rvalid; rdata is stable
-            data = s_axi_rdata;
-            s_axi_arvalid = 0;
-            s_axi_rready  = 0;
+            while (!ar_done) begin
+                @(posedge clk);
+                if (s_axi_arvalid && s_axi_arready) ar_done = 1;
+                @(negedge clk);
+                if (ar_done) s_axi_arvalid = 0;
+            end
+            while (!r_done) begin
+                @(posedge clk);
+                if (s_axi_rvalid && s_axi_rready) begin
+                    r_done = 1;
+                    data   = s_axi_rdata;
+                end
+            end
+            @(negedge clk);
+            s_axi_rready = 0;
         end
     endtask
 
@@ -322,6 +419,8 @@ module tb_iverilog;
     // Stimulus and validation
     // ========================================================================
     integer x, y, pixel_idx, frame_num;
+    reg     mid_f0;          // pulses halfway through frame 0's input
+    reg     axi_busy;        // serializes the side-channel AXI writes
     integer pass_cnt, fail_cnt;
     integer gap_cycles;
     reg [31:0] reg_val;
@@ -349,6 +448,8 @@ module tb_iverilog;
         s_axi_rready      = 0;
         pass_cnt          = 0;
         fail_cnt          = 0;
+        mid_f0            = 0;
+        axi_busy          = 0;
 
         repeat(10) @(posedge clk);
         rst_n = 1;
@@ -361,10 +462,11 @@ module tb_iverilog;
         repeat(600) @(posedge clk); // Wait for Q-table update
 
         // Feed TB_NUM_FRAMES frames; wait for each JPEG output before next
+        // (STREAM: back to back, no wait)
         for (frame_num = 0; frame_num < TB_NUM_FRAMES; frame_num = frame_num + 1) begin
             $display("[%0t] Feeding frame %0d/%0d (%0d pixels)...",
                      $time, frame_num, TB_NUM_FRAMES - 1, NUM_PIXELS);
-            pixel_idx = 0;
+            pixel_idx = TB_STREAM ? frame_num * NUM_PIXELS : 0;
             for (y = 0; y < IMG_HEIGHT; y = y + 1) begin
                 for (x = 0; x < IMG_WIDTH; x = x + 1) begin
                     // Random backpressure gap: ~10% of pixels get 1-3 idle cycles
@@ -384,6 +486,8 @@ module tb_iverilog;
                     s_axis_vid_tlast  = (x == IMG_WIDTH - 1) ? 1 : 0;
                     s_axis_vid_tdata  = vid_data[pixel_idx];
                     pixel_idx = pixel_idx + 1;
+                    if (frame_num == 0 && y == IMG_HEIGHT / 2 && x == 0)
+                        mid_f0 = 1;
                     while (!s_axis_vid_tready) @(negedge clk);
                 end
             end
@@ -395,13 +499,16 @@ module tb_iverilog;
             s_axis_vid_tuser  = 0;
 
             // Wait for this frame's JPEG output before sending next frame
-            if (frame_num < TB_NUM_FRAMES - 1) begin
+            if (frame_num < TB_NUM_FRAMES - 1 && !TB_STREAM) begin
                 wait(frames_completed == frame_num + 1);
                 repeat(20) @(posedge clk);
             end
         end
 
-        repeat(200000) @(posedge clk); // Wait for last frame pipeline to flush
+        // Wait for every frame's EOI, then let the pipeline settle
+        wait(frames_completed == TB_NUM_FRAMES);
+        repeat(2000) @(posedge clk);
+        wait(!axi_busy);
 
         // ====================================================================
         // Validation
@@ -428,7 +535,7 @@ module tb_iverilog;
             fail_cnt = fail_cnt + 1;
         end
 
-        if (output_byte_cnt > 100 && output_byte_cnt < 10000) begin
+        if (output_byte_cnt > 100 && output_byte_cnt < NUM_PIXELS * 3 + 4096) begin
             $display("PASS: Output size %0d bytes is reasonable", output_byte_cnt);
             pass_cnt = pass_cnt + 1;
         end else begin
@@ -477,13 +584,13 @@ module tb_iverilog;
             fail_cnt = fail_cnt + 1;
         end
 
-        // FRAME_SIZE register — running scan-data byte count (resets only on hard reset)
+        // FRAME_SIZE register — total JPEG bytes (SOI..EOI) of the last frame
         axi_read(5'h14, reg_val);
-        if (reg_val > 100) begin
-            $display("PASS: FRAME_SIZE (scan bytes total) = %0d", reg_val);
+        if (reg_val == output_byte_cnt) begin
+            $display("PASS: FRAME_SIZE = %0d (last frame's JPEG size)", reg_val);
             pass_cnt = pass_cnt + 1;
         end else begin
-            $display("FAIL: FRAME_SIZE = %0d (expected >100)", reg_val);
+            $display("FAIL: FRAME_SIZE = %0d (expected %0d)", reg_val, output_byte_cnt);
             fail_cnt = fail_cnt + 1;
         end
 
@@ -538,10 +645,31 @@ module tb_iverilog;
     end
 
     // ========================================================================
+    // Mid-frame register activity (QUALITY_2 / TOGGLE_ENABLE)
+    // ========================================================================
+    initial begin
+        if (TB_QUALITY_2 >= 0 || TB_TOGGLE_ENABLE) begin
+            wait(mid_f0);
+            axi_busy = 1;
+            if (TB_QUALITY_2 >= 0) begin
+                $display("[%0t] Mid-frame 0: QUALITY <= %0d", $time, TB_QUALITY_2);
+                axi_write(5'h0C, TB_QUALITY_2);
+            end
+            if (TB_TOGGLE_ENABLE) begin
+                $display("[%0t] Mid-frame 0: ENABLE <= 0 for 3000 cycles", $time);
+                axi_write(5'h00, 32'h0);
+                repeat(3000) @(posedge clk);
+                axi_write(5'h00, 32'h1);
+            end
+            axi_busy = 0;
+        end
+    end
+
+    // ========================================================================
     // Watchdog
     // ========================================================================
     initial begin
-        #50_000_000;
+        #(50_000_000 + 200 * NUM_PIXELS * TB_NUM_FRAMES);
         $display("WATCHDOG TIMEOUT");
         $display("Output bytes so far: %0d", output_byte_cnt);
         $finish;

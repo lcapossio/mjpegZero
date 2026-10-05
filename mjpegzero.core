@@ -1,5 +1,5 @@
 CAPI=2:
-name: bard0-design:mjpegzero:mjpegzero_enc:0.1.0
+name: bard0-design:mjpegzero:mjpegzero_enc:0.3.0
 description: "Synthesizable MJPEG encoder — behavioral Verilog 2001, AXI4-Stream + AXI4-Lite, 150 MHz, up to 1080p30"
 
 filesets:
@@ -26,10 +26,18 @@ filesets:
       - scripts/fusesoc_drc_waiver.xdc
     file_type: xdc
 
+  # Smoke-test bench: 64x8 frame (4 MCUs), writes sim_output.jpg in the work
+  # root. Settings are `define macros, not parameters. The input vector is
+  # generated, not tracked: run `python python/generate_test_vectors.py` first.
   tb:
     files:
       - sim/tb_iverilog.sv
     file_type: systemVerilogSource
+
+  tb_vectors:
+    files:
+      - sim/test_vectors/yuyv_input.hex: {copyto: test_vectors/yuyv_input.hex}
+    file_type: user
 
 parameters:
   LITE_MODE:
@@ -92,6 +100,25 @@ parameters:
     description: "Huffman input-ring depth / max blocks in flight: 2, 4, or 8"
     paramtype: vlogparam
 
+  # Testbench-only settings (sim / sim_lite targets); tb_iverilog reads macros.
+  TEST_QUALITY:
+    datatype: int
+    default: 95
+    description: "sim: quality written over AXI4-Lite (full mode only)"
+    paramtype: vlogdefine
+
+  NUM_FRAMES:
+    datatype: int
+    default: 1
+    description: "sim: number of frames to encode"
+    paramtype: vlogdefine
+
+  RESTART_INTERVAL:
+    datatype: int
+    default: 0
+    description: "sim: DRI restart interval in MCUs (0 = no restart markers)"
+    paramtype: vlogdefine
+
 targets:
   default:
     filesets:
@@ -109,51 +136,43 @@ targets:
       - HUFF_BANKS
     toplevel: mjpegzero_enc_top
 
-  # Note: simulation requires test vectors in sim/test_vectors/ relative to the
-  # working directory. Run from the repo root or use the Python flow instead:
+  # Full mode (runtime quality). tb_iverilog fixes the frame at 64x8, so the
+  # core's IMG_WIDTH/IMG_HEIGHT do not apply here. For golden-checked runs use
   #   python python/verify_rtl_sim.py [--lite]
   sim:
     filesets:
       - rtl
       - tb
+      - tb_vectors
     parameters:
-      - LITE_MODE
-      - LITE_QUALITY
-      - IMG_WIDTH
-      - IMG_HEIGHT
-      - EXIF_ENABLE
-      - EXIF_X_RES
-      - EXIF_Y_RES
-      - EXIF_RES_UNIT
-      - RGB_INPUT
-      - HUFF_BANKS
-    default_tool: icarus
-    tools:
-      icarus:
-        timescale: 1ns/1ps
-    toplevel: tb_mjpegzero_enc
-
-  sim_lite:
-    filesets:
-      - rtl
-      - tb
-    parameters:
-      - LITE_QUALITY
-      - IMG_WIDTH
-      - IMG_HEIGHT
-      - EXIF_ENABLE
-      - EXIF_X_RES
-      - EXIF_Y_RES
-      - EXIF_RES_UNIT
-      - RGB_INPUT
-      - HUFF_BANKS
+      - TEST_QUALITY
+      - NUM_FRAMES
+      - RESTART_INTERVAL
     default_tool: icarus
     tools:
       icarus:
         timescale: 1ns/1ps
         iverilog_options:
+          - "-g2012"
+    toplevel: tb_iverilog
+
+  # Lite mode (fixed quality 95).
+  sim_lite:
+    filesets:
+      - rtl
+      - tb
+      - tb_vectors
+    parameters:
+      - NUM_FRAMES
+      - RESTART_INTERVAL
+    default_tool: icarus
+    tools:
+      icarus:
+        timescale: 1ns/1ps
+        iverilog_options:
+          - "-g2012"
           - "-DLITE_MODE"
-    toplevel: tb_mjpegzero_enc
+    toplevel: tb_iverilog
 
   lint:
     filesets:
@@ -180,7 +199,7 @@ targets:
       - rtl
       - drc_waiver
     parameters:
-      - LITE_MODE
+      - LITE_MODE=0
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
@@ -201,6 +220,7 @@ targets:
       - rtl
       - drc_waiver
     parameters:
+      - LITE_MODE=1
       - LITE_QUALITY
       - IMG_WIDTH
       - IMG_HEIGHT
@@ -214,6 +234,4 @@ targets:
     tools:
       vivado:
         part: xc7a100tcsg324-1
-        vivado_options:
-          - "-generic LITE_MODE=1"
     toplevel: mjpegzero_enc_top

@@ -163,6 +163,10 @@ module demo_top_vtpg_eth #(
         .cfg_hg_step(16'd16), .cfg_vg_step(16'd16),
         .cfg_box_border_color(24'h00_80_80), .cfg_box_border_width(8'd2),  // black ring ({Y,Cb,Cr}), 2px
         .cfg_box_img_x_step(box_img_x_step_r), .cfg_box_img_y_step(box_img_y_step_r),
+        // vtpgZero 0.7 inputs: no AXIS routing sidebands, SMPTE chart not built
+        .cfg_tid(16'd0), .cfg_tdest(16'd0),
+        .cfg_smpte_side_d(16'd0), .cfg_smpte_bar_c(16'd0), .cfg_smpte_row_h(16'd0),
+        .cfg_smpte_pluge_p(16'd0), .cfg_smpte_ramp_step(16'd0),
         .sts_busy(), .sts_frame_count(),
         .m_axis_tdata(vid_tdata), .m_axis_tvalid(vid_tvalid),
         .m_axis_tready(vid_tready), .m_axis_tlast(vid_tlast), .m_axis_tuser(vid_tuser),
@@ -242,7 +246,8 @@ module demo_top_vtpg_eth #(
     wire [7:0] mac_tx_tdata;  wire mac_tx_tvalid, mac_tx_tready, mac_tx_tlast;
     wire       mdio_o, mdio_oe, mdio_i, mac_irq;
 
-    eth_mac_sys #(.PHY_INTERFACE("MII"), .MAX_FRAME(1518)) u_mac (
+    eth_mac_sys #(.PHY_INTERFACE("MII"), .MAX_FRAME(1518),
+                  .CLK_FREQ_HZ(130_909_091)) u_mac (   // 900 MHz VCO / 6.875
         .clk(clk), .rst_n(eth_rst_n),
         .s_axi_awaddr(ci_awaddr), .s_axi_awvalid(ci_awvalid), .s_axi_awready(ci_awready),
         .s_axi_wdata(ci_wdata), .s_axi_wstrb(ci_wstrb), .s_axi_wvalid(ci_wvalid),
@@ -260,6 +265,9 @@ module demo_top_vtpg_eth #(
         .clk_125(1'b0), .clk_125_90(1'b0), .clk_25(1'b0), .clk_2_5(1'b0),
         .rgmii_txd(), .rgmii_tx_ctl(), .rgmii_txc(),
         .rgmii_rxd(4'd0), .rgmii_rx_ctl(1'b0), .rgmii_rxc(1'b0),
+        .phy_gmii_txd(), .phy_gmii_tx_en(), .phy_gmii_tx_er(), .phy_gmii_txc(),
+        .phy_gmii_rx_clk(1'b0), .phy_gmii_rxd(8'd0), .phy_gmii_rx_dv(1'b0), .phy_gmii_rx_er(1'b0),
+        .cfg_ip_addr(),
         .mdc(ETH_MDC), .mdio_i(mdio_i), .mdio_o(mdio_o), .mdio_oe(mdio_oe),
         .irq(mac_irq)
     );
@@ -267,7 +275,7 @@ module demo_top_vtpg_eth #(
     assign mdio_i   = ETH_MDIO;
 
     // -- net_rx --
-    wire [7:0]  ud_data;  wire ud_valid, ud_last;
+    wire [7:0]  ud_data;  wire ud_valid, ud_last, ud_err;
     wire [31:0] ud_src_ip;
     wire [15:0] ud_src_port, ud_dst_port, ud_length;
     wire [47:0] rx_src_mac;
@@ -276,8 +284,8 @@ module demo_top_vtpg_eth #(
         .s_axis_tdata(mac_rx_tdata), .s_axis_tvalid(mac_rx_tvalid),
         .s_axis_tlast(mac_rx_tlast), .s_axis_tsof(mac_rx_tsof), .s_axis_terror(mac_rx_terror),
         .arp_data(), .arp_valid(), .arp_last(),
-        .icmp_data(), .icmp_valid(), .icmp_last(), .icmp_src_ip(),
-        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last),
+        .icmp_data(), .icmp_valid(), .icmp_last(), .icmp_err(), .icmp_src_ip(),
+        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err),
         .udp_src_ip(ud_src_ip), .udp_src_port(ud_src_port),
         .udp_dst_port(ud_dst_port), .udp_length(ud_length),
         .rx_src_mac(rx_src_mac), .our_ip(OUR_IP)
@@ -304,7 +312,7 @@ module demo_top_vtpg_eth #(
         .TRIGGER_PORT(TRIGGER_PORT), .RTP_DST_PORT(RTP_PORT), .RTP_SRC_PORT(RTP_PORT)
     ) u_trig (
         .clk(clk), .rst_n(eth_rst_n),
-        .udp_valid(ud_valid), .udp_last(ud_last), .udp_dst_port(ud_dst_port),
+        .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err), .udp_dst_port(ud_dst_port),
         .udp_rx_src_mac(rx_src_mac), .udp_rx_src_ip(ud_src_ip),
         .busy(1'b0),
         .start(trg_start), .dst_mac(trg_dst_mac), .dst_ip(trg_dst_ip),
@@ -325,6 +333,7 @@ module demo_top_vtpg_eth #(
         .udp_data(ud_data),
         .udp_valid(ud_valid),
         .udp_last(ud_last),
+        .udp_err(ud_err),
         .udp_dst_port(ud_dst_port),
         .start_loop(ctrl_start_loop),
         .stop_loop(ctrl_stop_loop),

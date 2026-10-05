@@ -11,6 +11,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use work.mjpegzero_pkg.all;
+
 entity mjpegzero_enc_top is
     generic (
         LITE_MODE     : natural := 1;
@@ -22,14 +24,14 @@ entity mjpegzero_enc_top is
         EXIF_Y_RES    : natural := 72;
         EXIF_RES_UNIT : natural := 2;
         RGB_INPUT     : natural := 0;
-        HUFF_BANKS    : natural := 8;
-        VID_DATA_W    : natural := 16
+        HUFF_BANKS    : natural := 8
     );
     port (
         clk   : in  std_logic;
         rst_n : in  std_logic;
 
-        s_axis_vid_tdata  : in  std_logic_vector(VID_DATA_W - 1 downto 0);
+        -- 24-bit {R,G,B} when RGB_INPUT=1, else 16-bit YUYV (derived)
+        s_axis_vid_tdata  : in  std_logic_vector(vid_data_w(RGB_INPUT) - 1 downto 0);
         s_axis_vid_tvalid : in  std_logic;
         s_axis_vid_tready : out std_logic;
         s_axis_vid_tlast  : in  std_logic;
@@ -96,7 +98,8 @@ architecture rtl of mjpegzero_enc_top is
             blk_valid : out std_logic; blk_data : out std_logic_vector(7 downto 0);
             blk_sof : out std_logic; blk_sob : out std_logic;
             blk_comp : out std_logic_vector(1 downto 0);
-            blk_ready : in std_logic; lines_done : out std_logic
+            blk_ready : in std_logic; blk_start : in std_logic;
+            lines_done : out std_logic; blk_avail : out std_logic
         );
     end component;
 
@@ -121,7 +124,8 @@ architecture rtl of mjpegzero_enc_top is
             out_valid : out std_logic; out_data : out std_logic_vector(15 downto 0);
             out_sof : out std_logic; out_sob : out std_logic;
             qt_rd_addr : in std_logic_vector(5 downto 0);
-            qt_rd_is_chroma : in std_logic; qt_rd_data : out std_logic_vector(7 downto 0)
+            qt_rd_is_chroma : in std_logic; qt_rd_data : out std_logic_vector(7 downto 0);
+            tables_busy : out std_logic
         );
     end component;
 
@@ -195,7 +199,12 @@ architecture rtl of mjpegzero_enc_top is
         );
     end component;
 
+    -- Frame control (see p_frame_control)
     constant TOTAL_BLOCKS : natural := (IMG_WIDTH / 16) * (IMG_HEIGHT / 8) * 4;
+    constant BLK_W        : natural := clog2(TOTAL_BLOCKS + 1);
+    constant LAST_BLOCK   : unsigned(BLK_W-1 downto 0) := to_unsigned(TOTAL_BLOCKS - 1, BLK_W);
+
+    type fstate_t is (F_IDLE, F_QWAIT, F_RUN, F_DRAIN);
 
     signal ctrl_enable : std_logic;
     signal ctrl_soft_reset : std_logic;
@@ -212,7 +221,10 @@ architecture rtl of mjpegzero_enc_top is
     signal ibuf_blk_sob : std_logic;
     signal ibuf_blk_comp : std_logic_vector(1 downto 0);
     signal ibuf_blk_ready : std_logic;
-    signal ibuf_lines_done : std_logic;
+    signal ibuf_blk_start : std_logic;
+    signal ibuf_blk_avail : std_logic;
+    signal ibuf_lines_done_unused : std_logic;
+    signal q_tables_busy : std_logic;
 
     signal dct_in_data : std_logic_vector(11 downto 0);
     signal dct_in_valid : std_logic;
@@ -238,7 +250,7 @@ architecture rtl of mjpegzero_enc_top is
     signal bs_out_data : std_logic_vector(7 downto 0);
     signal bs_out_last : std_logic;
     signal bs_out_ready : std_logic;
-    signal bs_byte_count : std_logic_vector(31 downto 0);
+    signal bs_byte_count_unused : std_logic_vector(31 downto 0);
 
     signal qt_rd_addr : std_logic_vector(5 downto 0);
     signal qt_rd_is_chroma : std_logic;
@@ -256,15 +268,32 @@ architecture rtl of mjpegzero_enc_top is
     signal quant_comp_id : std_logic_vector(1 downto 0);
     signal huff_comp_id : std_logic_vector(1 downto 0);
 
+    signal fstate : fstate_t := F_IDLE;
+    signal done_seen : std_logic := '0';
     signal frame_active : std_logic := '0';
     signal frame_start_pulse : std_logic := '0';
     signal frame_done_pulse : std_logic := '0';
-    signal mcu_count : unsigned(16 downto 0) := (others => '0');
+    signal mcu_count : unsigned(BLK_W-1 downto 0) := (others => '0');  -- blocks completed (EOB)
+    signal adm_count : unsigned(BLK_W-1 downto 0) := (others => '0');  -- blocks admitted
     signal mcu_in_segment : unsigned(15 downto 0) := (others => '0');
     signal restart_trigger : std_logic := '0';
     signal huff_restart    : std_logic := '0';
-    signal frame_hdr_started : std_logic := '0';
     signal pipeline_depth : unsigned(3 downto 0) := (others => '0');
+    signal blk_emerge : std_logic;  -- a block enters the DCT
+    signal blk_done   : std_logic;  -- a block leaves the Huffman (EOB accepted)
+
+    -- Per-frame control snapshot
+    signal frame_quality   : std_logic_vector(6 downto 0) := std_logic_vector(to_unsigned(95, 7));
+    signal frame_restart   : std_logic_vector(15 downto 0) := (others => '0');
+    signal quality_clamped : std_logic_vector(6 downto 0);
+
+    -- FRAME_SIZE: total JPEG bytes (SOI..EOI) of the last completed frame
+    signal jpg_byte_cnt    : unsigned(31 downto 0) := (others => '0');
+    signal last_frame_size : unsigned(31 downto 0) := (others => '0');
+    signal last_frame_size_slv : std_logic_vector(31 downto 0);
+    signal m_axis_jpg_tvalid_i : std_logic;
+    signal m_axis_jpg_tlast_i  : std_logic;
+    signal vid_tready_i        : std_logic;
 
     signal vid_yuyv_tdata : std_logic_vector(15 downto 0);
     signal vid_yuyv_tvalid : std_logic;
@@ -299,10 +328,49 @@ begin
     huff_comp_id <= comp_fifo_h(to_integer(comp_fifo_h_rd(2 downto 0)));
     sts_busy <= frame_active;
     sts_frame_done_pulse <= frame_done_pulse;
-    ibuf_blk_ready <= ctrl_enable and jfif_headers_done
-        when pipeline_depth < to_unsigned(HUFF_BANKS, pipeline_depth'length) else '0';
+    blk_emerge <= ibuf_blk_valid and ibuf_blk_sob;
+    blk_done <= huff_out_eob and huff_out_valid and huff_bp_ready;
+
+    -- Admit blocks until HUFF_BANKS are in flight. This MUST match the Huffman's
+    -- input-ring depth so the ring (which zigzag cannot backpressure) never
+    -- overflows. A started block always runs to completion (block-granular
+    -- admission via blk_start), so the DCT never sees a partial block.
+    ibuf_blk_ready <= '1';
+    ibuf_blk_start <= '1' when ctrl_enable = '1' and fstate = F_RUN and
+                               jfif_headers_done = '1' and
+                               pipeline_depth < to_unsigned(HUFF_BANKS, pipeline_depth'length)
+                      else '0';
+
+    -- ENABLE=0 stalls the video stream (tready low) rather than accepting
+    -- and dropping pixels.
     s_axis_vid_tvalid_gated <= s_axis_vid_tvalid and ctrl_enable;
+    s_axis_vid_tready <= vid_tready_i and ctrl_enable;
     frame_cnt_slv <= std_logic_vector(frame_cnt);
+
+    quality_clamped <= std_logic_vector(to_unsigned(1, 7)) when unsigned(ctrl_quality) = 0 else
+                       std_logic_vector(to_unsigned(100, 7)) when unsigned(ctrl_quality) > 100 else
+                       ctrl_quality;
+
+    m_axis_jpg_tvalid <= m_axis_jpg_tvalid_i;
+    m_axis_jpg_tlast <= m_axis_jpg_tlast_i;
+    last_frame_size_slv <= std_logic_vector(last_frame_size);
+
+    p_frame_size : process(clk)
+    begin
+        if rising_edge(clk) then
+            if rst_int_n = '0' then
+                jpg_byte_cnt <= (others => '0');
+                last_frame_size <= (others => '0');
+            elsif m_axis_jpg_tvalid_i = '1' then
+                if m_axis_jpg_tlast_i = '1' then
+                    last_frame_size <= jpg_byte_cnt + 1;
+                    jpg_byte_cnt <= (others => '0');
+                else
+                    jpg_byte_cnt <= jpg_byte_cnt + 1;
+                end if;
+            end if;
+        end if;
+    end process;
 
     p_comp_fifo_q : process(clk)
     begin
@@ -340,41 +408,83 @@ begin
         end if;
     end process;
 
+    -- One frame at a time through the pipeline:
+    --   F_IDLE : wait until a strip is buffered (and ENABLE), then latch the
+    --            frame's QUALITY/RESTART so a register write mid-frame cannot
+    --            desync the tables from the header already sent
+    --   F_QWAIT: wait for the quantizer to rebuild its Q tables, then start
+    --            the JFIF headers
+    --   F_RUN  : admit exactly TOTAL_BLOCKS blocks (block-granular)
+    --   F_DRAIN: wait for the last EOB (frame_done) and for the JFIF writer to
+    --            finish EOI and return to idle, then take the next frame
+    -- Admitting by count keeps every JPEG well formed even when the next
+    -- frame's strips are already buffered (back-to-back input).
     p_frame_control : process(clk)
     begin
         if rising_edge(clk) then
             if rst_int_n = '0' then
+                fstate <= F_IDLE;
+                done_seen <= '0';
                 frame_active <= '0';
                 frame_start_pulse <= '0';
                 frame_done_pulse <= '0';
                 frame_cnt <= (others => '0');
                 mcu_count <= (others => '0');
+                adm_count <= (others => '0');
                 mcu_in_segment <= (others => '0');
                 restart_trigger <= '0';
-                frame_hdr_started <= '0';
+                frame_quality <= std_logic_vector(to_unsigned(95, 7));
+                frame_restart <= (others => '0');
             else
                 frame_start_pulse <= '0';
                 frame_done_pulse <= '0';
                 restart_trigger <= '0';
 
-                if ibuf_lines_done = '1' and frame_hdr_started = '0' then
-                    frame_start_pulse <= '1';
-                    frame_hdr_started <= '1';
-                end if;
+                case fstate is
+                    when F_IDLE =>
+                        if ctrl_enable = '1' and ibuf_blk_avail = '1' then
+                            frame_quality <= quality_clamped;
+                            frame_restart <= ctrl_restart_interval;
+                            fstate <= F_QWAIT;
+                        end if;
+                    when F_QWAIT =>
+                        -- tables_busy sees frame_quality this cycle (registered above)
+                        if q_tables_busy = '0' then
+                            frame_start_pulse <= '1';
+                            frame_active <= '1';
+                            adm_count <= (others => '0');
+                            fstate <= F_RUN;
+                        end if;
+                    when F_RUN =>
+                        if blk_emerge = '1' then
+                            adm_count <= adm_count + 1;
+                            if adm_count = LAST_BLOCK then
+                                fstate <= F_DRAIN;
+                            end if;
+                        end if;
+                    when F_DRAIN =>
+                        if frame_done_pulse = '1' then
+                            done_seen <= '1';
+                        end if;
+                        -- headers_done drops only when the writer is back in
+                        -- idle, i.e. after this frame's EOI
+                        if done_seen = '1' and jfif_headers_done = '0' then
+                            done_seen <= '0';
+                            fstate <= F_IDLE;
+                        end if;
+                end case;
 
-                if ibuf_blk_sof = '1' and ibuf_blk_valid = '1' then
-                    frame_active <= '1';
-                    mcu_count <= (others => '0');
-                    mcu_in_segment <= (others => '0');
-                end if;
-
-                if huff_out_eob = '1' and huff_out_valid = '1' and huff_bp_ready = '1' then
+                -- Count completed blocks via Huffman EOB (qualified by
+                -- bp_ready: the Huffman holds out_valid/out_eob while the
+                -- packer drains)
+                if blk_done = '1' then
                     mcu_count <= mcu_count + 1;
 
+                    -- Every 4 blocks = 1 MCU; skip the restart check on the
+                    -- last MCU so RST never collides with the EOI flush
                     if mcu_count(1 downto 0) = "11" then
-                        if ctrl_restart_interval /= x"0000" and
-                                mcu_count /= to_unsigned(TOTAL_BLOCKS - 1, mcu_count'length) then
-                            if mcu_in_segment + 1 >= unsigned(ctrl_restart_interval) then
+                        if frame_restart /= x"0000" and mcu_count /= LAST_BLOCK then
+                            if mcu_in_segment + 1 >= unsigned(frame_restart) then
                                 restart_trigger <= '1';
                                 mcu_in_segment <= (others => '0');
                             else
@@ -383,11 +493,12 @@ begin
                         end if;
                     end if;
 
-                    if mcu_count = to_unsigned(TOTAL_BLOCKS - 1, mcu_count'length) then
+                    if mcu_count = LAST_BLOCK then
+                        mcu_count <= (others => '0');
+                        mcu_in_segment <= (others => '0');
                         frame_active <= '0';
                         frame_done_pulse <= '1';
                         frame_cnt <= frame_cnt + 1;
-                        frame_hdr_started <= '0';
                     end if;
                 end if;
             end if;
@@ -395,18 +506,17 @@ begin
     end process;
 
     p_pipeline_depth : process(clk)
-        variable push_block : boolean;
-        variable pop_block : boolean;
     begin
         if rising_edge(clk) then
             if rst_int_n = '0' then
                 pipeline_depth <= (others => '0');
             else
-                push_block := ibuf_blk_valid = '1' and ibuf_blk_sob = '1' and ibuf_blk_ready = '1';
-                pop_block := huff_out_eob = '1' and huff_out_valid = '1' and huff_bp_ready = '1';
-                if push_block and not pop_block then
+                -- Count every block that actually enters the DCT (not gated by
+                -- the admission signal, which runs a few cycles ahead of the
+                -- input buffer's output pipeline), so the count cannot wrap.
+                if blk_emerge = '1' and blk_done = '0' then
                     pipeline_depth <= pipeline_depth + 1;
-                elsif pop_block and not push_block then
+                elsif blk_done = '1' and blk_emerge = '0' then
                     pipeline_depth <= pipeline_depth - 1;
                 end if;
             end if;
@@ -420,7 +530,7 @@ begin
                 clk => clk, rst_n => rst_int_n,
                 s_axis_tdata => s_axis_vid_tdata(23 downto 0),
                 s_axis_tvalid => s_axis_vid_tvalid_gated,
-                s_axis_tready => s_axis_vid_tready,
+                s_axis_tready => vid_tready_i,
                 s_axis_tlast => s_axis_vid_tlast,
                 s_axis_tuser => s_axis_vid_tuser,
                 m_axis_tdata => vid_yuyv_tdata,
@@ -433,7 +543,7 @@ begin
 
     g_yuyv_input : if RGB_INPUT = 0 generate
     begin
-        s_axis_vid_tready <= vid_yuyv_tready;
+        vid_tready_i <= vid_yuyv_tready;
         vid_yuyv_tdata <= s_axis_vid_tdata(15 downto 0);
         vid_yuyv_tvalid <= s_axis_vid_tvalid_gated;
         vid_yuyv_tlast <= s_axis_vid_tlast;
@@ -457,7 +567,7 @@ begin
             ctrl_restart_interval => ctrl_restart_interval, sts_busy => sts_busy,
             sts_frame_done_pulse => sts_frame_done_pulse,
             sts_frame_cnt => frame_cnt_slv,
-            sts_frame_size => bs_byte_count
+            sts_frame_size => last_frame_size_slv
         );
 
     u_input_buffer : input_buffer
@@ -469,7 +579,8 @@ begin
             s_axis_tuser => vid_yuyv_tuser, blk_valid => ibuf_blk_valid,
             blk_data => ibuf_blk_data, blk_sof => ibuf_blk_sof,
             blk_sob => ibuf_blk_sob, blk_comp => ibuf_blk_comp,
-            blk_ready => ibuf_blk_ready, lines_done => ibuf_lines_done
+            blk_ready => ibuf_blk_ready, blk_start => ibuf_blk_start,
+            lines_done => ibuf_lines_done_unused, blk_avail => ibuf_blk_avail
         );
 
     u_dct : dct_2d
@@ -484,12 +595,13 @@ begin
         generic map (LITE_MODE => LITE_MODE, LITE_QUALITY => LITE_QUALITY)
         port map (
             clk => clk, rst_n => rst_int_n, comp_id => quant_comp_id,
-            quality => ctrl_quality, in_valid => dct_out_valid,
+            quality => frame_quality, in_valid => dct_out_valid,
             in_data => dct_out_data, in_sof => dct_out_sof,
             in_sob => dct_out_sof, out_valid => quant_out_valid,
             out_data => quant_out_data, out_sof => quant_out_sof_unused,
             out_sob => quant_out_sob, qt_rd_addr => qt_rd_addr,
-            qt_rd_is_chroma => qt_rd_is_chroma, qt_rd_data => qt_rd_data
+            qt_rd_is_chroma => qt_rd_is_chroma, qt_rd_data => qt_rd_data,
+            tables_busy => q_tables_busy
         );
 
     u_zigzag : zigzag_reorder
@@ -530,7 +642,7 @@ begin
             in_flush => frame_done_pulse, in_restart => restart_trigger,
             bp_ready => huff_bp_ready, out_valid => bs_out_valid,
             out_data => bs_out_data, out_last => bs_out_last,
-            out_ready => bs_out_ready, byte_count => bs_byte_count
+            out_ready => bs_out_ready, byte_count => bs_byte_count_unused
         );
 
     u_jfif : jfif_writer
@@ -543,12 +655,12 @@ begin
         port map (
             clk => clk, rst_n => rst_int_n,
             frame_start => frame_start_pulse, frame_done => frame_done_pulse,
-            restart_interval => ctrl_restart_interval,
+            restart_interval => frame_restart,
             qt_rd_addr => qt_rd_addr, qt_rd_is_chroma => qt_rd_is_chroma,
             qt_rd_data => qt_rd_data, scan_valid => bs_out_valid,
             scan_data => bs_out_data, scan_last => bs_out_last,
-            scan_ready => bs_out_ready, m_axis_tvalid => m_axis_jpg_tvalid,
-            m_axis_tdata => m_axis_jpg_tdata, m_axis_tlast => m_axis_jpg_tlast,
+            scan_ready => bs_out_ready, m_axis_tvalid => m_axis_jpg_tvalid_i,
+            m_axis_tdata => m_axis_jpg_tdata, m_axis_tlast => m_axis_jpg_tlast_i,
             headers_done => jfif_headers_done
         );
 

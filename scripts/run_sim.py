@@ -67,6 +67,21 @@ def run(cmd, cwd=None):
         sys.exit(r.returncode)
 
 
+def run_checked_sim(cmd, cwd=None):
+    """Run xsim and fail unless the testbench reports ALL TESTS PASSED
+    (xsim exits 0 even when the testbench's own checks fail)."""
+    print(' '.join(str(x) for x in cmd))
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    if r.stdout:
+        print(r.stdout)
+    if r.stderr:
+        print(r.stderr, file=sys.stderr)
+    if r.returncode != 0:
+        sys.exit(r.returncode)
+    if 'SOME TESTS FAILED' in r.stdout or 'ALL TESTS PASSED' not in r.stdout:
+        sys.exit('ERROR: testbench did not report ALL TESTS PASSED')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Vivado xsim RTL simulation')
     parser.add_argument('flags', nargs='*',
@@ -167,22 +182,24 @@ def main():
          '-s', 'sim_snapshot', '-timescale', '1ns/1ps'], cwd=BUILD_DIR)
 
     print('\nStep 4: Running simulation...')
+    out_jpg = os.path.join(BUILD_DIR, 'sim_output.jpg')
+    if os.path.isfile(out_jpg):
+        os.remove(out_jpg)   # never report a stale JPEG from an earlier run
     if dump_vcd:
         wave_tcl = os.path.join(BUILD_DIR, 'wave.tcl')
         with open(wave_tcl, 'w') as f:
             f.write('open_vcd tb_mjpegzero_enc.vcd\n'
                     'log_vcd [get_objects -r /*]\nrun all\nclose_vcd\nquit\n')
-        run([vivado_tool(viv, 'xsim'), 'sim_snapshot',
-             '-t', wave_tcl, '-onfinish', 'quit'], cwd=BUILD_DIR)
+        run_checked_sim([vivado_tool(viv, 'xsim'), 'sim_snapshot',
+                         '-t', wave_tcl, '-onfinish', 'quit'], cwd=BUILD_DIR)
     else:
-        run([vivado_tool(viv, 'xsim'), 'sim_snapshot',
-             '-R', '-onfinish', 'quit'], cwd=BUILD_DIR)
+        run_checked_sim([vivado_tool(viv, 'xsim'), 'sim_snapshot',
+                         '-R', '-onfinish', 'quit'], cwd=BUILD_DIR)
 
-    out_jpg = os.path.join(BUILD_DIR, 'sim_output.jpg')
     if os.path.isfile(out_jpg):
         print(f'\nOutput: {out_jpg} ({os.path.getsize(out_jpg)} bytes)')
     else:
-        print('\nWARNING: No sim_output.jpg produced')
+        sys.exit('ERROR: simulation produced no sim_output.jpg')
 
 
 if __name__ == '__main__':

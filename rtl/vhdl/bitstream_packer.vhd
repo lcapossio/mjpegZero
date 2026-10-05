@@ -46,6 +46,11 @@ architecture rtl of bitstream_packer is
     signal out_last_r   : std_logic := '0';
     signal byte_count_r : unsigned(31 downto 0) := (others => '0');
 
+    signal bp_ready_i : std_logic;
+    signal out_free   : std_logic;
+    signal merged     : std_logic_vector(63 downto 0);
+    signal added      : unsigned(6 downto 0);
+
     function pad_mask(bit_cnt : unsigned(6 downto 0)) return std_logic_vector is
     begin
         return std_logic_vector(shift_right(to_unsigned(16#FF#, 8),
@@ -54,18 +59,26 @@ architecture rtl of bitstream_packer is
 
 begin
 
-    -- The (out_valid_r='0' or out_ready='1') term MUST match the Priority 3 accept
-    -- guard below: without it bp_ready can be high while output backpressure blocks
-    -- the accept, so a producer that trusts ready would drop the offered code.
-    bp_ready <= '1' when state_r = S_NORMAL and bit_cnt_r < to_unsigned(8, 7) and need_stuff_r = '0'
-                         and (out_valid_r = '0' or out_ready = '1') else '0';
+    -- In S_NORMAL a code is accepted whenever it fits, in the same cycle as a
+    -- byte drain or stuff byte and regardless of the output slot, so bp_ready is
+    -- exactly "the offered code is taken this cycle". With bit_cnt <= 32 a code
+    -- of up to 27 bits (16 Huffman + 11 value) always fits the accumulator.
+    bp_ready_i <= '1' when state_r = S_NORMAL and bit_cnt_r <= to_unsigned(32, 7) else '0';
+    bp_ready <= bp_ready_i;
+    out_free <= (not out_valid_r) or out_ready;
+    -- New code placed right after the pending bits. It starts at bit_cnt >= 8
+    -- whenever a byte drains this cycle, so it never touches bit_buf(63:56).
+    merged <= bit_buf_r or std_logic_vector(shift_right(unsigned(in_bits & x"00000000"),
+                                                        to_integer(bit_cnt_r)))
+              when in_valid = '1' and bp_ready_i = '1' else bit_buf_r;
+    added <= resize(unsigned(in_len), 7) when in_valid = '1' and bp_ready_i = '1'
+             else (others => '0');
     out_valid <= out_valid_r;
     out_data <= out_data_r;
     out_last <= out_last_r;
     byte_count <= std_logic_vector(byte_count_r);
 
     process (clk)
-        variable incoming_bits : std_logic_vector(63 downto 0);
         variable padded_byte   : std_logic_vector(7 downto 0);
     begin
         if rising_edge(clk) then
@@ -87,28 +100,28 @@ begin
 
                 case state_r is
                     when S_NORMAL =>
-                        if need_stuff_r = '1' and (out_valid_r = '0' or out_ready = '1') then
+                        -- Output side: a pending stuff byte first, else drain one
+                        -- byte when >=8 bits are available. The input side
+                        -- (merged / added) accepts a code in the same cycle.
+                        if need_stuff_r = '1' and out_free = '1' then
                             out_valid_r <= '1';
                             out_data_r <= x"00";
                             need_stuff_r <= '0';
                             byte_count_r <= byte_count_r + 1;
-                        elsif bit_cnt_r >= to_unsigned(8, 7) and need_stuff_r = '0' and
-                              (out_valid_r = '0' or out_ready = '1') then
+                            bit_buf_r <= merged;
+                            bit_cnt_r <= bit_cnt_r + added;
+                        elsif bit_cnt_r >= to_unsigned(8, 7) and need_stuff_r = '0' and out_free = '1' then
                             out_valid_r <= '1';
                             out_data_r <= bit_buf_r(63 downto 56);
-                            bit_buf_r <= bit_buf_r(55 downto 0) & x"00";
-                            bit_cnt_r <= bit_cnt_r - 8;
+                            bit_buf_r <= merged(55 downto 0) & x"00";
+                            bit_cnt_r <= bit_cnt_r - 8 + added;
                             byte_count_r <= byte_count_r + 1;
                             if bit_buf_r(63 downto 56) = x"FF" then
                                 need_stuff_r <= '1';
                             end if;
-                        elsif in_valid = '1' and
-                              state_r = S_NORMAL and bit_cnt_r < to_unsigned(8, 7) and need_stuff_r = '0' and
-                              (out_valid_r = '0' or out_ready = '1') then
-                            incoming_bits := std_logic_vector(shift_right(unsigned(in_bits & x"00000000"),
-                                                                           to_integer(bit_cnt_r)));
-                            bit_buf_r <= bit_buf_r or incoming_bits;
-                            bit_cnt_r <= bit_cnt_r + resize(unsigned(in_len), bit_cnt_r'length);
+                        else
+                            bit_buf_r <= merged;
+                            bit_cnt_r <= bit_cnt_r + added;
                         end if;
 
                         if in_restart = '1' then

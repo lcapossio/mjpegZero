@@ -35,7 +35,7 @@ module mjpegzero_enc_top #(
     parameter EXIF_RES_UNIT = 2,                           // 1=no unit, 2=inch, 3=cm
     parameter RGB_INPUT     = 0,                           // 1 = 24-bit RGB AXI4-Stream input; 0 = 16-bit YUYV
     parameter HUFF_BANKS    = 8,                            // Huffman input-ring depth (blocks in flight): 2, 4, or 8 only; higher = more throughput, more LUTRAM
-    parameter VID_DATA_W    = RGB_INPUT ? 24 : 16          // video input data width (derived, do not override)
+    parameter VID_DATA_W    = (RGB_INPUT != 0) ? 24 : 16          // video input data width (derived, do not override)
 ) (
     input  wire        clk,
     input  wire        rst_n,
@@ -117,11 +117,14 @@ module mjpegzero_enc_top #(
     // Input buffer -> DCT
     wire        ibuf_blk_valid;
     wire [7:0]  ibuf_blk_data;
-    wire        ibuf_blk_sof;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire        ibuf_blk_sof;      // informational; frames are sequenced by block count
+    /* verilator lint_on UNUSEDSIGNAL */
     wire        ibuf_blk_sob;
     wire [1:0]  ibuf_blk_comp;
     wire        ibuf_blk_ready;
-    wire        ibuf_lines_done;   // Pulse when 8 lines buffered
+    wire        ibuf_blk_start;    // Admission: may begin a new block
+    wire        ibuf_blk_avail;    // A strip is buffered, blocks waiting
 
     // DCT input conversion (level shift: unsigned 0-255 -> signed -128..127)
     wire signed [11:0] dct_in_data = $signed({4'b0, ibuf_blk_data}) - 12'sd128;
@@ -155,7 +158,6 @@ module mjpegzero_enc_top #(
     wire [7:0]  bs_out_data;
     wire        bs_out_last;
     wire        bs_out_ready;
-    wire [31:0] bs_byte_count;
 
     // Q-table read port (quantizer -> JFIF writer)
     wire [5:0]  qt_rd_addr;
@@ -164,6 +166,9 @@ module mjpegzero_enc_top #(
 
     // JFIF writer status
     wire        jfif_headers_done;
+
+    // Quantizer status: Q tables not yet rebuilt for frame_quality
+    wire        q_tables_busy;
 
     // ========================================================================
     // Component ID tracking through pipeline
@@ -228,48 +233,102 @@ module mjpegzero_enc_top #(
     // ========================================================================
     // Frame control
     // ========================================================================
+    // One frame at a time through the pipeline:
+    //   F_IDLE : wait until a strip is buffered (and ENABLE), then latch the
+    //            frame's QUALITY/RESTART so a register write mid-frame cannot
+    //            desync the tables from the header already sent
+    //   F_QWAIT: wait for the quantizer to rebuild its Q tables, then start
+    //            the JFIF headers
+    //   F_RUN  : admit exactly TOTAL_BLOCKS blocks (block-granular)
+    //   F_DRAIN: wait for the last EOB (frame_done) and for the JFIF writer to
+    //            finish EOI and return to idle, then take the next frame
+    // Admitting by count keeps every JPEG well formed even when the next
+    // frame's strips are already buffered (back-to-back input).
+    localparam  TOTAL_BLOCKS = (IMG_WIDTH / 16) * (IMG_HEIGHT / 8) * 4;  // 4 blocks per MCU
+    localparam  BLK_W = $clog2(TOTAL_BLOCKS + 1);
+    localparam integer     LAST_BLOCK_I = TOTAL_BLOCKS - 1;
+    localparam [BLK_W-1:0] LAST_BLOCK   = LAST_BLOCK_I[BLK_W-1:0];
+
+    localparam [1:0] F_IDLE  = 2'd0,
+                     F_QWAIT = 2'd1,
+                     F_RUN   = 2'd2,
+                     F_DRAIN = 2'd3;
+    reg  [1:0]       fstate;
+    reg              done_seen;
+
     reg         frame_active;
     reg         frame_start_pulse;
     reg         frame_done_pulse;
-    reg [16:0]  mcu_count;    // Count MCUs (actually blocks) in current frame
-    localparam  TOTAL_BLOCKS = (IMG_WIDTH / 16) * (IMG_HEIGHT / 8) * 4;  // 4 blocks per MCU
+    reg [BLK_W-1:0] mcu_count;    // Blocks completed (Huffman EOB) in current frame
+    reg [BLK_W-1:0] adm_count;    // Blocks admitted into the pipeline in current frame
+
+    // Per-frame control snapshot
+    reg  [6:0]  frame_quality;
+    reg  [15:0] frame_restart;
+    wire [6:0]  quality_clamped = (ctrl_quality == 7'd0)   ? 7'd1   :
+                                  (ctrl_quality > 7'd100) ? 7'd100 : ctrl_quality;
 
     // Restart marker tracking
     reg [15:0]  mcu_in_segment;    // MCU count within current restart segment
     reg         restart_trigger;   // Pulse to insert restart marker
 
-    // Frame start: triggered by first lines_done (8 lines buffered)
-    // This starts JFIF header output BEFORE blocks enter the pipeline
-    reg         frame_hdr_started;  // Headers started for current frame
+    wire blk_emerge = ibuf_blk_valid && ibuf_blk_sob;   // a block enters the DCT
 
     always @(posedge clk) begin
         if (!rst_int_n) begin
+            fstate            <= F_IDLE;
+            done_seen         <= 1'b0;
             frame_active      <= 1'b0;
             frame_start_pulse <= 1'b0;
             frame_done_pulse  <= 1'b0;
             frame_cnt         <= 32'd0;
-            mcu_count         <= 17'd0;
+            mcu_count         <= {BLK_W{1'b0}};
+            adm_count         <= {BLK_W{1'b0}};
             mcu_in_segment    <= 16'd0;
             restart_trigger   <= 1'b0;
-            frame_hdr_started <= 1'b0;
+            frame_quality     <= 7'd95;
+            frame_restart     <= 16'd0;
         end else begin
             frame_start_pulse <= 1'b0;
             frame_done_pulse  <= 1'b0;
             restart_trigger   <= 1'b0;
 
-            // Trigger JFIF headers when first 8 lines are buffered
-            // (before any blocks enter the pipeline)
-            if (ibuf_lines_done && !frame_hdr_started) begin
-                frame_start_pulse <= 1'b1;
-                frame_hdr_started <= 1'b1;
-            end
-
-            // Start of frame tracking (when first block actually enters pipeline)
-            if (ibuf_blk_sof && ibuf_blk_valid) begin
-                frame_active   <= 1'b1;
-                mcu_count      <= 17'd0;
-                mcu_in_segment <= 16'd0;
-            end
+            case (fstate)
+                F_IDLE: begin
+                    if (ctrl_enable && ibuf_blk_avail) begin
+                        frame_quality <= quality_clamped;
+                        frame_restart <= ctrl_restart_interval;
+                        fstate        <= F_QWAIT;
+                    end
+                end
+                F_QWAIT: begin
+                    // tables_busy sees frame_quality this cycle (registered above)
+                    if (!q_tables_busy) begin
+                        frame_start_pulse <= 1'b1;
+                        frame_active      <= 1'b1;
+                        adm_count         <= {BLK_W{1'b0}};
+                        fstate            <= F_RUN;
+                    end
+                end
+                F_RUN: begin
+                    if (blk_emerge) begin
+                        adm_count <= adm_count + 1'b1;
+                        if (adm_count == LAST_BLOCK)
+                            fstate <= F_DRAIN;
+                    end
+                end
+                F_DRAIN: begin
+                    if (frame_done_pulse)
+                        done_seen <= 1'b1;
+                    // headers_done drops only when the writer is back in idle,
+                    // i.e. after this frame's EOI
+                    if (done_seen && !jfif_headers_done) begin
+                        done_seen <= 1'b0;
+                        fstate    <= F_IDLE;
+                    end
+                end
+                default: fstate <= F_IDLE;
+            endcase
 
             // Count completed blocks via Huffman EOB
             // CRITICAL: Must check huff_bp_ready too! The Huffman encoder
@@ -278,16 +337,15 @@ module mjpegzero_enc_top #(
             // increments every cycle, causing frame_done_pulse to fire early
             // and the packer to flush before all blocks are encoded.
             if (huff_out_eob && huff_out_valid && huff_bp_ready) begin
-                mcu_count <= mcu_count + 17'd1;
+                mcu_count <= mcu_count + 1'b1;
 
                 // Every 4 blocks = 1 MCU completion
                 if (mcu_count[1:0] == 2'd3) begin
                     // Check restart interval — skip on last MCU to avoid
                     // restart_trigger colliding with frame_done_pulse (both
                     // asserted same cycle causes packer to emit RST instead of EOI)
-                    if (ctrl_restart_interval != 16'd0 &&
-                            mcu_count != TOTAL_BLOCKS[16:0] - 17'd1) begin
-                        if (mcu_in_segment + 16'd1 >= ctrl_restart_interval) begin
+                    if (frame_restart != 16'd0 && mcu_count != LAST_BLOCK) begin
+                        if (mcu_in_segment + 16'd1 >= frame_restart) begin
                             restart_trigger <= 1'b1;
                             mcu_in_segment  <= 16'd0;
                         end else begin
@@ -297,11 +355,12 @@ module mjpegzero_enc_top #(
                 end
 
                 // Frame complete
-                if (mcu_count == TOTAL_BLOCKS[16:0] - 17'd1) begin
+                if (mcu_count == LAST_BLOCK) begin
+                    mcu_count        <= {BLK_W{1'b0}};
+                    mcu_in_segment   <= 16'd0;
                     frame_active     <= 1'b0;
                     frame_done_pulse <= 1'b1;
                     frame_cnt        <= frame_cnt + 32'd1;
-                    frame_hdr_started <= 1'b0; // Ready for next frame
                 end
             end
         end
@@ -312,13 +371,14 @@ module mjpegzero_enc_top #(
 
     // ========================================================================
     // Pipeline flow control
-    // Gate block output: only allow blocks to flow when:
+    // A new block may start (block-granular, see input_buffer blk_start) when:
     //   1. Encoder is enabled
-    //   2. JFIF headers have been written
+    //   2. The frame FSM is admitting and the JFIF headers have been written
     //   3. Pipeline is not full (at most HUFF_BANKS blocks in flight)
     // The Huffman encoder has an NB=HUFF_BANKS-deep input ring. We cap blocks
     // in flight at HUFF_BANKS to prevent ring overflow when the Huffman takes
-    // many cycles to process complex blocks.
+    // many cycles to process complex blocks. A started block always runs to
+    // completion, so the DCT never sees a partial block.
     // ========================================================================
 
     // HUFF_BANKS must be 2, 4 or 8: pipeline_depth below is 4 bits (so the cap
@@ -338,7 +398,10 @@ module mjpegzero_enc_top #(
         if (!rst_int_n) begin
             pipeline_depth <= 4'd0;
         end else begin
-            case ({ibuf_blk_valid && ibuf_blk_sob && ibuf_blk_ready,
+            // Count every block that actually enters the DCT (not gated by
+            // the admission signal, which runs a few cycles ahead of the
+            // input buffer's output pipeline), so the count cannot wrap.
+            case ({blk_emerge,
                    huff_out_eob && huff_out_valid && huff_bp_ready})
                 2'b10: pipeline_depth <= pipeline_depth + 4'd1;
                 2'b01: pipeline_depth <= pipeline_depth - 4'd1;
@@ -349,9 +412,12 @@ module mjpegzero_enc_top #(
 
     // Admit blocks until HUFF_BANKS are in flight. This MUST match the Huffman's
     // input-ring depth so the ring (which zigzag cannot backpressure) never
-    // overflows. Deeper = the DCT/zigzag run ahead and keep the serial Huffman
-    // FSM fed, instead of the pipeline running one block at a time.
-    assign ibuf_blk_ready = ctrl_enable && jfif_headers_done && (pipeline_depth < HUFF_BANKS_CAP);
+    // overflows. Deeper = the DCT/zigzag run ahead and keep the Huffman fed.
+    // The in-flight count updates 4 cycles after a block's first sample is
+    // issued, well before the next block (64 samples later) asks to start.
+    assign ibuf_blk_ready = 1'b1;
+    assign ibuf_blk_start = ctrl_enable && (fstate == F_RUN) && jfif_headers_done &&
+                            (pipeline_depth < HUFF_BANKS_CAP);
 
     // ========================================================================
     // Video input path (YUYV pass-through or RGB→YUYV via rgb_to_ycbcr)
@@ -363,14 +429,18 @@ module mjpegzero_enc_top #(
     wire        vid_yuyv_tuser;
 
     generate
-        if (RGB_INPUT) begin : g_rgb_input
+        if (RGB_INPUT != 0) begin : g_rgb_input
+            // ENABLE=0 stalls the stream (no handshake) rather than
+            // accepting and dropping pixels.
+            wire rgb_tready;
+            assign s_axis_vid_tready = rgb_tready & ctrl_enable;
             // 24-bit {R,G,B} AXI4-Stream → 16-bit YUYV (3-cycle pipeline)
             rgb_to_ycbcr u_rgb2yuv (
                 .clk          (clk),
                 .rst_n        (rst_int_n),
                 .s_axis_tdata (s_axis_vid_tdata),
                 .s_axis_tvalid(s_axis_vid_tvalid & ctrl_enable),
-                .s_axis_tready(s_axis_vid_tready),
+                .s_axis_tready(rgb_tready),
                 .s_axis_tlast (s_axis_vid_tlast),
                 .s_axis_tuser (s_axis_vid_tuser),
                 .m_axis_tdata (vid_yuyv_tdata),
@@ -380,14 +450,34 @@ module mjpegzero_enc_top #(
                 .m_axis_tuser (vid_yuyv_tuser)
             );
         end else begin : g_yuyv_input
-            // YUYV input: pass through with enable gating
-            assign s_axis_vid_tready = vid_yuyv_tready;
+            // YUYV input: pass through; ENABLE=0 stalls (tready low)
+            assign s_axis_vid_tready = vid_yuyv_tready & ctrl_enable;
             assign vid_yuyv_tdata    = s_axis_vid_tdata[15:0];
             assign vid_yuyv_tvalid   = s_axis_vid_tvalid & ctrl_enable;
             assign vid_yuyv_tlast    = s_axis_vid_tlast;
             assign vid_yuyv_tuser    = s_axis_vid_tuser;
         end
     endgenerate
+
+    // ========================================================================
+    // FRAME_SIZE: total JPEG bytes (SOI..EOI) of the last completed frame
+    // ========================================================================
+    reg [31:0] jpg_byte_cnt;
+    reg [31:0] last_frame_size;
+
+    always @(posedge clk) begin
+        if (!rst_int_n) begin
+            jpg_byte_cnt    <= 32'd0;
+            last_frame_size <= 32'd0;
+        end else if (m_axis_jpg_tvalid) begin
+            if (m_axis_jpg_tlast) begin
+                last_frame_size <= jpg_byte_cnt + 32'd1;
+                jpg_byte_cnt    <= 32'd0;
+            end else begin
+                jpg_byte_cnt <= jpg_byte_cnt + 32'd1;
+            end
+        end
+    end
 
     // ========================================================================
     // Module instantiations
@@ -423,7 +513,7 @@ module mjpegzero_enc_top #(
         .sts_busy             (sts_busy),
         .sts_frame_done_pulse (sts_frame_done_pulse),
         .sts_frame_cnt        (frame_cnt),
-        .sts_frame_size       (bs_byte_count)
+        .sts_frame_size       (last_frame_size)
     );
 
     // --- Input Buffer ---
@@ -443,7 +533,11 @@ module mjpegzero_enc_top #(
         .blk_sob       (ibuf_blk_sob),
         .blk_comp      (ibuf_blk_comp),
         .blk_ready     (ibuf_blk_ready),
-        .lines_done    (ibuf_lines_done)
+        .blk_start     (ibuf_blk_start),
+        /* verilator lint_off PINCONNECTEMPTY */
+        .lines_done    (),
+        /* verilator lint_on PINCONNECTEMPTY */
+        .blk_avail     (ibuf_blk_avail)
     );
 
     // --- 2D DCT ---
@@ -466,7 +560,7 @@ module mjpegzero_enc_top #(
         .clk            (clk),
         .rst_n          (rst_int_n),
         .comp_id        (quant_comp_id),
-        .quality        (ctrl_quality),
+        .quality        (frame_quality),
         .in_valid       (dct_out_valid),
         .in_data        (dct_out_data),
         .in_sof         (dct_out_sof),
@@ -479,7 +573,8 @@ module mjpegzero_enc_top #(
         .out_sob        (quant_out_sob),
         .qt_rd_addr     (qt_rd_addr),
         .qt_rd_is_chroma(qt_rd_is_chroma),
-        .qt_rd_data     (qt_rd_data)
+        .qt_rd_data     (qt_rd_data),
+        .tables_busy    (q_tables_busy)
     );
 
     // --- Zigzag Reorder ---
@@ -541,7 +636,9 @@ module mjpegzero_enc_top #(
         .out_data   (bs_out_data),
         .out_last   (bs_out_last),
         .out_ready  (bs_out_ready),
-        .byte_count (bs_byte_count)
+        /* verilator lint_off PINCONNECTEMPTY */
+        .byte_count ()
+        /* verilator lint_on PINCONNECTEMPTY */
     );
 
     // --- JFIF Writer ---
@@ -559,7 +656,7 @@ module mjpegzero_enc_top #(
         .rst_n            (rst_int_n),
         .frame_start      (frame_start_pulse),
         .frame_done       (frame_done_pulse),
-        .restart_interval (ctrl_restart_interval),
+        .restart_interval (frame_restart),
         .qt_rd_addr       (qt_rd_addr),
         .qt_rd_is_chroma  (qt_rd_is_chroma),
         .qt_rd_data       (qt_rd_data),

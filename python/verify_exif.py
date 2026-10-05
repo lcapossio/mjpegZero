@@ -74,6 +74,10 @@ def compile_rtl(iverilog, vvp_out, defines):
 
 
 def run_sim(vvp, vvp_out, build_dir, output_jpg):
+    # Remove outputs of earlier runs so a sim that writes nothing cannot pass
+    for stale in (os.path.join(build_dir, 'sim_output.jpg'), output_jpg):
+        if os.path.exists(stale):
+            os.remove(stale)
     cmd = [vvp, vvp_out]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=build_dir)
     if result.stdout:

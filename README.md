@@ -58,12 +58,17 @@ A Python reference encoder is included for validation and test vector generation
 
 
 <a href="docs/architecture.svg">
-  <img src="docs/architecture.svg" alt="mjpegZero encoder top-level architecture" width="100%">
+  <img src="docs/architecture.svg" alt="mjpegZero encoder block diagram: video in, rgb_to_ycbcr, input_buffer, dct_2d, quantizer, zigzag_reorder, huffman_encoder, bitstream_packer, jfif_writer, JPEG out, with AXI4-Lite registers and the frame-control FSM sequencing the pipeline" width="100%">
 </a>
 
-The editable diagram spec [`docs/architecture.json`](docs/architecture.json)
-and rendered SVG [`docs/architecture.svg`](docs/architecture.svg) were created
-with the [`hdldiagZero`](https://github.com/lcapossio/hdldiagZero) skill.
+Pixels flow along the top row into the DCT and quantizer, then back along the
+bottom row through entropy coding to the JFIF byte stream. The frame-control
+FSM in the middle admits blocks, latches QUALITY/RESTART per frame, and drives
+the header, flush, restart-marker and DC-predictor resets.
+
+The diagram is rendered from [`docs/architecture.json`](docs/architecture.json)
+with the [`hdldiagZero`](https://github.com/lcapossio/hdldiagZero) skill; it
+follows the viewer's light or dark theme.
 
 <a id="interfaces"></a>
 ## Interfaces <sub>[↑ Top](#top)</sub>
@@ -117,7 +122,16 @@ output and the sink.
 | 0x08   | FRAME_CNT  | RO     | Completed frame count                  |
 | 0x0C   | QUALITY    | R/W    | JPEG quality factor (1–100, default 95)|
 | 0x10   | RESTART    | R/W    | Restart interval in MCUs (0 = disabled)|
-| 0x14   | FRAME_SIZE | RO     | Byte count of last completed frame     |
+| 0x14   | FRAME_SIZE | RO     | JPEG size in bytes (SOI..EOI) of the last completed frame |
+
+- **ENABLE = 0** stalls the video input (`s_axis_vid_tready` low); pixels are
+  never accepted and dropped. A frame already admitted finishes encoding.
+- **QUALITY and RESTART are latched per frame**, when the encoder starts a
+  frame. A write during a frame applies from the next frame, so the headers
+  always match the scan. QUALITY 0 is treated as 1 and 101–127 as 100.
+- Writes honor `WSTRB`; AW and W may arrive in any order.
+- Frames may be sent back to back: the next frame's start-of-frame can arrive
+  while the previous frame is still being encoded.
 
 <a id="parameters"></a>
 ## Parameters <sub>[↑ Top](#top)</sub>
@@ -133,7 +147,7 @@ output and the sink.
 | `EXIF_X_RES`    | 72      | EXIF XResolution numerator (DPI when `EXIF_RES_UNIT=2`)         |
 | `EXIF_Y_RES`    | 72      | EXIF YResolution numerator                                      |
 | `EXIF_RES_UNIT` | 2       | EXIF ResolutionUnit: 1 = no unit, 2 = inch, 3 = cm             |
-| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default) |
+| `RGB_INPUT`     | 0       | 1 = 24-bit `{R,G,B}` AXI4-Stream input; 0 = 16-bit YUYV (default). The video port width follows it in both Verilog and VHDL |
 | `HUFF_BANKS`    | 8       | Huffman input-ring depth = blocks in flight: **2, 4, or 8 only** (asserted at elaboration); higher = more throughput, more LUTRAM |
 
 <a id="capabilities"></a>
@@ -198,13 +212,13 @@ build the same configuration. WNS is **post-synthesis** for every row.
 
 | Configuration | HDL | LUTs | FFs | BRAM tiles | DSPs | WNS |
 |---------------|-----|-----:|----:|-----------:|-----:|----:|
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,584 | 1,029 | 16 | 23 | +0.516 ns |
-| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,570 | 1,036 | 16 | 23 | +0.326 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,344 | 983 | 11 | 21 | +0.516 ns |
-| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,331 | 982 | 11 | 21 | +0.326 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | Verilog | 2,917 | 1,254 | 16 | 24 | +0.171 ns |
+| Core, `LITE_MODE=0`, 1920x1080, runtime quality | VHDL | 2,921 | 1,266 | 16 | 24 | +0.191 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | Verilog | 2,600 | 1,199 | 11 | 21 | +0.171 ns |
+| Core, `LITE_MODE=1`, 1280x720, Q95 | VHDL | 2,618 | 1,203 | 11 | 21 | +0.309 ns |
 
-**Verilog and VHDL are equivalent in area.** The two builds land within 14 LUTs
-(0.5%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
+**Verilog and VHDL are equivalent in area.** The two builds land within 18 LUTs
+(0.7%) of each other, with identical BRAM, DSP, and distributed-RAM counts and
 FFs within 1%. Per-module deltas run in both directions and come from frontend
 and retiming choices on identical RTL, not from any structural difference — for
 example Vivado packs three of the `input_buffer` delay chains into SRL16s from
@@ -212,9 +226,9 @@ the Verilog source but leaves them as FFs from the VHDL source.
 
 **Full vs lite is the quality path only** (runtime-programmable vs
 synthesis-fixed); the rest of the pipeline is identical. At the **same
-resolution** the delta is small — full vs lite at 720p is **+234 LUT / +65 FF /
-+0 BRAM / +2 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT, and
-Q-scaling multiply). The rows above use different resolution presets, so their
+resolution** the delta is small — full vs lite at 720p is **+309 LUT / +72 FF /
++0 BRAM / +3 DSP** (Verilog; the runtime-quality update FSM, reciprocal LUT,
+Q-scaling multiply and exact divide-by-100). The rows above use different resolution presets, so their
 larger BRAM (16 vs 11) is the wider line buffers — **BRAM scales with image
 width, not with full/lite**.
 
@@ -268,7 +282,7 @@ RAM wrappers are behavioral in both Verilog and VHDL.
 
 
 - AMD/Xilinx Vivado 2020.2+ (tested with 2025.2)
-- Python 3.8+ with NumPy, SciPy, Pillow (for reference encoder)
+- Python 3.11+ with NumPy, SciPy, Pillow (for reference encoder; CI tests 3.11 and 3.13)
 - FFmpeg (for validation)
 
 ```bash
@@ -376,7 +390,7 @@ Coverage data is written to `build/coverage/`. LCOV info at
 ```bash
 python scripts/run_sim.py 720p           # no waveforms
 python scripts/run_sim.py 720p vcd       # + VCD dump → build/sim/tb_mjpegzero_enc.vcd
-python scripts/run_sim.py lite vcd       # lite mode with VCD
+python scripts/run_sim.py lite 720p vcd  # lite mode with VCD
 ```
 
 Output JPEG is written to `build/sim/sim_output.jpg`. Verified PSNR vs original: **37.77 dB**.
@@ -391,29 +405,33 @@ The core is described in [`mjpegzero.core`](mjpegzero.core) (CAPI2 format).
 # Add core to local library
 fusesoc library add mjpegzero .
 
-# Run simulation (icarus, full mode)
-fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc
+# Simulation smoke test (icarus, 64x8 frame, writes sim_output.jpg).
+# The input vector is generated, so create it once first:
+python python/generate_test_vectors.py
+fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc        # full mode
+fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc   # lite mode
 
-# Run simulation (lite mode)
-fusesoc run --target sim_lite bard0-design:mjpegzero:mjpegzero_enc
-
-# Lint with Verilator
-fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc
-
-# Synthesize for AMD/Xilinx Arty A7-100T
-fusesoc run --target synth_amd bard0-design:mjpegzero:mjpegzero_enc
-
-# Override parameters
+# Testbench settings: quality (full mode), frame count, restart interval
 fusesoc run --target sim bard0-design:mjpegzero:mjpegzero_enc \
-  --LITE_MODE 0 --IMG_WIDTH 1920 --IMG_HEIGHT 1080
+  --TEST_QUALITY 50 --NUM_FRAMES 2 --RESTART_INTERVAL 1
+
+# Lint with Verilator (core defaults: LITE_MODE=1)
+fusesoc run --target lint bard0-design:mjpegzero:mjpegzero_enc --LITE_MODE 0
+
+# Synthesize for AMD/Xilinx Arty A7-100T (full / lite mode)
+fusesoc run --target synth_amd bard0-design:mjpegzero:mjpegzero_enc \
+  --IMG_WIDTH 1920 --IMG_HEIGHT 1080
+fusesoc run --target synth_amd_lite bard0-design:mjpegzero:mjpegzero_enc
 ```
 
 Available targets: `sim`, `sim_lite`, `lint`, `synth_amd`, `synth_amd_lite`.
+The sim targets are a smoke test (SOI/EOI/size); for golden-checked runs use
+`python python/verify_rtl_sim.py`.
 
 To use mjpegZero as a dependency in your own FuseSoC project, add to your `.core` file:
 ```yaml
 depend:
-  - bard0-design:mjpegzero:mjpegzero_enc:0.1.0
+  - bard0-design:mjpegzero:mjpegzero_enc:0.3.0
 ```
 
 <a id="litex-integration"></a>
@@ -623,7 +641,6 @@ for available BRAM.
 mjpegZero/
   rtl/              Synthesizable Verilog 2001 source
     vhdl/           Native VHDL-1993 encoder sources
-    vendor/         Board-specific BRAM wrappers (AMD, Altera, Lattice, ...)
   sim/              SystemVerilog testbench and test vectors
   python/           Reference encoder, verification, test vector generation
   scripts/          Vivado TCL scripts and Python runner

@@ -6,14 +6,42 @@ All notable changes to mjpegZero are documented here.
 
 ## [Unreleased]
 
+---
+
+## [0.3.0] — 2026-10-04
+
 ### Added
+- **Native VHDL-1993 port** (`rtl/vhdl/`, 15 sources) mirroring the Verilog
+  core module for module, with AMD synthesis/post-synthesis scripts, an Arty A7
+  VHDL build, a GHDL `-Wall --warn-error` lint job, and a core-resource
+  equivalence check (`check_core_resources.py`).
+- **cocotb dual-language harness** (`sim/cocotb/`) - one testbench,
+  golden-checked on Icarus (Verilog) and GHDL (VHDL) in CI.
+- **`HUFF_BANKS` parameter** (2/4/8, default 8) - Huffman input ring depth /
+  blocks in flight; raised Arty A7 720p throughput from 11.3 to 65.8 fps.
+- **Ethernet RTP/JPEG streaming demo** (`example_proj/arty_a7_100t_eth/`) -
+  RFC 2435 over UDP through the `emaczero/` MAC submodule, with host opcode
+  control, adaptive rate control and stream diagnostics.
+- **vtpgZero moving-pattern demo** (`vtpgzero/` submodule) - test pattern
+  generator -> encoder -> RTP/JPEG, with keyboard control over UDP.
+- **Ethernet demos on vtpgZero 0.7 and current emacZero** - both rebuilt and
+  re-verified on the Arty A7-100T: the still-image RTP JPEG is byte-identical
+  to the JTAG read-back, and the 720p VTPG stream runs at 61 fps. Trigger and
+  control packets that `net_rx` flags with `udp_err` are discarded. A 720p
+  VTPG -> encoder -> RTP streaming sim (`run_vtpg_stream_sim.py`) checks every
+  frame against a reference encode.
+- **LiteX integration wrapper** (`integrations/litex/`).
+- **Regression coverage** - multi-frame DC-predictor, Q100 gapless and
+  restart-interval goldens, standalone zigzag/packer/restart unit benches
+  (`run_unit_benches.py`), and a quality-scale drift guard
+  (`verify_quality_scale.py`).
 - **fpgacapZero submodule** (`fcapz/`, pinned to `main`) — vendor-agnostic
   EJTAG-AXI bridge and ELA used by the board demos. The Xilinx `jtag_axi_0`
   Vivado IP is gone; `fcapz_ejtagaxi_xilinx7` (USER4, FIFO_DEPTH=256) and
   `fcapz_ela_xilinx7` (USER1/USER2) take its place.
 - **Arty A7-100T post-fcapz build** — `LITE_MODE=1, LITE_QUALITY=75,
   IMG_WIDTH=1280, IMG_HEIGHT=720, JPEG_WORDS=65536`. Closes timing at 150 MHz
-  (WNS +0.108 ns post-route). Final ELA config: `SAMPLE_W=16, DEPTH=512,
+  (latest `HUFF_BANKS=8` build: WNS +0.342 ns post-route). Final ELA config: `SAMPLE_W=16, DEPTH=512,
   INPUT_PIPE=1, no decimation, no timestamps`.
 - **Arty S7-50 example project scaffold** — `example_proj/arty_s7_50/` with
   shared `demo_top.v`, board-specific XDC, and `pre_write_bitstream.tcl`
@@ -51,18 +79,50 @@ All notable changes to mjpegZero are documented here.
   --hw-host/--hw-port/--jpeg-max-bytes` flags.
 
 ### Changed
+- **Pipelined Huffman encoder + concurrent packer** (Verilog and VHDL): the
+  AC scan jumps between nonzero coefficients via a per-bank bitmap (one token
+  per cycle, ZRL via a one-cycle stall), and the packer accepts a code in the
+  same cycle it drains a byte. Encode is now DCT-limited at ~65 cycles/block
+  (~80 fps 720p at 150 MHz) at every quality, including Q100; it was
+  74-192 cycles/block (27-71 fps), depending on content and quality.
+  The output is bit-identical. The cost is about +240 LUT and +140 FF; core
+  post-synth WNS is +0.17 ns at 150 MHz. `python/measure_throughput.py`
+  measures this on mandrill strips, and CI guards Q100 at >= 75 fps.
 - `demo_top.v` now drives the encoder via `fcapz_ejtagaxi_xilinx7` instead of
   `jtag_axi_0`; reset is active-high (`~rst_n`) on `axi_rst`/`sample_rst`.
 - AW_RESP no longer assert+clear `m_bvalid` in the same evaluation step;
   asserts once and holds until `m_bready` (matches AXI4 protocol).
 - `m_bvalid` / `m_rresp` now reflect SLVERR for invalid transactions instead
   of always 2'b00.
-- Top-level [`README.md`](README.md) `Resource Usage` section now shows the
-  `mjpegzero_enc_top` slice extracted from the post-route A7 demo build,
-  with the full demo total + WNS noted alongside.
+- Top-level [`README.md`](README.md) `Resource Usage` section now shows
+  standalone core synthesis (`run_core_synth.tcl`, XC7A100T) for Verilog and
+  VHDL, full and lite; board demo totals live in the board READMEs.
+- CI: shared setup action (`.github/actions/setup-sim`) with pip caching and
+  a cached mandrill test image, so every job encodes the same source (a
+  synthetic fallback is flagged and never cached); per-job timeouts,
+  superseded-run cancellation, `workflow_dispatch`; cocotb/FuseSoC pinned to
+  their current majors; Python matrix 3.11 + 3.13 (3.9 is end-of-life);
+  pytest for `tests/`; FuseSoC sim-target smoke test. `run_ci_local.py`
+  mirrors the current jobs again (adds `vhdl-lint`).
+- Single behavioral BRAM (`rtl/bram_sdp.v`) replaces the per-vendor
+  `rtl/vendor/` wrappers.
+- Quality mode (`LITE_MODE`) is decoupled from resolution
+  (`IMG_WIDTH`/`IMG_HEIGHT`).
 - Tested-Hardware table in [`README.md`](README.md) and the new-board
   template in [`CONTRIBUTING.md`](CONTRIBUTING.md) reflect the
   `common/` shared layout (each board only contributes constraints + scripts).
+
+- **Back-to-back stream test** (`python/verify_stream.py`, iverilog and
+  cocotb/GHDL): multi-row frames fed back to back with QUALITY / ENABLE
+  changes mid-frame, restart wrap, gaps, RGB, EXIF and HUFF_BANKS 2/4;
+  every frame decoded restart-aware and header-checked, VHDL byte-compared
+  against Verilog. Wired into CI and `run_ci_local.py`.
+- **VHDL `VID_DATA_W` derived from `RGB_INPUT`** (`vid_data_w()`), as in
+  Verilog; the free generic is gone.
+- **README architecture diagram** redrawn from `docs/architecture.json` with
+  hdldiagZero 1.3.0: U-turn pipeline layout, frame-control fan-out to the
+  stages it sequences, colour by function, follows the viewer's light/dark
+  theme.
 
 ### Removed
 - `example_proj/common/python/host.tcl` — Vivado Hardware Manager script
@@ -72,6 +132,39 @@ All notable changes to mjpegZero are documented here.
   the Xilinx JTAG-to-AXI Master IP is no longer instantiated.
 
 ### Fixed
+- **Frame control** (Verilog + VHDL): a new frame arriving before the last one
+  finished corrupted the encoder; the SOF word of frame 2+ was written to the
+  wrong bank/column; `frame_start` could be lost during EOI and the in-flight
+  counter could wrap, hanging the encoder. The top now runs one frame at a
+  time (exactly `TOTAL_BLOCKS` blocks, block-granular admission) and the input
+  buffer ping-pongs across frames.
+- **ENABLE = 0** now stalls the input instead of accepting and dropping pixels.
+- **QUALITY / RESTART latched per frame** (a mid-frame write no longer
+  desyncs tables and headers); QUALITY 0 and 101–127 clamp to 1 / 100.
+- **Exact Q-table divide by 100** in full mode (the reciprocal approximation
+  rounded some Q<50 entries up, e.g. 130 instead of 129).
+- **Widths above 2048** hung the encoder (fixed 11-bit x / 7-bit MCU column
+  counters); counter widths now follow `IMG_WIDTH`.
+- **FRAME_SIZE** reported a running total across frames; it is now the byte
+  count of the last frame.
+- **AXI4-Lite**: ready signals follow the handshake rules, AW/W are captured
+  independently, and `WSTRB` is honored.
+- Scripts that reported success on failure: `run_sim.py` /
+  `run_vhdl_top_sim.py` (no JPEG or failed checks), `run_all.py` (timing
+  VIOLATED), `hw_test_mandrill.py` (stale sim/HW JPEGs), and the verify
+  scripts (stale outputs). AMD synth/impl scripts now constrain 6.667 ns
+  (150 MHz) instead of 6.897 ns.
+- CI Verilator lint passed `LITE_MODE`/`RGB_INPUT` as `-D` defines (ignored);
+  now `-G` parameters, so all four top-level configurations are linted.
+- Restart-interval output: Huffman `S_IDLE` now honors a live restart, so the
+  DC predictor resets in sync with each RSTn (Verilog + VHDL).
+- Zigzag corruption under gapless input, packer `bp_ready` backpressure, and
+  restart tail-bit padding (Verilog + VHDL).
+- Per-frame DC predictor reset (multi-frame luma wash), driven from
+  `frame_done`.
+- YUYV chroma phase at start of frame in `rgb_to_ycbcr`.
+- Full-mode Q<50 scale LUT: 16 rounded/typo entries now floor, matching lite
+  mode and the Python reference (Verilog + VHDL).
 - Multi-driver `axi_error` reg in `demo_top.v` / `demo_top_bare.v` — the
   AR FSM and AW FSM both wrote it directly, producing undefined synth
   behavior. Now serialised through `axi_rd_error_pulse`.
@@ -103,9 +196,6 @@ All notable changes to mjpegZero are documented here.
 - **Full-mode EXIF test** in CI (previously only tested in lite mode).
 - **Vendor BRAM stub lint** — CI now lints all vendor BRAM wrappers.
 - **Lint LITE_MODE=0, RGB_INPUT=1** — new CI lint combination.
-- **Makefile** — convenience targets for verify, lint, sim, coverage, and clean.
-- **`docs/ARCHITECTURE.md`** — design rationale covering subsampling, pipeline
-  stages, quality scaling, no-backpressure decision, and full vs. lite mode.
 - **`python/requirements.txt`** — declared Python dependencies.
 - **FuseSoC** — `EXIF_ENABLE`, `EXIF_X_RES`, `EXIF_Y_RES`, `EXIF_RES_UNIT`,
   `RGB_INPUT` parameters added to all targets; `rgb_to_ycbcr.v` added to RTL
@@ -129,6 +219,7 @@ First public release.
 
 ---
 
-[Unreleased]: https://github.com/bard0-design/mjpegZero/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/bard0-design/mjpegZero/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/bard0-design/mjpegZero/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lcapossio/mjpegZero/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lcapossio/mjpegZero/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/lcapossio/mjpegZero/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/lcapossio/mjpegZero/releases/tag/v0.1.0

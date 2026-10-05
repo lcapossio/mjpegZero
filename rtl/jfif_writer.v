@@ -460,7 +460,7 @@ if (LITE_MODE == 0) begin : g_full_header
                     m_axis_tdata  <= soi_app0_rom[seg_idx[4:0]];
                     if (seg_idx == 10'd19) begin
                         seg_idx <= 10'd0;
-                        if (EXIF_ENABLE)
+                        if (EXIF_ENABLE != 0)
                             state <= S_APP1;
                         else
                             state <= S_DQT_L_HDR;

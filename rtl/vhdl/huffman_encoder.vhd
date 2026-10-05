@@ -434,18 +434,6 @@ architecture rtl of huffman_encoder is
         return lo;
     end function;
 
-    function vbits_for(v : signed(15 downto 0); cat : natural) return unsigned is
-        variable lo : unsigned(10 downto 0);
-        variable addend : unsigned(10 downto 0);
-    begin
-        lo := unsigned(v(10 downto 0));
-        if v(15) = '1' then
-            addend := shift_left(to_unsigned(1, 11), cat) - 1;
-            return lo + addend;
-        end if;
-        return lo;
-    end function;
-
     function pack_bits(code : std_logic_vector(15 downto 0); len : unsigned(4 downto 0);
                        vbits : unsigned(10 downto 0); cat : unsigned(3 downto 0)) return std_logic_vector is
         variable base : unsigned(31 downto 0);
@@ -458,6 +446,34 @@ architecture rtl of huffman_encoder is
         return std_logic_vector(base or val);
     end function;
 
+    -- Binary index of a one-hot vector (an OR tree, no priority chain).
+    function onehot_idx(oh : std_logic_vector(63 downto 0)) return unsigned is
+        variable idx : unsigned(5 downto 0);
+    begin
+        idx := (others => '0');
+        for i in 0 to 63 loop
+            if oh(i) = '1' then
+                idx := idx or to_unsigned(i, 6);
+            end if;
+        end loop;
+        return idx;
+    end function;
+
+    -- Inclusive prefix OR (bit i = or of x(i downto 0)) as a log-depth
+    -- shift-OR network, so the lowest-set-bit logic stays off the carry chain.
+    function prefix_or(x : std_logic_vector(63 downto 0)) return std_logic_vector is
+        variable p : unsigned(63 downto 0);
+    begin
+        p := unsigned(x);
+        p := p or shift_left(p, 1);
+        p := p or shift_left(p, 2);
+        p := p or shift_left(p, 4);
+        p := p or shift_left(p, 8);
+        p := p or shift_left(p, 16);
+        p := p or shift_left(p, 32);
+        return std_logic_vector(p);
+    end function;
+
     constant NB : natural := HUFF_BANKS;
     constant BW : natural := bank_width(NB);
 
@@ -466,43 +482,109 @@ architecture rtl of huffman_encoder is
 
     signal coeff_wr_idx : unsigned(5 downto 0) := (others => '0');
     signal coeff_comp_id : std_logic_vector(1 downto 0) := (others => '0');
-    signal last_nonzero_idx : unsigned(5 downto 0) := (others => '0');
+    -- Nonzero map of the block being written (bit i = coeff i /= 0; bit 0 unused).
+    signal nz_acc : std_logic_vector(63 downto 0) := (others => '0');
+    -- Any nonzero AC so far in that block.
+    signal nz_any : std_logic := '0';
     signal wr_count : unsigned(BW downto 0) := (others => '0');
     signal rd_count : unsigned(BW downto 0) := (others => '0');
     signal occ : unsigned(BW downto 0);
 
     type bank_comp_t is array (0 to NB - 1) of std_logic_vector(1 downto 0);
-    type bank_lnz_t is array (0 to NB - 1) of unsigned(5 downto 0);
+    type bank_nz_t is array (0 to NB - 1) of std_logic_vector(63 downto 0);
     signal bank_comp : bank_comp_t := (others => (others => '0'));
-    signal bank_lnz : bank_lnz_t := (others => (others => '0'));
+    signal bank_nz : bank_nz_t := (others => (others => '0'));
+    -- Per-bank or-reduce of bank_nz, kept off the read-side path.
+    signal bank_any : std_logic_vector(NB - 1 downto 0) := (others => '0');
 
-    type state_t is (S_IDLE, S_DC_FETCH, S_DC_ENCODE, S_DC_CALC, S_DC_EMIT,
-                     S_AC_FETCH, S_AC_SCAN, S_AC_ENCODE, S_AC_EMIT,
-                     S_ZRL_EMIT, S_EOB_EMIT);
-    signal state : state_t := S_IDLE;
-    signal ac_idx : unsigned(5 downto 0) := to_unsigned(1, 6);
-    signal zero_run : unsigned(3 downto 0) := (others => '0');
+    -- Code pipeline: one Huffman code per cycle. A controller walks the block's
+    -- nonzero map and issues one token per cycle (DC, each nonzero AC, EOB) into
+    -- a 5-stage pipeline; zero coefficients cost nothing. Stage 2 splits runs of
+    -- >15 zeros into ZRL codes, stalling the controller one cycle per ZRL. The
+    -- whole pipeline advances together whenever the output register is free.
+    --
+    --   issue -> S2 fetch/DC diff/run -> S3 abs+category -> S4 table lookup
+    --         -> out register (code+value bits combined)
+    --
+    -- Blocks never overlap: the next block is issued only from C_IDLE, entered
+    -- the cycle after the block's EOB-flagged code is accepted. That keeps the
+    -- top's restart/frame_done (registered off that handshake) in step: the DC
+    -- predictors reset in C_IDLE before the next DC reaches S2, and the next
+    -- code reaches the packer >= 2 cycles after the EOB, after it saw in_restart.
+    type ctl_t is (C_IDLE, C_AC, C_EOB, C_WAIT);
+    signal ctl : ctl_t := C_IDLE;
+
+    constant K_DC  : unsigned(1 downto 0) := "00";
+    constant K_AC  : unsigned(1 downto 0) := "01";
+    constant K_ZRL : unsigned(1 downto 0) := "10";
+    constant K_EOB : unsigned(1 downto 0) := "11";
+
+    signal rem_nz : std_logic_vector(63 downto 0) := (others => '0');  -- nonzero ACs not yet issued
     signal blk_comp_id : std_logic_vector(1 downto 0) := (others => '0');
     signal coeff_rd_bank : unsigned(BW - 1 downto 0) := (others => '0');
-    signal blk_last_nonzero : unsigned(5 downto 0) := (others => '0');
+    signal restart_pending : std_logic := '0';
     signal prev_dc_y : signed(15 downto 0) := (others => '0');
     signal prev_dc_cb : signed(15 downto 0) := (others => '0');
     signal prev_dc_cr : signed(15 downto 0) := (others => '0');
-    signal cur_coeff : signed(15 downto 0) := (others => '0');
-    signal cur_abs : unsigned(10 downto 0) := (others => '0');
-    signal cur_sign : std_logic := '0';
-    signal cur_cat : unsigned(3 downto 0) := (others => '0');
-    signal cur_vbits : unsigned(10 downto 0) := (others => '0');
-    signal huff_code : std_logic_vector(15 downto 0) := (others => '0');
-    signal huff_len : unsigned(4 downto 0) := (others => '0');
-    signal restart_pending : std_logic := '0';
+
+    -- S2: token as issued
+    signal s2_valid : std_logic := '0';
+    signal s2_kind : unsigned(1 downto 0) := K_DC;
+    signal s2_pos : unsigned(5 downto 0) := (others => '0');  -- coefficient index (0 for DC)
+    signal s2_eob : std_logic := '0';
+    signal last_pos : unsigned(5 downto 0) := (others => '0');  -- previous coded coefficient
+    -- S3: value + run
+    signal s3_valid : std_logic := '0';
+    signal s3_kind : unsigned(1 downto 0) := K_DC;
+    signal s3_eob : std_logic := '0';
+    signal s3_val : signed(15 downto 0) := (others => '0');
+    signal s3_run : unsigned(3 downto 0) := (others => '0');
+    -- S4: sign/abs/category
+    signal s4_valid : std_logic := '0';
+    signal s4_kind : unsigned(1 downto 0) := K_DC;
+    signal s4_eob : std_logic := '0';
+    signal s4_raw : unsigned(10 downto 0) := (others => '0');
+    signal s4_sign : std_logic := '0';
+    signal s4_cat : unsigned(3 downto 0) := (others => '0');
+    signal s4_run : unsigned(3 downto 0) := (others => '0');
+    -- S5: code + value bits, ready to combine
+    signal s5_valid : std_logic := '0';
+    signal s5_dc : std_logic := '0';
+    signal s5_eob : std_logic := '0';
+    signal s5_code : std_logic_vector(15 downto 0) := (others => '0');
+    signal s5_len : unsigned(4 downto 0) := (others => '0');
+    signal s5_cat : unsigned(3 downto 0) := (others => '0');
+    signal s5_vbits : unsigned(10 downto 0) := (others => '0');
+
     signal out_valid_i : std_logic := '0';
+    signal out_eob_i : std_logic := '0';
+    signal adv : std_logic;
+    signal s2_run : unsigned(5 downto 0);
+    signal zrl_emit : std_logic;
+    signal issue_en : std_logic;
+    signal rem_pos : unsigned(5 downto 0);
+    signal rem_clr : std_logic_vector(63 downto 0);
+    signal rem_below : std_logic_vector(63 downto 0);
+    signal s2_coeff : signed(15 downto 0);
 begin
     out_valid <= out_valid_i;
+    out_eob <= out_eob_i;
     occ <= wr_count - rd_count;
 
     assert NB = 2 or NB = 4 or NB = 8
         report "HUFF_BANKS must be 2, 4, or 8" severity failure;
+
+    adv <= (not out_valid_i) or out_ready;
+    -- S2 run of zeros before this AC; > 15 needs a ZRL first.
+    s2_run <= s2_pos - last_pos - 1;
+    zrl_emit <= '1' when s2_valid = '1' and s2_kind = K_AC and s2_run(5 downto 4) /= "00" else '0';
+    issue_en <= adv and not zrl_emit;
+    -- rem_below(i) = any set bit below i. The lowest set bit is the one with
+    -- none below it; clearing it keeps the rest (== x and (x-1), no carry chain).
+    rem_below <= std_logic_vector(shift_left(unsigned(prefix_or(rem_nz)), 1));
+    rem_pos <= onehot_idx(rem_nz and not rem_below);
+    rem_clr <= rem_nz and rem_below;
+    s2_coeff <= coeff_buf(to_integer(coeff_rd_bank) * 64 + to_integer(s2_pos));
 
     process (clk)
         variable wr_addr : natural;
@@ -511,7 +593,8 @@ begin
         if rising_edge(clk) then
             if rst_n = '0' then
                 coeff_wr_idx <= (others => '0');
-                last_nonzero_idx <= (others => '0');
+                nz_acc <= (others => '0');
+                nz_any <= '0';
                 wr_count <= (others => '0');
             else
                 if in_valid = '1' then
@@ -521,19 +604,25 @@ begin
                         coeff_buf(wr_addr) <= signed(in_data);
                         coeff_wr_idx <= to_unsigned(1, 6);
                         coeff_comp_id <= comp_id;
-                        last_nonzero_idx <= (others => '0');
+                        nz_acc <= (others => '0');
+                        nz_any <= '0';
                     else
                         wr_addr := wr_bank * 64 + to_integer(coeff_wr_idx);
                         coeff_buf(wr_addr) <= signed(in_data);
                         if signed(in_data) /= 0 then
-                            last_nonzero_idx <= coeff_wr_idx;
+                            nz_acc(to_integer(coeff_wr_idx)) <= '1';
+                            nz_any <= '1';
+                        else
+                            nz_acc(to_integer(coeff_wr_idx)) <= '0';
                         end if;
                         if coeff_wr_idx = 63 then
                             bank_comp(wr_bank) <= coeff_comp_id;
                             if signed(in_data) /= 0 then
-                                bank_lnz(wr_bank) <= to_unsigned(63, 6);
+                                bank_nz(wr_bank) <= '1' & nz_acc(62 downto 1) & '0';
+                                bank_any(wr_bank) <= '1';
                             else
-                                bank_lnz(wr_bank) <= last_nonzero_idx;
+                                bank_nz(wr_bank) <= '0' & nz_acc(62 downto 1) & '0';
+                                bank_any(wr_bank) <= nz_any;
                             end if;
                             coeff_wr_idx <= (others => '0');
                             wr_count <= wr_count + 1;
@@ -547,30 +636,35 @@ begin
     end process;
 
     process (clk)
-        variable rd_addr : natural;
+        variable rd_bank : natural;
         variable blk_is_luma : boolean;
-        variable temp_cat : natural;
         variable dc_lookup : std_logic_vector(19 downto 0);
         variable ac_lookup : std_logic_vector(20 downto 0);
         variable ac_sym : natural;
-        variable rd_bank : natural;
+        variable prev_dc : signed(15 downto 0);
+        variable abs_v : unsigned(10 downto 0);
+        variable cat : natural;
     begin
         if rising_edge(clk) then
             if rst_n = '0' then
-                state <= S_IDLE;
-                out_valid_i <= '0';
-                out_sob <= '0';
-                out_eob <= '0';
-                out_bits <= (others => '0');
-                out_len <= (others => '0');
-                prev_dc_y <= (others => '0');
-                prev_dc_cb <= (others => '0');
-                prev_dc_cr <= (others => '0');
-                ac_idx <= to_unsigned(1, 6);
-                zero_run <= (others => '0');
+                ctl <= C_IDLE;
+                rem_nz <= (others => '0');
                 restart_pending <= '0';
                 coeff_rd_bank <= (others => '0');
                 rd_count <= (others => '0');
+                prev_dc_y <= (others => '0');
+                prev_dc_cb <= (others => '0');
+                prev_dc_cr <= (others => '0');
+                last_pos <= (others => '0');
+                s2_valid <= '0';
+                s3_valid <= '0';
+                s4_valid <= '0';
+                s5_valid <= '0';
+                out_valid_i <= '0';
+                out_sob <= '0';
+                out_eob_i <= '0';
+                out_bits <= (others => '0');
+                out_len <= (others => '0');
             else
                 if restart = '1' then
                     restart_pending <= '1';
@@ -578,164 +672,171 @@ begin
 
                 blk_is_luma := unsigned(blk_comp_id) <= 1;
 
-                case state is
-                    when S_IDLE =>
-                        out_valid_i <= '0';
-                        out_sob <= '0';
-                        out_eob <= '0';
+                -- ---------------- Controller / issue ----------------
+                case ctl is
+                    when C_IDLE =>
                         -- Apply pending restart. Also honor a LIVE restart this
                         -- cycle: a mid-frame restart_trigger lands exactly as the
-                        -- FSM enters S_IDLE (both registered off the same block-3
-                        -- EOB), so waiting for the latched restart_pending (set
-                        -- next cycle) would miss this S_IDLE and code the next
-                        -- MCU's DC against the stale predictor - a desync vs the
-                        -- decoder, which resets DC at the RSTn marker.
+                        -- controller enters C_IDLE (both registered off the same
+                        -- EOB handshake), so waiting for the latched
+                        -- restart_pending (set next cycle) would miss it and code
+                        -- the next MCU's DC against the stale predictor - a desync
+                        -- vs the decoder, which resets DC at the RSTn marker.
                         if restart_pending = '1' or restart = '1' then
                             prev_dc_y <= (others => '0');
                             prev_dc_cb <= (others => '0');
                             prev_dc_cr <= (others => '0');
                             restart_pending <= '0';
                         end if;
-                        if occ /= 0 then
-                            rd_bank := to_integer(rd_count(BW - 1 downto 0));
-                            blk_comp_id <= bank_comp(rd_bank);
-                            blk_last_nonzero <= bank_lnz(rd_bank);
-                            coeff_rd_bank <= rd_count(BW - 1 downto 0);
-                            state <= S_DC_FETCH;
-                        end if;
-
-                    when S_DC_FETCH =>
-                        out_valid_i <= '0';
-                        rd_addr := to_integer(coeff_rd_bank) * 64;
-                        if unsigned(blk_comp_id) <= 1 then
-                            cur_coeff <= coeff_buf(rd_addr) - prev_dc_y;
-                            prev_dc_y <= coeff_buf(rd_addr);
-                        elsif unsigned(blk_comp_id) = 2 then
-                            cur_coeff <= coeff_buf(rd_addr) - prev_dc_cb;
-                            prev_dc_cb <= coeff_buf(rd_addr);
-                        else
-                            cur_coeff <= coeff_buf(rd_addr) - prev_dc_cr;
-                            prev_dc_cr <= coeff_buf(rd_addr);
-                        end if;
-                        state <= S_DC_ENCODE;
-
-                    when S_DC_ENCODE =>
-                        out_valid_i <= '0';
-                        cur_sign <= cur_coeff(15);
-                        cur_abs <= abs11(cur_coeff);
-                        cur_cat <= to_unsigned(compute_category(abs11(cur_coeff)), 4);
-                        state <= S_DC_CALC;
-
-                    when S_DC_CALC =>
-                        out_valid_i <= '0';
-                        temp_cat := to_integer(cur_cat);
-                        cur_vbits <= vbits_for(cur_coeff, temp_cat);
-                        if blk_is_luma then dc_lookup := dc_luma_lookup(temp_cat); else dc_lookup := dc_chroma_lookup(temp_cat); end if;
-                        huff_code <= dc_lookup(15 downto 0);
-                        huff_len <= resize(unsigned(dc_lookup(19 downto 16)), 5);
-                        state <= S_DC_EMIT;
-
-                    when S_DC_EMIT =>
-                        out_valid_i <= '1';
-                        out_sob <= '1';
-                        out_eob <= '0';
-                        out_bits <= pack_bits(huff_code, huff_len, cur_vbits, cur_cat);
-                        out_len <= std_logic_vector(resize(huff_len, 6) + resize(cur_cat, 6));
-                        if out_ready = '1' and out_valid_i = '1' then
-                            out_valid_i <= '0';
-                            out_sob <= '0';
-                            if blk_last_nonzero = 0 then
-                                state <= S_EOB_EMIT;
-                            else
-                                ac_idx <= to_unsigned(1, 6);
-                                zero_run <= (others => '0');
-                                state <= S_AC_FETCH;
+                        if issue_en = '1' then
+                            s2_valid <= '0';
+                            if occ /= 0 then
+                                rd_bank := to_integer(rd_count(BW - 1 downto 0));
+                                blk_comp_id <= bank_comp(rd_bank);
+                                coeff_rd_bank <= rd_count(BW - 1 downto 0);
+                                rem_nz <= bank_nz(rd_bank);
+                                s2_valid <= '1';
+                                s2_kind <= K_DC;
+                                s2_pos <= (others => '0');
+                                s2_eob <= '0';
+                                if bank_any(rd_bank) = '1' then
+                                    ctl <= C_AC;
+                                else
+                                    ctl <= C_EOB;
+                                end if;
                             end if;
                         end if;
 
-                    when S_AC_FETCH =>
-                        out_valid_i <= '0';
-                        out_sob <= '0';
-                        out_eob <= '0';
-                        rd_addr := to_integer(coeff_rd_bank) * 64 + to_integer(ac_idx);
-                        cur_coeff <= coeff_buf(rd_addr);
-                        state <= S_AC_SCAN;
-
-                    when S_AC_SCAN =>
-                        out_valid_i <= '0';
-                        if cur_coeff = 0 then
-                            if ac_idx > blk_last_nonzero then
-                                state <= S_EOB_EMIT;
-                            elsif zero_run = 15 then
-                                state <= S_ZRL_EMIT;
+                    when C_AC =>
+                        if issue_en = '1' then
+                            s2_valid <= '1';
+                            s2_kind <= K_AC;
+                            s2_pos <= rem_pos;
+                            if unsigned(rem_clr) = 0 and rem_pos = 63 then
+                                s2_eob <= '1';
                             else
-                                zero_run <= zero_run + 1;
-                                ac_idx <= ac_idx + 1;
-                                state <= S_AC_FETCH;
+                                s2_eob <= '0';
                             end if;
-                        else
-                            cur_sign <= cur_coeff(15);
-                            cur_abs <= abs11(cur_coeff);
-                            state <= S_AC_ENCODE;
-                        end if;
-
-                    when S_AC_ENCODE =>
-                        out_valid_i <= '0';
-                        temp_cat := compute_category(cur_abs);
-                        cur_cat <= to_unsigned(temp_cat, 4);
-                        cur_vbits <= vbits_for(cur_coeff, temp_cat);
-                        ac_sym := to_integer(zero_run) * 16 + temp_cat;
-                        if blk_is_luma then ac_lookup := ac_luma_lookup(ac_sym); else ac_lookup := ac_chroma_lookup(ac_sym); end if;
-                        huff_code <= ac_lookup(15 downto 0);
-                        huff_len <= unsigned(ac_lookup(20 downto 16));
-                        state <= S_AC_EMIT;
-
-                    when S_AC_EMIT =>
-                        out_valid_i <= '1';
-                        out_sob <= '0';
-                        if ac_idx = 63 then out_eob <= '1'; else out_eob <= '0'; end if;
-                        out_bits <= pack_bits(huff_code, huff_len, cur_vbits, cur_cat);
-                        out_len <= std_logic_vector(resize(huff_len, 6) + resize(cur_cat, 6));
-                        if out_ready = '1' and out_valid_i = '1' then
-                            out_valid_i <= '0';
-                            zero_run <= (others => '0');
-                            if ac_idx = 63 then
-                                rd_count <= rd_count + 1;
-                                state <= S_IDLE;
-                            else
-                                ac_idx <= ac_idx + 1;
-                                state <= S_AC_FETCH;
+                            rem_nz <= rem_clr;
+                            if unsigned(rem_clr) = 0 then
+                                if rem_pos = 63 then
+                                    ctl <= C_WAIT;
+                                else
+                                    ctl <= C_EOB;
+                                end if;
                             end if;
                         end if;
 
-                    when S_ZRL_EMIT =>
-                        out_valid_i <= '1';
-                        out_sob <= '0';
-                        out_eob <= '0';
-                        if blk_is_luma then ac_lookup := ac_luma_lookup(16#F0#); else ac_lookup := ac_chroma_lookup(16#F0#); end if;
-                        out_bits <= ac_lookup(15 downto 0) & x"0000";
-                        out_len <= std_logic_vector(resize(unsigned(ac_lookup(20 downto 16)), 6));
-                        if out_ready = '1' and out_valid_i = '1' then
-                            out_valid_i <= '0';
-                            zero_run <= (others => '0');
-                            ac_idx <= ac_idx + 1;
-                            state <= S_AC_FETCH;
+                    when C_EOB =>
+                        if issue_en = '1' then
+                            s2_valid <= '1';
+                            s2_kind <= K_EOB;
+                            s2_eob <= '1';
+                            ctl <= C_WAIT;
                         end if;
 
-                    when S_EOB_EMIT =>
-                        out_valid_i <= '1';
-                        out_sob <= '0';
-                        out_eob <= '1';
-                        if blk_is_luma then ac_lookup := ac_luma_lookup(16#00#); else ac_lookup := ac_chroma_lookup(16#00#); end if;
-                        out_bits <= ac_lookup(15 downto 0) & x"0000";
-                        out_len <= std_logic_vector(resize(unsigned(ac_lookup(20 downto 16)), 6));
-                        if out_ready = '1' and out_valid_i = '1' then
-                            out_valid_i <= '0';
-                            out_eob <= '0';
-                            rd_count <= rd_count + 1;
-                            state <= S_IDLE;
+                    when C_WAIT =>
+                        if issue_en = '1' then
+                            s2_valid <= '0';
+                        end if;
+                        if out_valid_i = '1' and out_ready = '1' and out_eob_i = '1' then
+                            rd_count <= rd_count + 1;  -- pop completed block
+                            ctl <= C_IDLE;
                         end if;
                 end case;
+
+                if adv = '1' then
+                    -- ---------------- S2: fetch / DC diff / zero run ----------------
+                    s3_valid <= s2_valid;
+                    s3_eob <= s2_eob and not zrl_emit;
+                    if zrl_emit = '1' then
+                        s3_kind <= K_ZRL;
+                        s3_run <= to_unsigned(15, 4);
+                        s3_val <= (others => '0');
+                        last_pos <= last_pos + 16;
+                    else
+                        s3_kind <= s2_kind;
+                        s3_run <= s2_run(3 downto 0);
+                        if s2_kind = K_DC then
+                            if unsigned(blk_comp_id) <= 1 then
+                                prev_dc := prev_dc_y;
+                            elsif unsigned(blk_comp_id) = 2 then
+                                prev_dc := prev_dc_cb;
+                            else
+                                prev_dc := prev_dc_cr;
+                            end if;
+                            s3_val <= s2_coeff - prev_dc;
+                            last_pos <= (others => '0');
+                            if s2_valid = '1' then
+                                if unsigned(blk_comp_id) <= 1 then
+                                    prev_dc_y <= s2_coeff;
+                                elsif unsigned(blk_comp_id) = 2 then
+                                    prev_dc_cb <= s2_coeff;
+                                else
+                                    prev_dc_cr <= s2_coeff;
+                                end if;
+                            end if;
+                        else
+                            s3_val <= s2_coeff;
+                            if s2_valid = '1' then
+                                last_pos <= s2_pos;
+                            end if;
+                        end if;
+                    end if;
+
+                    -- ---------------- S3: sign / abs / category ----------------
+                    s4_valid <= s3_valid;
+                    s4_kind <= s3_kind;
+                    s4_eob <= s3_eob;
+                    s4_run <= s3_run;
+                    -- ZRL/EOB carry no value bits: zero them so none leak into the code.
+                    if s3_kind = K_DC or s3_kind = K_AC then
+                        abs_v := abs11(s3_val);
+                        s4_raw <= unsigned(s3_val(10 downto 0));
+                        s4_sign <= s3_val(15);
+                        s4_cat <= to_unsigned(compute_category(abs_v), 4);
+                    else
+                        s4_raw <= (others => '0');
+                        s4_sign <= '0';
+                        s4_cat <= (others => '0');
+                    end if;
+
+                    -- ---------------- S4: value bits + table lookup ----------------
+                    s5_valid <= s4_valid;
+                    if s4_kind = K_DC then s5_dc <= '1'; else s5_dc <= '0'; end if;
+                    s5_eob <= s4_eob;
+                    s5_cat <= s4_cat;
+                    cat := to_integer(s4_cat);
+                    if s4_sign = '1' then
+                        s5_vbits <= s4_raw + (shift_left(to_unsigned(1, 11), cat) - 1);
+                    else
+                        s5_vbits <= s4_raw;
+                    end if;
+                    if s4_kind = K_DC then
+                        if blk_is_luma then dc_lookup := dc_luma_lookup(cat); else dc_lookup := dc_chroma_lookup(cat); end if;
+                        s5_code <= dc_lookup(15 downto 0);
+                        s5_len <= resize(unsigned(dc_lookup(19 downto 16)), 5);
+                    else
+                        if s4_kind = K_AC then
+                            ac_sym := to_integer(s4_run) * 16 + cat;
+                        elsif s4_kind = K_ZRL then
+                            ac_sym := 16#F0#;
+                        else
+                            ac_sym := 16#00#;
+                        end if;
+                        if blk_is_luma then ac_lookup := ac_luma_lookup(ac_sym); else ac_lookup := ac_chroma_lookup(ac_sym); end if;
+                        s5_code <= ac_lookup(15 downto 0);
+                        s5_len <= unsigned(ac_lookup(20 downto 16));
+                    end if;
+
+                    -- ---------------- S5: combine into the output register ----------------
+                    -- Huffman code MSB-aligned, value bits immediately after it.
+                    out_valid_i <= s5_valid;
+                    out_sob <= s5_valid and s5_dc;
+                    out_eob_i <= s5_valid and s5_eob;
+                    out_bits <= pack_bits(s5_code, s5_len, s5_vbits, s5_cat);
+                    out_len <= std_logic_vector(resize(s5_len, 6) + resize(s5_cat, 6));
+                end if;
             end if;
         end if;
     end process;

@@ -21,6 +21,7 @@ module vtpg_udp_control #(
     input  wire [7:0]  udp_data,
     input  wire        udp_valid,
     input  wire        udp_last,
+    input  wire        udp_err,       // net_rx: discard this datagram
     input  wire [15:0] udp_dst_port,
 
     output reg         start_loop,
@@ -125,7 +126,7 @@ module vtpg_udp_control #(
                 if (udp_last) begin
                     in_pkt <= 1'b0;
 
-                    if (udp_dst_port == TRIGGER_PORT) begin
+                    if (!udp_err && udp_dst_port == TRIGGER_PORT) begin
                         if ((!in_pkt && (udp_data == OP_STOP_0 || udp_data == OP_STOP_S || udp_data == OP_STOP_s)) ||
                             ( in_pkt && (opcode   == OP_STOP_0 || opcode   == OP_STOP_S || opcode   == OP_STOP_s))) begin
                             pend_stop <= 1'b1;
@@ -137,7 +138,7 @@ module vtpg_udp_control #(
                         end
                     end
 
-                    if (udp_dst_port == VTPG_CTRL_PORT) begin
+                    if (!udp_err && udp_dst_port == VTPG_CTRL_PORT) begin
                         pend_vtpg <= 1'b1;
                         pend_reg  <= in_pkt ? opcode : udp_data;
                         if (!in_pkt)

@@ -165,20 +165,21 @@ module tb_vtpg_full;
         end
     end
     // Trace the Huffman's DC diff + magnitude for the most-negative luma DC block
-    // First few LUMA DC blocks of EACH frame at S_DC_FETCH (state 1): shows
-    // coeff_dc (quant DC going in), prev_dc_y (carryover?), and the diff the
-    // Huffman codes. Carryover bug => frame 1 starts with prev_dc_y != 0.
+    // First few LUMA DC blocks of EACH frame as the DC token leaves stage 2:
+    // shows coeff_dc (quant DC going in), prev_dc_y (carryover?), and the diff
+    // the Huffman codes. Carryover bug => frame 1 starts with prev_dc_y != 0.
     reg [3:0] huf_dc_cnt;
     always @(posedge clk) begin
         if (!rst_n || frame_kick) huf_dc_cnt <= 4'd0;
-        else if (u_enc.u_huffman.state==4'd1 && u_enc.u_huffman.blk_comp_id<=2'd1
+        else if (u_enc.u_huffman.s2_valid && u_enc.u_huffman.s2_kind==2'd0 &&
+                 u_enc.u_huffman.adv && u_enc.u_huffman.blk_comp_id<=2'd1
                  && huf_dc_cnt < 4'd8) begin
             // First luma DC block of each frame must show prev_dc_y=0 (predictor
             // reset at start-of-scan). A non-zero value here is the wash bug.
             $display("[%0t] F%0d LUMA-DC#%0d: coeff_dc=%0d prev_dc_y=%0d diff=%0d",
                 $time, frame_cnt, huf_dc_cnt,
-                $signed(u_enc.u_huffman.coeff_dc), $signed(u_enc.u_huffman.prev_dc_y),
-                $signed(u_enc.u_huffman.coeff_dc) - $signed(u_enc.u_huffman.prev_dc_y));
+                $signed(u_enc.u_huffman.s2_coeff), $signed(u_enc.u_huffman.prev_dc_y),
+                $signed(u_enc.u_huffman.s2_coeff) - $signed(u_enc.u_huffman.prev_dc_y));
             huf_dc_cnt <= huf_dc_cnt + 4'd1;
         end
     end

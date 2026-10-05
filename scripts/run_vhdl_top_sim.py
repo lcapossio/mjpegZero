@@ -114,12 +114,27 @@ def main():
     for path in glob.glob(os.path.join(TV_DIR, '*')):
         shutil.copy2(path, os.path.join(build_dir, 'test_vectors'))
 
+    # The TB's yuyv_data array is sized to NUM_PIXELS, so the input vector must
+    # match the resolution: a smaller file leaves the tail uninitialized (X) and
+    # the encoder streams garbage. Same selection as scripts/run_sim.py.
+    if (img_width, img_height) == (1280, 720):
+        tv_hex = 'yuyv_720p.hex'
+    elif (img_width, img_height) == (64, 8):
+        tv_hex = 'yuyv_input.hex'
+    else:
+        tv_hex = f'yuyv_{img_width}x{img_height}.hex'
+    if not os.path.isfile(os.path.join(TV_DIR, tv_hex)):
+        sys.exit(f'ERROR: no input vector "{tv_hex}" for {img_width}x{img_height}. '
+                 f'Supported out of the box: 64x8, 720p; generate {tv_hex} in '
+                 f'{TV_DIR} to sim other sizes.')
+
     defines = ['-d', 'VHDL_DUT']
     if lite_mode:
         defines += ['-d', 'LITE_MODE']
     with open(os.path.join(build_dir, 'sim_defines.vh'), 'w') as f:
         f.write(f'`define TB_IMG_WIDTH {img_width}\n')
         f.write(f'`define TB_IMG_HEIGHT {img_height}\n')
+        f.write(f'`define TV_HEX_FILE "test_vectors/{tv_hex}"\n')
         if lite_quality:
             f.write(f'`define LITE_QUALITY {lite_quality}\n')
     defines += ['-d', 'HAVE_DEFINES']
@@ -158,6 +173,9 @@ def main():
          '-timescale', '1ns/1ps'], cwd=build_dir)
 
     print('\nStep 4: Running simulation...')
+    out_jpg = os.path.join(build_dir, 'sim_output.jpg')
+    if os.path.isfile(out_jpg):
+        os.remove(out_jpg)   # never report a stale JPEG from an earlier run
     if dump_vcd:
         wave_tcl = os.path.join(build_dir, 'wave.tcl')
         with open(wave_tcl, 'w') as f:
@@ -167,11 +185,10 @@ def main():
     else:
         run_checked_sim([xsim, 'sim_vhdl_top_snapshot', '-R', '-onfinish', 'quit'], cwd=build_dir)
 
-    out_jpg = os.path.join(build_dir, 'sim_output.jpg')
     if os.path.isfile(out_jpg):
         print(f'\nOutput: {out_jpg} ({os.path.getsize(out_jpg)} bytes)')
     else:
-        print('\nWARNING: No sim_output.jpg produced')
+        sys.exit('ERROR: simulation produced no sim_output.jpg')
 
 
 if __name__ == '__main__':

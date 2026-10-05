@@ -35,12 +35,17 @@ def run_rtl_sim():
     print("RTL SIMULATION: lite 720p quality=75")
     print("="*70)
     cmd = [sys.executable, os.path.join(REPO, 'scripts', 'run_sim.py'), 'lite', '720p', 'quality=75']
+    sim_jpg = os.path.join(REPO, 'build', 'sim', 'sim_output.jpg')
+    if os.path.isfile(sim_jpg):
+        os.remove(sim_jpg)   # never compare against a JPEG from an earlier run
     r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=600)
     # Print last 20 lines
     lines = (r.stdout + r.stderr).strip().split('\n')
     for line in lines[-20:]:
         print(f"  {line}")
-    sim_jpg = os.path.join(REPO, 'build', 'sim', 'sim_output.jpg')
+    if r.returncode != 0:
+        print(f"  ERROR: RTL simulation failed (exit {r.returncode})")
+        return None
     if os.path.isfile(sim_jpg):
         sz = os.path.getsize(sim_jpg)
         print(f"  RTL sim JPEG: {sim_jpg} ({sz} bytes)")
@@ -56,6 +61,8 @@ def run_hw_encode(yuyv_path, jpg_path, args):
     print("HARDWARE ENCODE: fcapz")
     print("="*70)
     fpga = args.fpga or _default_fpga_for_bitfile(args.bit)
+    if os.path.isfile(jpg_path):
+        os.remove(jpg_path)   # never report a JPEG from an earlier run
     with FcapzHW(fpga_name=fpga, bitfile=args.bit,
                  host=args.hw_host, port=args.hw_port,
                  jpeg_max_bytes=args.jpeg_max_bytes) as hw:
@@ -139,7 +146,12 @@ def make_comparison(original, hw_decoded, sim_decoded, out_path, diff_scale=8):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--skip-sim', action='store_true', help='Skip RTL simulation')
+    ap.add_argument('--sim-jpg', metavar='FILE',
+                    help='With --skip-sim: compare against this previously simulated JPEG '
+                         '(must be lite 720p Q75 of the same RTL; not reused implicitly)')
     ap.add_argument('--skip-hw', action='store_true', help='Skip hardware encode')
+    ap.add_argument('--hw-jpg', metavar='FILE',
+                    help='With --skip-hw: reuse this previously captured HW JPEG')
     ap.add_argument('--bit', metavar='FILE', help='Bitstream to program when --program is set')
     ap.add_argument('--program', action='store_true', help='Program --bit before hardware encode')
     ap.add_argument('--fpga', default=None, help='FPGA name for hw_server (e.g. xc7a100t, xc7s50)')
@@ -172,13 +184,21 @@ def main():
     png_to_yuyv(png_path, bin_path=yuyv_path, hex_path=sim_hex)
 
     # 3. RTL sim
+    # Only JPEGs produced by this run are used, unless one is named explicitly:
+    # a leftover build/sim/sim_output.jpg may come from another resolution,
+    # quality or RTL revision.
+    ok = True
     sim_decoded = None
     if not args.skip_sim:
         sim_result = run_rtl_sim()
         if sim_result and os.path.isfile(sim_result):
             sim_decoded = np.array(Image.open(sim_result).convert('RGB'))
-    elif os.path.isfile(sim_jpg):
-        print(f"\n  Using existing RTL sim JPEG: {sim_jpg}")
+        else:
+            print("FAIL: RTL simulation produced no JPEG")
+            ok = False
+    elif args.sim_jpg:
+        sim_jpg = args.sim_jpg
+        print(f"\n  Using RTL sim JPEG (--sim-jpg): {sim_jpg}")
         sim_decoded = np.array(Image.open(sim_jpg).convert('RGB'))
 
     # 4. HW encode
@@ -187,8 +207,12 @@ def main():
         hw_result = run_hw_encode(yuyv_path, hw_jpg, args)
         if hw_result and os.path.isfile(hw_result):
             hw_decoded = np.array(Image.open(hw_result).convert('RGB'))
-    elif os.path.isfile(hw_jpg):
-        print(f"\n  Using existing HW JPEG: {hw_jpg}")
+        else:
+            print("FAIL: hardware encode produced no JPEG")
+            ok = False
+    elif args.hw_jpg:
+        hw_jpg = args.hw_jpg
+        print(f"\n  Using HW JPEG (--hw-jpg): {hw_jpg}")
         hw_decoded = np.array(Image.open(hw_jpg).convert('RGB'))
 
     # 5. PSNR comparison
@@ -221,9 +245,14 @@ def main():
             if hw_bytes == sim_bytes:
                 print(f"  JPEG files: IDENTICAL ({len(hw_bytes)} bytes)")
             else:
+                # The hardware runs the same RTL as the sim: any byte
+                # difference is a real mismatch (or a stale/mismatched file)
                 print(f"  JPEG files: DIFFER (HW={len(hw_bytes)} bytes, Sim={len(sim_bytes)} bytes)")
+                print("FAIL: HW and RTL-sim JPEGs differ")
+                ok = False
         else:
-            print(f"  HW  vs Sim:       SKIPPED (resolution mismatch: HW={hw_decoded.shape[1]}x{hw_decoded.shape[0]}, Sim={sim_decoded.shape[1]}x{sim_decoded.shape[0]})")
+            ok = False
+            print(f"  HW  vs Sim:       FAIL (resolution mismatch: HW={hw_decoded.shape[1]}x{hw_decoded.shape[0]}, Sim={sim_decoded.shape[1]}x{sim_decoded.shape[0]})")
 
     # 6. Comparison image
     print()
@@ -231,7 +260,6 @@ def main():
 
     # 7. Pass/fail
     print()
-    ok = True
     if hw_decoded is not None:
         p, _, _ = psnr_y(original, hw_decoded)
         if p < 30:

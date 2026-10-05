@@ -481,6 +481,9 @@ module demo_top_eth #(
         .clk_125(1'b0), .clk_125_90(1'b0), .clk_25(1'b0), .clk_2_5(1'b0),
         .rgmii_txd(), .rgmii_tx_ctl(), .rgmii_txc(),
         .rgmii_rxd(4'd0), .rgmii_rx_ctl(1'b0), .rgmii_rxc(1'b0),
+        .phy_gmii_txd(), .phy_gmii_tx_en(), .phy_gmii_tx_er(), .phy_gmii_txc(),
+        .phy_gmii_rx_clk(1'b0), .phy_gmii_rxd(8'd0), .phy_gmii_rx_dv(1'b0), .phy_gmii_rx_er(1'b0),
+        .cfg_ip_addr(),
         .mdc(ETH_MDC), .mdio_i(mdio_i), .mdio_o(mdio_o), .mdio_oe(mdio_oe),
         .irq(mac_irq)
     );
@@ -489,7 +492,7 @@ module demo_top_eth #(
     assign mdio_i   = ETH_MDIO;
 
     // --- net_rx ---
-    wire [7:0]  ud_data;  wire ud_valid, ud_last;
+    wire [7:0]  ud_data;  wire ud_valid, ud_last, ud_err;
     wire [31:0] ud_src_ip;
     wire [15:0] ud_src_port, ud_dst_port, ud_length;
     wire [47:0] rx_src_mac;
@@ -500,8 +503,8 @@ module demo_top_eth #(
         .s_axis_tdata(mac_rx_tdata), .s_axis_tvalid(mac_rx_tvalid),
         .s_axis_tlast(mac_rx_tlast), .s_axis_tsof(mac_rx_tsof), .s_axis_terror(mac_rx_terror),
         .arp_data(arp_rx_data), .arp_valid(arp_rx_valid), .arp_last(arp_rx_last),
-        .icmp_data(), .icmp_valid(), .icmp_last(), .icmp_src_ip(),
-        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last),
+        .icmp_data(), .icmp_valid(), .icmp_last(), .icmp_err(), .icmp_src_ip(),
+        .udp_data(ud_data), .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err),
         .udp_src_ip(ud_src_ip), .udp_src_port(ud_src_port),
         .udp_dst_port(ud_dst_port), .udp_length(ud_length),
         .rx_src_mac(rx_src_mac), .our_ip(OUR_IP)
@@ -530,7 +533,7 @@ module demo_top_eth #(
         .TRIGGER_PORT(TRIGGER_PORT), .RTP_DST_PORT(RTP_PORT), .RTP_SRC_PORT(RTP_PORT)
     ) u_trig (
         .clk(clk100), .rst_n(eth_rst_n),
-        .udp_valid(ud_valid), .udp_last(ud_last), .udp_dst_port(ud_dst_port),
+        .udp_valid(ud_valid), .udp_last(ud_last), .udp_err(ud_err), .udp_dst_port(ud_dst_port),
         .udp_rx_src_mac(rx_src_mac), .udp_rx_src_ip(ud_src_ip),
         .busy(rtp_busy),
         .start(trg_start), .dst_mac(trg_dst_mac), .dst_ip(trg_dst_ip),

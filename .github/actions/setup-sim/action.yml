@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Leonardo Capossio — bard0 design
+#
+# Shared job setup: Python (pip-cached), apt tools, Python deps, and the
+# 1280x720 mandrill test image. The image is downloaded once and cached so
+# every job and run encodes the same source; a synthetic fallback (download
+# failed) is used for this run but never cached.
+name: Set up mjpegZero sim environment
+description: Python + apt tools + deps + cached test image
+
+inputs:
+  python-version:
+    description: Python version
+    default: "3.12"
+  apt-packages:
+    description: Space-separated apt packages to install ('' = none)
+    default: ""
+  pip-extra:
+    description: Extra pip requirement specs beyond python/requirements.txt
+    default: ""
+  test-image:
+    description: "'true' to restore/generate the mandrill test image"
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: python/requirements.txt
+
+    - name: Install apt packages
+      if: inputs.apt-packages != ''
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ${{ inputs.apt-packages }}
+
+    - name: Install Python dependencies
+      shell: bash
+      # Through env, not inline: an inline `<3` in a spec like
+      # "cocotb>=2.0,<3" is parsed by bash as a redirect.
+      env:
+        PIP_EXTRA: ${{ inputs.pip-extra }}
+      run: |
+        read -ra extra <<< "$PIP_EXTRA"
+        pip install -r python/requirements.txt "${extra[@]}"
+
+    - name: Restore test image
+      id: img
+      if: inputs.test-image == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: python/test_images/mandrill_720p.png
+        key: test-image-mandrill-720p-v1
+
+    - name: Generate test image (download mandrill or synthetic fallback)
+      if: inputs.test-image == 'true'
+      shell: bash
+      run: python python/test_encoder.py
+
+    - name: Save test image
+      if: >-
+        inputs.test-image == 'true' && steps.img.outputs.cache-hit != 'true' &&
+        hashFiles('python/test_images/SYNTHETIC') == ''
+      uses: actions/cache/save@v4
+      with:
+        path: python/test_images/mandrill_720p.png
+        key: test-image-mandrill-720p-v1
