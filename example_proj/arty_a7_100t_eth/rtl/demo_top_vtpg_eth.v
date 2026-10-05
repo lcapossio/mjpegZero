@@ -163,6 +163,10 @@ module demo_top_vtpg_eth #(
         .cfg_hg_step(16'd16), .cfg_vg_step(16'd16),
         .cfg_box_border_color(24'h00_80_80), .cfg_box_border_width(8'd2),  // black ring ({Y,Cb,Cr}), 2px
         .cfg_box_img_x_step(box_img_x_step_r), .cfg_box_img_y_step(box_img_y_step_r),
+        // vtpgZero 0.7 inputs: no AXIS routing sidebands, SMPTE chart not built
+        .cfg_tid(16'd0), .cfg_tdest(16'd0),
+        .cfg_smpte_side_d(16'd0), .cfg_smpte_bar_c(16'd0), .cfg_smpte_row_h(16'd0),
+        .cfg_smpte_pluge_p(16'd0), .cfg_smpte_ramp_step(16'd0),
         .sts_busy(), .sts_frame_count(),
         .m_axis_tdata(vid_tdata), .m_axis_tvalid(vid_tvalid),
         .m_axis_tready(vid_tready), .m_axis_tlast(vid_tlast), .m_axis_tuser(vid_tuser),
