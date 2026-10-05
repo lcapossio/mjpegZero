@@ -24,6 +24,12 @@ All notable changes to mjpegZero are documented here.
   control, adaptive rate control and stream diagnostics.
 - **vtpgZero moving-pattern demo** (`vtpgzero/` submodule) - test pattern
   generator -> encoder -> RTP/JPEG, with keyboard control over UDP.
+- **Ethernet demos on vtpgZero 0.7 and current emacZero** - both rebuilt and
+  re-verified on the Arty A7-100T: the still-image RTP JPEG is byte-identical
+  to the JTAG read-back, and the 720p VTPG stream runs at 61 fps. Trigger and
+  control packets that `net_rx` flags with `udp_err` are discarded. A 720p
+  VTPG -> encoder -> RTP streaming sim (`run_vtpg_stream_sim.py`) checks every
+  frame against a reference encode.
 - **LiteX integration wrapper** (`integrations/litex/`).
 - **Regression coverage** - multi-frame DC-predictor, Q100 gapless and
   restart-interval goldens, standalone zigzag/packer/restart unit benches
