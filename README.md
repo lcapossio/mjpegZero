@@ -1,4 +1,11 @@
 <a id="top"></a>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/mjpegzero-logo-dark.svg">
+    <img src="assets/mjpegzero-logo-light.svg" alt="mjpegZero" width="480">
+  </picture>
+</p>
+
 # mjpegZero — FPGA Hardware Motion JPEG Encoder
 
 [![CI](https://github.com/lcapossio/mjpegZero/actions/workflows/ci.yml/badge.svg)](https://github.com/lcapossio/mjpegZero/actions/workflows/ci.yml)
